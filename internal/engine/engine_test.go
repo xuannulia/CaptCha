@@ -607,6 +607,19 @@ func TestPointClickCaptchasUseSeparatedTargets(t *testing.T) {
 	}
 }
 
+func TestCaptchaIconSVGAssetsAreEmbeddedAndFiltered(t *testing.T) {
+	t.Parallel()
+
+	for _, icon := range iconClickLibrary {
+		if strings.HasPrefix(icon.ID, "pintu") || icon.ID == "huiliuqujinkoushipin" {
+			t.Fatalf("image click library must exclude slider-only svg icon %q", icon.ID)
+		}
+		assertEmbeddedSVGMask(t, icon.SVGFile(), 42, 90)
+	}
+	assertEmbeddedSVGMask(t, string(sliderMaskPuzzle), sliderPieceSize, 360)
+	assertEmbeddedSVGMask(t, string(sliderMaskPlane), sliderPieceSize, 140)
+}
+
 func TestSyntheticConstantLineTrackIsRejected(t *testing.T) {
 	t.Parallel()
 
@@ -1089,6 +1102,30 @@ func alphaAt(t *testing.T, img image.Image, x, y int) uint8 {
 	t.Helper()
 	_, _, _, a := img.At(x, y).RGBA()
 	return uint8(a >> 8)
+}
+
+func assertEmbeddedSVGMask(t *testing.T, filename string, size, minOpaque int) {
+	t.Helper()
+	data, err := captchaIconAssets.ReadFile("assets/icons/" + filename)
+	if err != nil {
+		t.Fatalf("read embedded svg %s: %v", filename, err)
+	}
+	if !bytes.Contains(data, []byte("<svg")) || !bytes.Contains(data, []byte("<path")) {
+		t.Fatalf("embedded icon %s should be svg path data", filename)
+	}
+	mask := svgIconMask(filename, size)
+	opaque := 0
+	bounds := mask.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if alphaAt(t, mask, x, y) > 35 {
+				opaque++
+			}
+		}
+	}
+	if opaque < minOpaque {
+		t.Fatalf("embedded svg %s rendered too few opaque pixels: %d < %d", filename, opaque, minOpaque)
+	}
 }
 
 func pieceAlphaEdgeRange(t *testing.T, img image.Image) (int, int) {

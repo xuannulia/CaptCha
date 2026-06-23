@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"embed"
 	"encoding/base64"
 	"fmt"
 	"image"
@@ -14,9 +15,13 @@ import (
 	"math"
 	"math/big"
 	"strings"
+	"sync"
 	"time"
 
 	"captcha/internal/types"
+
+	"github.com/srwiley/oksvg"
+	"github.com/srwiley/rasterx"
 )
 
 type Options struct {
@@ -44,6 +49,11 @@ type curveRenderPoint struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 }
+
+//go:embed assets/icons/*.svg
+var captchaIconAssets embed.FS
+
+var svgMaskCache sync.Map
 
 const (
 	maxTrackPoints     = 256
@@ -735,8 +745,8 @@ func pngDataURL(img image.Image) string {
 type sliderMaskKind string
 
 const (
-	sliderMaskPuzzle sliderMaskKind = "puzzle"
-	sliderMaskPlane  sliderMaskKind = "plane"
+	sliderMaskPuzzle sliderMaskKind = "pintu9.svg"
+	sliderMaskPlane  sliderMaskKind = "huiliuqujinkoushipin.svg"
 )
 
 func randomSliderMask() sliderMaskKind {
@@ -1373,12 +1383,7 @@ func drawSliderScene() *image.RGBA {
 }
 
 func insideSliderMask(x, y, size int, mask sliderMaskKind) bool {
-	switch mask {
-	case sliderMaskPlane:
-		return insidePlaneMask(x, y, size)
-	default:
-		return insidePuzzleMask(x, y, size)
-	}
+	return svgMaskAlpha(sliderMaskFile(mask), size, x, y) > 35
 }
 
 func sliderMaskEdge(x, y, size int, mask sliderMaskKind, radius int) bool {
@@ -1395,29 +1400,11 @@ func sliderMaskEdge(x, y, size int, mask sliderMaskKind, radius int) bool {
 	return false
 }
 
-func insidePuzzleMask(x, y, size int) bool {
-	margin := max(4, size/9)
-	radius := max(6, size/5)
-	center := size / 2
-	body := x >= margin && x < size-margin && y >= margin+2 && y < size-margin
-	topTab := square(x-center)+square(y-(margin+2)) <= square(radius) && y < margin+radius+2
-	rightTab := square(x-(size-margin))+square(y-center) <= square(radius-1) && x >= size-margin-radius
-	leftNotch := square(x-margin)+square(y-center) <= square(radius-1) && x < margin+radius+1
-	return (body || topTab || rightTab) && !leftNotch
-}
-
-func insidePlaneMask(x, y, size int) bool {
-	center := size / 2
-	body := []image.Point{
-		{X: size - 4, Y: center},
-		{X: 6, Y: 7},
-		{X: 17, Y: center - 6},
-		{X: 4, Y: center - 3},
-		{X: 4, Y: center + 3},
-		{X: 17, Y: center + 6},
-		{X: 6, Y: size - 7},
+func sliderMaskFile(mask sliderMaskKind) string {
+	if mask == sliderMaskPlane {
+		return string(sliderMaskPlane)
 	}
-	return pointInPolygon(x, y, body)
+	return string(sliderMaskPuzzle)
 }
 
 func drawRotateImage(start int) image.Image {
@@ -1563,6 +1550,10 @@ type clickIcon struct {
 	Label string
 }
 
+func (icon clickIcon) SVGFile() string {
+	return icon.ID + ".svg"
+}
+
 func wordClickChallenge() ([]string, []types.Point, []string, []types.Point) {
 	targetCount := mustRandomInt(3, 4)
 	decoyCount := mustRandomInt(1, 2)
@@ -1621,70 +1612,95 @@ func drawIconClickImage(icons []clickIcon, points []types.Point) image.Image {
 		if i >= len(points) {
 			break
 		}
-		drawClickIcon(img, icon.ID, points[i].X, points[i].Y, 38, palette[i%len(palette)])
+		drawSVGIcon(img, icon.SVGFile(), points[i].X, points[i].Y, 42, palette[i%len(palette)])
 	}
 	return img
 }
 
-func drawClickIcon(img *image.RGBA, id string, cx, cy, size int, c color.RGBA) {
-	shadow := color.RGBA{R: 15, G: 23, B: 42, A: 45}
-	switch id {
-	case "drinks-fill":
-		fillPolygon(img, []image.Point{{cx - 15, cy - 16}, {cx + 15, cy - 16}, {cx + 10, cy + 17}, {cx - 10, cy + 17}}, shadow)
-		fillPolygon(img, []image.Point{{cx - 16, cy - 18}, {cx + 16, cy - 18}, {cx + 11, cy + 16}, {cx - 11, cy + 16}}, c)
-		fillRect(img, cx-21, cy-24, 42, 6, c)
-	case "shuji":
-		fillRect(img, cx-18, cy-22, 36, 44, shadow)
-		fillRect(img, cx-20, cy-24, 38, 44, c)
-		fillRect(img, cx-14, cy-13, 26, 4, color.RGBA{R: 255, G: 255, B: 255, A: 155})
-		fillRect(img, cx-14, cy-2, 24, 4, color.RGBA{R: 255, G: 255, B: 255, A: 135})
-	case "bingqilin":
-		drawCircle(img, cx, cy-12, 17, shadow)
-		drawCircle(img, cx, cy-14, 17, c)
-		fillPolygon(img, []image.Point{{cx - 16, cy}, {cx + 16, cy}, {cx, cy + 27}}, c)
-	case "pingguo":
-		drawCircle(img, cx-8, cy, 16, shadow)
-		drawCircle(img, cx+7, cy, 16, shadow)
-		drawCircle(img, cx-8, cy-2, 16, c)
-		drawCircle(img, cx+7, cy-2, 16, c)
-		drawPolyline(img, []image.Point{{cx, cy - 17}, {cx + 5, cy - 27}}, 4, color.RGBA{R: 71, G: 85, B: 105, A: 220})
-		fillPolygon(img, []image.Point{{cx + 7, cy - 26}, {cx + 22, cy - 25}, {cx + 11, cy - 16}}, color.RGBA{R: 22, G: 163, B: 74, A: 230})
-	case "niuyouguo":
-		drawCircle(img, cx, cy, 22, shadow)
-		drawCircle(img, cx, cy-2, 22, c)
-		drawCircle(img, cx, cy+2, 10, color.RGBA{R: 250, G: 204, B: 21, A: 230})
-	case "ipad-fill":
-		fillRect(img, cx-17, cy-24, 34, 48, shadow)
-		fillRect(img, cx-18, cy-25, 36, 50, c)
-		drawCircle(img, cx, cy+17, 3, color.RGBA{R: 255, G: 255, B: 255, A: 160})
-	case "diannao":
-		fillRect(img, cx-23, cy-18, 46, 30, shadow)
-		fillRect(img, cx-24, cy-20, 48, 31, c)
-		fillRect(img, cx-7, cy+11, 14, 11, c)
-		fillRect(img, cx-19, cy+22, 38, 5, c)
-	case "lizi":
-		drawCircle(img, cx, cy+3, 20, shadow)
-		drawCircle(img, cx, cy+1, 20, c)
-		drawCircle(img, cx, cy-17, 11, c)
-		drawPolyline(img, []image.Point{{cx + 2, cy - 25}, {cx + 8, cy - 33}}, 4, color.RGBA{R: 71, G: 85, B: 105, A: 220})
-	case "bangbangtang":
-		drawCircle(img, cx-3, cy-8, 19, shadow)
-		drawCircle(img, cx-4, cy-10, 19, c)
-		drawPolyline(img, []image.Point{{cx + 9, cy + 5}, {cx + 24, cy + 27}}, 6, color.RGBA{R: 148, G: 163, B: 184, A: 230})
-		drawPolyline(img, []image.Point{{cx - 15, cy - 10}, {cx - 3, cy - 19}, {cx + 10, cy - 8}, {cx, cy + 4}}, 4, color.RGBA{R: 255, G: 255, B: 255, A: 135})
-	case "daijingyingtao":
-		drawCircle(img, cx-9, cy+7, 12, c)
-		drawCircle(img, cx+10, cy+7, 12, c)
-		drawPolyline(img, []image.Point{{cx - 9, cy - 5}, {cx, cy - 24}, {cx + 10, cy - 5}}, 4, color.RGBA{R: 71, G: 85, B: 105, A: 220})
-		fillPolygon(img, []image.Point{{cx + 1, cy - 25}, {cx + 17, cy - 27}, {cx + 7, cy - 17}}, color.RGBA{R: 22, G: 163, B: 74, A: 225})
-	case "shouji":
-		fillRect(img, cx-14, cy-25, 28, 50, shadow)
-		fillRect(img, cx-15, cy-26, 30, 52, c)
-		fillRect(img, cx-10, cy-18, 20, 32, color.RGBA{R: 255, G: 255, B: 255, A: 85})
-		drawCircle(img, cx, cy+19, 3, color.RGBA{R: 255, G: 255, B: 255, A: 150})
-	default:
-		drawCircle(img, cx, cy, size/2, c)
+func drawSVGIcon(img *image.RGBA, filename string, cx, cy, size int, c color.RGBA) {
+	mask := svgIconMask(filename, size)
+	originX := cx - size/2
+	originY := cy - size/2
+	drawSVGMask(img, mask, originX+2, originY+3, color.RGBA{R: 15, G: 23, B: 42, A: 72}, 0.72)
+	drawSVGMask(img, mask, originX, originY, c, 1)
+}
+
+func drawSVGMask(dst *image.RGBA, mask *image.RGBA, originX, originY int, c color.RGBA, alphaScale float64) {
+	bounds := dst.Bounds()
+	maskBounds := mask.Bounds()
+	for y := maskBounds.Min.Y; y < maskBounds.Max.Y; y++ {
+		for x := maskBounds.Min.X; x < maskBounds.Max.X; x++ {
+			alpha := rgbaAt(mask, x, y).A
+			if alpha <= 10 {
+				continue
+			}
+			gx, gy := originX+x, originY+y
+			if gx < bounds.Min.X || gx >= bounds.Max.X || gy < bounds.Min.Y || gy >= bounds.Max.Y {
+				continue
+			}
+			pixel := c
+			pixel.A = uint8(math.Round(float64(c.A) * float64(alpha) / 255 * math.Max(0, math.Min(1, alphaScale))))
+			blendPixel(dst, gx, gy, pixel)
+		}
 	}
+}
+
+type svgMaskCacheKey struct {
+	Filename string
+	Size     int
+}
+
+func svgMaskAlpha(filename string, size, x, y int) uint8 {
+	if x < 0 || y < 0 || x >= size || y >= size {
+		return 0
+	}
+	return rgbaAt(svgIconMask(filename, size), x, y).A
+}
+
+func svgIconMask(filename string, size int) *image.RGBA {
+	key := svgMaskCacheKey{Filename: filename, Size: size}
+	if cached, ok := svgMaskCache.Load(key); ok {
+		return cached.(*image.RGBA)
+	}
+	mask, err := renderSVGMask(filename, size)
+	if err != nil {
+		panic(fmt.Sprintf("render embedded svg %s: %v", filename, err))
+	}
+	actual, _ := svgMaskCache.LoadOrStore(key, mask)
+	return actual.(*image.RGBA)
+}
+
+func renderSVGMask(filename string, size int) (*image.RGBA, error) {
+	file, err := captchaIconAssets.Open("assets/icons/" + filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	icon, err := oksvg.ReadIconStream(file, oksvg.StrictErrorMode)
+	if err != nil {
+		return nil, err
+	}
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	padding := math.Max(2, math.Round(float64(size)*0.06))
+	icon.SetTarget(padding, padding, float64(size)-padding*2, float64(size)-padding*2)
+	scanner := rasterx.NewScannerGV(size, size, img, img.Bounds())
+	raster := rasterx.NewDasher(size, size, scanner)
+	icon.Draw(raster, 1)
+	return img, nil
+}
+
+func blendPixel(img *image.RGBA, x, y int, c color.RGBA) {
+	alpha := float64(c.A) / 255
+	if alpha <= 0 {
+		return
+	}
+	dst := rgbaAt(img, x, y)
+	img.SetRGBA(x, y, color.RGBA{
+		R: uint8(math.Round(float64(c.R)*alpha + float64(dst.R)*(1-alpha))),
+		G: uint8(math.Round(float64(c.G)*alpha + float64(dst.G)*(1-alpha))),
+		B: uint8(math.Round(float64(c.B)*alpha + float64(dst.B)*(1-alpha))),
+		A: 255,
+	})
 }
 
 func drawJigsawImage(points []types.Point) image.Image {

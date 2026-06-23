@@ -1062,41 +1062,51 @@ open_demo_curve_match_success_check() {
 				if (targetPixelCount < moving.length * 4) {
 					throw new Error(`could not segment curve target pixels: ${targetPixelCount}`);
 				}
-				function localTargetDistance(x, y) {
-					let best = Number.POSITIVE_INFINITY;
-					const cx = Math.round(x);
-					const cy = Math.round(y);
-					for (let radius = 0; radius <= 18; radius += 1) {
-						for (let sy = cy - radius; sy <= cy + radius; sy += 1) {
-							for (let sx = cx - radius; sx <= cx + radius; sx += 1) {
-								if (sx < 0 || sx >= width || sy < 0 || sy >= height || !targetMask[sy * width + sx]) continue;
-								best = Math.min(best, Math.hypot(sx - x, sy - y));
-							}
-						}
-						if (Number.isFinite(best)) return best;
+				const candidateCanvas = document.createElement("canvas");
+				candidateCanvas.width = width;
+				candidateCanvas.height = height;
+				const candidateContext = candidateCanvas.getContext("2d", { willReadFrequently: true });
+				candidateContext.lineCap = "round";
+				candidateContext.lineJoin = "round";
+				candidateContext.strokeStyle = "#000";
+				candidateContext.lineWidth = style === "dual-noise" ? 12 : style === "ring-deform" ? 8 : 10;
+				function candidateOverlapScore(points) {
+					candidateContext.clearRect(0, 0, width, height);
+					candidateContext.beginPath();
+					candidateContext.moveTo(points[0].x, points[0].y);
+					for (let index = 1; index < points.length; index += 1) {
+						candidateContext.lineTo(points[index].x, points[index].y);
 					}
-					return 99;
+					candidateContext.stroke();
+					const candidateData = candidateContext.getImageData(0, 0, width, height).data;
+					let candidateCount = 0;
+					let overlap = 0;
+					for (let index = 0; index < width * height; index += 1) {
+						if (candidateData[index * 4 + 3] <= 20) continue;
+						candidateCount += 1;
+						if (targetMask[index]) overlap += 1;
+					}
+					if (!candidateCount || !targetPixelCount) return 0;
+					const precision = overlap / candidateCount;
+					const recall = overlap / targetPixelCount;
+					return precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
 				}
-				let best = { value: 0, score: Number.POSITIVE_INFINITY };
+				let best = { value: 0, score: -1 };
 				for (let candidate = 0; candidate <= max; candidate += 1) {
-					let score = 0;
-					let count = 0;
+					const predictedPoints = [];
 					for (let index = 1; index < moving.length - 1; index += 1) {
 						const drive = drives[index] || { x: 0, y: 0 };
-						const predicted = {
+						predictedPoints.push({
 							x: Number(moving[index].x) - Number(drive.x || 0) * candidate,
 							y: Number(moving[index].y) - Number(drive.y || 0) * candidate
-						};
-						if (predicted.x < 0 || predicted.x >= width || predicted.y < 0 || predicted.y >= height) continue;
-						score += localTargetDistance(predicted.x, predicted.y);
-						count += 1;
+						});
 					}
-					const normalized = count ? score / count : Number.POSITIVE_INFINITY;
-					if (normalized < best.score) {
-						best = { value: candidate, score: normalized };
+					const score = candidateOverlapScore(predictedPoints);
+					if (score > best.score) {
+						best = { value: candidate, score };
 					}
 				}
-				if (!Number.isFinite(best.score) || best.score > 4) {
+				if (!Number.isFinite(best.score) || best.score < 0.24) {
 					throw new Error(`could not infer curve match target from pixels: ${JSON.stringify(best)}`);
 				}
 				return best.value;
@@ -1140,7 +1150,10 @@ open_demo_curve_match_success_check() {
 			}
 			await page.waitForTimeout(180);
 			await control.dispatchEvent("pointerup", await eventInit(target, 0));
-			await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
+			await page.waitForFunction(() => {
+				const status = document.querySelector(".browser-bar strong")?.textContent?.trim();
+				return status === "通过" || status === "失败";
+			});
 			results.push({
 				type: item.type,
 				target,
@@ -1928,7 +1941,10 @@ open_demo_concat_success_check() {
 		await page.waitForTimeout(150);
 		const duringTopLeft = await pieceLeftInViewUnits(topPiece);
 		await control.dispatchEvent("pointerup", await eventInit(answer, 0));
-		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
+		await page.waitForFunction(() => {
+			const status = document.querySelector(".browser-bar strong")?.textContent?.trim();
+			return status === "通过" || status === "失败";
+		});
 		return {
 			answer,
 			max,
@@ -1945,6 +1961,10 @@ open_demo_concat_success_check() {
 	node -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
+		if (!Object.prototype.hasOwnProperty.call(output, "result")) {
+			console.error(`concat smoke did not return a result: ${JSON.stringify(output)}`);
+			process.exit(1);
+		}
 		const result = JSON.parse(output.result);
 		if (Math.abs(result.duringTopLeft - (result.answer - result.shift)) > 3 || result.bottomCount !== 0 || result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发")) {
 			console.error(`unexpected concat success result: ${JSON.stringify(result)}`);
