@@ -367,6 +367,11 @@ func TestCurveChallengesAreSlidingMatchWithoutNakedAnswerFields(t *testing.T) {
 			if len(moving) != len(drives) {
 				t.Fatalf("curve profile lengths should match: moving=%d drives=%d", len(moving), len(drives))
 			}
+			targetPoints := fixedCurvePointsFromProfile(moving, drives, first.Answer.X)
+			targetHits := curveTargetGhostHits(decodePNGDataURL(t, first.RenderPayload.Image), captchaType, targetPoints)
+			if targetHits < max(8, len(targetPoints)*3/4) {
+				t.Fatalf("curve target ghost should be rendered into backend PNG, hits=%d points=%d type=%s", targetHits, len(targetPoints), captchaType)
+			}
 			if captchaType == types.CaptchaCurve3 && math.Hypot(moving[0].X-moving[len(moving)-1].X, moving[0].Y-moving[len(moving)-1].Y) > 1 {
 				t.Fatalf("curve v3 should use a closed ring path, first=%+v last=%+v", moving[0], moving[len(moving)-1])
 			}
@@ -897,6 +902,57 @@ func expectedCurveVisualStyle(captchaType types.CaptchaType) string {
 		return "ring-deform"
 	default:
 		return "single-rope"
+	}
+}
+
+func curveTargetGhostHits(img image.Image, captchaType types.CaptchaType, points []types.Point) int {
+	hits := 0
+	bounds := img.Bounds()
+	for _, point := range points {
+		found := false
+		for dy := -4; dy <= 4 && !found; dy++ {
+			for dx := -4; dx <= 4; dx++ {
+				x := point.X + dx
+				y := point.Y + dy
+				if x < bounds.Min.X || x >= bounds.Max.X || y < bounds.Min.Y || y >= bounds.Max.Y {
+					continue
+				}
+				if curveTargetGhostPixel(rgbaAt(img, x, y), captchaType) {
+					found = true
+					break
+				}
+			}
+		}
+		if found {
+			hits++
+		}
+	}
+	return hits
+}
+
+func fixedCurvePointsFromProfile(moving []curveRenderPoint, drives []curveDrivePoint, targetX int) []types.Point {
+	points := make([]types.Point, 0, min(len(moving), len(drives)))
+	for i := 0; i < len(moving) && i < len(drives); i++ {
+		points = append(points, types.Point{
+			X: int(math.Round(moving[i].X - drives[i].X*float64(targetX))),
+			Y: int(math.Round(moving[i].Y - drives[i].Y*float64(targetX))),
+		})
+	}
+	return points
+}
+
+func curveTargetGhostPixel(c color.RGBA, captchaType types.CaptchaType) bool {
+	if c.A < 180 {
+		return false
+	}
+	switch captchaType {
+	case types.CaptchaCurve2:
+		return (c.R > 230 && c.G >= 55 && c.G <= 130 && c.B >= 145 && c.B <= 220) ||
+			(c.R >= 170 && c.R <= 215 && c.G >= 105 && c.G <= 155 && c.B > 225)
+	case types.CaptchaCurve3:
+		return c.R >= 238 && c.G >= 90 && c.G <= 140 && c.B >= 90 && c.B <= 130
+	default:
+		return c.R >= 95 && c.R <= 150 && c.G >= 185 && c.B >= 225
 	}
 }
 

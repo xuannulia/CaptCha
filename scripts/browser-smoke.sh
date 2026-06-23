@@ -270,12 +270,19 @@ open_demo_failure_reset_checks() {
 			marks: await wordFrame.locator(".mark").count(),
 			footer: await wordFrame.locator("footer").innerText()
 		};
+		await clickBoardAt(wordBoard, 160, 80);
+		await page.waitForTimeout(150);
+		const cancelResult = {
+			marks: await wordFrame.locator(".mark").count(),
+			footer: await wordFrame.locator("footer").innerText()
+		};
 
 		await wordFrame.getByRole("button", { name: "刷新" }).click();
 		await page.waitForTimeout(300);
 		await clickBoardAt(wordBoard, 20, 20);
 		await clickBoardAt(wordBoard, 20, 140);
 		await clickBoardAt(wordBoard, 300, 140);
+		await wordFrame.getByRole("button", { name: "验证" }).click();
 		await page.waitForTimeout(800);
 		const wordResult = {
 			marks: await wordFrame.locator(".mark").count(),
@@ -318,7 +325,7 @@ open_demo_failure_reset_checks() {
 			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 			footer: await sliderFrame.locator("footer").innerText()
 		};
-		return { progress: progressResult, word: wordResult, slider: sliderResult };
+		return { progress: progressResult, cancel: cancelResult, word: wordResult, slider: sliderResult };
 	}')"
 	node -e '
 		const fs = require("fs");
@@ -326,6 +333,10 @@ open_demo_failure_reset_checks() {
 		const result = JSON.parse(output.result);
 		if (result.progress.marks !== 1 || !result.progress.footer.includes("已选择 1/3")) {
 			console.error(`unexpected word click progress result: ${JSON.stringify(result.progress)}`);
+			process.exit(1);
+		}
+		if (result.cancel.marks !== 0 || result.cancel.footer.includes("已选择")) {
+			console.error(`unexpected word click cancel result: ${JSON.stringify(result.cancel)}`);
 			process.exit(1);
 		}
 		if (result.word.marks !== 0 || result.word.status !== "失败" || result.word.sideResult !== "失败" || !result.word.footer.includes("验证失败，请重试")) {
@@ -458,7 +469,7 @@ open_demo_jigsaw_drag_swap_check() {
 		const board = jigsawFrame.locator(".board");
 		await board.waitFor();
 		const tileCount = await jigsawFrame.locator(".jigsaw-tile").count();
-		const targets = await jigsawFrame.evaluate(async () => {
+		const targets = await jigsawFrame.evaluate(async (tileCount) => {
 			const img = document.querySelector(".board > img");
 			if (!img) throw new Error("missing jigsaw image");
 			if (!img.complete || !img.naturalWidth) {
@@ -473,8 +484,8 @@ open_demo_jigsaw_drag_swap_check() {
 			const context = canvas.getContext("2d");
 			context.drawImage(img, 0, 0);
 			const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
-			const cols = 4;
-			const rows = 4;
+			const cols = Math.max(1, Math.round(Math.sqrt(tileCount || 4)));
+			const rows = Math.max(1, Math.round((tileCount || 4) / cols));
 			const tileW = width / cols;
 			const tileH = height / rows;
 			function diff(x1, y1, x2, y2) {
@@ -486,64 +497,69 @@ open_demo_jigsaw_drag_swap_check() {
 				const b = (y2 * width + x2) * 4;
 				return Math.abs(data[a] - data[b]) + Math.abs(data[a + 1] - data[b + 1]) + Math.abs(data[a + 2] - data[b + 2]);
 			}
-			function tileScore(col, row) {
+			function tilePosition(index) {
+				return { col: index % cols, row: Math.floor(index / cols) };
+			}
+			function sourcePoint(sourceIndex, localX, localY) {
+				const tile = tilePosition(sourceIndex);
+				return {
+					x: tile.col * tileW + localX,
+					y: tile.row * tileH + localY
+				};
+			}
+			function seamScore(sourceByCell) {
 				let score = 0;
 				let samples = 0;
-				if (col > 0) {
-					const x = col * tileW;
-					for (let y = row * tileH + 4; y < (row + 1) * tileH - 4; y += 4) {
-						score += diff(x - 2, y, x + 2, y);
-						samples += 1;
+				for (let row = 0; row < rows; row += 1) {
+					for (let col = 0; col < cols - 1; col += 1) {
+						const left = row * cols + col;
+						const right = left + 1;
+						for (let y = 6; y < tileH - 6; y += 4) {
+							const a = sourcePoint(sourceByCell[left], tileW - 2, y);
+							const b = sourcePoint(sourceByCell[right], 2, y);
+							score += diff(a.x, a.y, b.x, b.y);
+							samples += 1;
+						}
 					}
 				}
-				if (col < cols - 1) {
-					const x = (col + 1) * tileW;
-					for (let y = row * tileH + 4; y < (row + 1) * tileH - 4; y += 4) {
-						score += diff(x - 2, y, x + 2, y);
-						samples += 1;
+				for (let row = 0; row < rows - 1; row += 1) {
+					for (let col = 0; col < cols; col += 1) {
+						const top = row * cols + col;
+						const bottom = top + cols;
+						for (let x = 6; x < tileW - 6; x += 4) {
+							const a = sourcePoint(sourceByCell[top], x, tileH - 2);
+							const b = sourcePoint(sourceByCell[bottom], x, 2);
+							score += diff(a.x, a.y, b.x, b.y);
+							samples += 1;
+						}
 					}
 				}
-				if (row > 0) {
-					const y = row * tileH;
-					for (let x = col * tileW + 4; x < (col + 1) * tileW - 4; x += 4) {
-						score += diff(x, y - 2, x, y + 2);
-						samples += 1;
-					}
-				}
-				if (row < rows - 1) {
-					const y = (row + 1) * tileH;
-					for (let x = col * tileW + 4; x < (col + 1) * tileW - 4; x += 4) {
-						score += diff(x, y - 2, x, y + 2);
-						samples += 1;
-					}
-				}
-				return samples ? score / samples : 0;
+				return samples ? score / samples : Number.POSITIVE_INFINITY;
 			}
-			const scored = [];
-			for (let row = 0; row < rows; row += 1) {
-				for (let col = 0; col < cols; col += 1) {
-					scored.push({ col, row, score: tileScore(col, row) });
-				}
-			}
-			const candidates = scored.sort((a, b) => b.score - a.score).slice(0, 6);
-			let pair = [candidates[0], candidates[1]];
-			let bestDistance = -1;
-			for (let i = 0; i < candidates.length; i += 1) {
-				for (let j = i + 1; j < candidates.length; j += 1) {
-					const distance = Math.abs(candidates[i].col - candidates[j].col) + Math.abs(candidates[i].row - candidates[j].row);
-					const score = candidates[i].score + candidates[j].score;
-					if (distance >= 3 && score + distance * 4 > bestDistance) {
-						bestDistance = score + distance * 4;
-						pair = [candidates[i], candidates[j]];
+			const totalTiles = cols * rows;
+			if (totalTiles < 2) throw new Error(`unexpected jigsaw tile count: ${tileCount}`);
+			let bestPair = [0, 1];
+			let bestScore = Number.POSITIVE_INFINITY;
+			for (let first = 0; first < totalTiles; first += 1) {
+				for (let second = first + 1; second < totalTiles; second += 1) {
+					const sourceByCell = Array.from({ length: totalTiles }, (_, index) => index);
+					[sourceByCell[first], sourceByCell[second]] = [sourceByCell[second], sourceByCell[first]];
+					const score = seamScore(sourceByCell);
+					if (score < bestScore) {
+						bestScore = score;
+						bestPair = [first, second];
 					}
 				}
 			}
-			return pair.map((tile) => ({
-				x: Math.round((tile.col + 0.5) * 320 / cols),
-				y: Math.round((tile.row + 0.5) * 160 / rows),
-				score: Math.round(tile.score)
-			}));
-		});
+			return bestPair.map((index) => {
+				const tile = tilePosition(index);
+				return {
+					x: Math.round((tile.col + 0.5) * 320 / cols),
+					y: Math.round((tile.row + 0.5) * 160 / rows),
+					score: Math.round(bestScore)
+				};
+			});
+		}, tileCount);
 		async function pointerEvent(point, type, buttons) {
 			return await board.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();
@@ -584,7 +600,7 @@ open_demo_jigsaw_drag_swap_check() {
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
-		if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.tileCount < 16) {
+		if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.tileCount !== 4) {
 			console.error(`unexpected jigsaw drag swap result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
@@ -627,17 +643,24 @@ open_demo_point_click_success_check() {
 					};
 				}, point));
 			}
+			await clickBoardAt(item.points[0]);
+			await page.waitForTimeout(90);
+			await clickBoardAt(item.points[0]);
+			await page.waitForTimeout(90);
+			const canceledMarks = await frame.locator(".mark").count();
 			for (const point of item.points) {
 				await clickBoardAt(point);
 				await page.waitForTimeout(90);
 			}
+			await frame.getByRole("button", { name: "验证" }).click();
 			await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
 			results.push({
 				type: item.type,
 				status: await page.locator(".browser-bar strong").innerText(),
 				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 				footer: await frame.locator("footer").innerText(),
-				marks: await frame.locator(".mark").count()
+				marks: await frame.locator(".mark").count(),
+				canceledMarks
 			});
 		}
 		return results;
@@ -647,7 +670,7 @@ open_demo_point_click_success_check() {
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const results = JSON.parse(output.result);
 		for (const result of results) {
-			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.marks !== 3) {
+			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.marks !== 3 || result.canceledMarks !== 0) {
 				console.error(`unexpected point click success result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
@@ -721,16 +744,23 @@ open_demo_grid_click_success_check() {
 				};
 			}, point));
 		}
+		await clickBoardAt(targets[0]);
+		await page.waitForTimeout(90);
+		await clickBoardAt(targets[0]);
+		await page.waitForTimeout(90);
+		const canceledMarks = await frame.locator(".mark").count();
 		for (const point of targets) {
 			await clickBoardAt(point);
 			await page.waitForTimeout(90);
 		}
+		await frame.getByRole("button", { name: "验证" }).click();
 		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
 		return {
 			status: await page.locator(".browser-bar strong").innerText(),
 			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 			footer: await frame.locator("footer").innerText(),
 			marks: await frame.locator(".mark").count(),
+			canceledMarks,
 			targets
 		};
 	}')"
@@ -738,7 +768,7 @@ open_demo_grid_click_success_check() {
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
-		if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.marks !== 3) {
+		if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.marks !== 3 || result.canceledMarks !== 0) {
 			console.error(`unexpected grid click success result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
@@ -815,6 +845,7 @@ open_demo_grid_click_failure_check() {
 			await clickBoardAt(point);
 			await page.waitForTimeout(90);
 		}
+		await frame.getByRole("button", { name: "验证" }).click();
 		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "失败");
 		await page.waitForTimeout(400);
 		return {
@@ -946,8 +977,7 @@ open_demo_curve_match_success_check() {
 						return red > 165 && blue > 135 && green < 185 && saturation > 40;
 					}
 					if (style === "ring-deform") {
-						return (red > 205 && green > 70 && green < 190 && blue > 70 && blue < 205) ||
-							(red > 230 && green > 230 && blue > 230);
+						return red > 235 && green >= 90 && green <= 145 && blue >= 90 && blue <= 130 && saturation > 95;
 					}
 					return blue > 180 && green > 150 && red < 180 && blue - red > 60;
 				}

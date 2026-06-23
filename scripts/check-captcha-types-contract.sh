@@ -52,7 +52,7 @@ grep -Fq 'const captchaTypes = [' web/admin/src/main.tsx ||
 	fail "admin must centralize concrete captcha type options"
 grep -Fq 'selectOptions(["AUTO", ...captchaTypes])' web/admin/src/main.tsx ||
 	fail "admin resource captcha type selector must include AUTO plus concrete captcha types"
-for resource_type in icon degree_template curve_template gesture_template jigsaw_template pow_challenge; do
+for resource_type in background_library grid_category_library icon icon_library degree_template curve_template gesture_template jigsaw_template pow_challenge; do
 	grep -Fq "\"${resource_type}\"" internal/resource/validator.go ||
 		fail "resource validator must allow $resource_type"
 	grep -Fq "\"${resource_type}\"" web/admin/src/main.tsx ||

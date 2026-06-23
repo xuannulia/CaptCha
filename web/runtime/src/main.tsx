@@ -546,7 +546,7 @@ function RuntimeChallenge() {
       event.preventDefault();
       const snapshot = handleJigsawPointerUp(event);
       tryReleasePointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
-      if (snapshot && snapshot.points.length >= clickTargetCount(challenge)) {
+      if (snapshot?.autoVerify && snapshot.points.length >= clickTargetCount(challenge)) {
         void verify(snapshot);
       }
       return;
@@ -601,13 +601,13 @@ function RuntimeChallenge() {
       const nextPoints = [start, end].slice(0, clickTargetCount(challenge));
       pointsRef.current = nextPoints;
       setPoints(nextPoints);
-      return { points: nextPoints, track: nextTrack, value: valueRef.current };
+      return { points: nextPoints, track: nextTrack, value: valueRef.current, autoVerify: true };
     }
     const snapshot = appendClickPoint(end, nextTrack);
     if (snapshot && snapshot.points.length >= clickTargetCount(challenge)) {
       swapJigsawTiles(snapshot.points[0], snapshot.points[1]);
     }
-    return snapshot;
+    return snapshot ? { ...snapshot, autoVerify: false } : snapshot;
   }
 
   function swapJigsawTiles(first: ChallengePoint, second: ChallengePoint) {
@@ -754,6 +754,21 @@ function RuntimeChallenge() {
     return { points: nextPoints, value: valueRef.current, track: nextTrack };
   }
 
+  function toggleClickPoint(point: ChallengePoint, nextTrack = trackRef.current) {
+    if (!challenge) return undefined;
+    const base = pointsRef.current;
+    const radius = clickCancelRadius(challenge);
+    const existingIndex = base.findIndex((selected) => distanceBetweenPoints(selected, point) <= radius);
+    const nextPoints = existingIndex >= 0
+      ? base.filter((_, index) => index !== existingIndex)
+      : base.length < clickTargetCount(challenge)
+        ? [...base, point]
+        : base;
+    pointsRef.current = nextPoints;
+    setPoints(nextPoints);
+    return { points: nextPoints, value: valueRef.current, track: nextTrack };
+  }
+
   function onBoardClick(event: MouseEvent) {
     if (!challenge || !isClickCaptcha(challenge)) return;
     if (interactionLocked()) return;
@@ -764,10 +779,8 @@ function RuntimeChallenge() {
     }
     if (isJigsawCaptcha(challenge)) return;
     const point = challengePointFromEvent(event, challenge, boardRef.current);
-    const snapshot = appendClickPoint(point);
-    if (snapshot && snapshot.points.length >= clickTargetCount(challenge)) {
-      void verify(snapshot);
-    }
+    const nextTrack = appendTrack("end", point.x, point.y);
+    toggleClickPoint(point, nextTrack);
   }
 
   function interactionLocked() {
@@ -1320,6 +1333,10 @@ function footerStatus(challenge: Challenge, ticket: string, status: string, poin
 
 function clickTargetCount(challenge: Challenge) {
   return Math.max(1, challenge.words?.length || 3);
+}
+
+function clickCancelRadius(challenge: Challenge) {
+  return Math.max(14, Math.min(challenge.view.width, challenge.view.height) * 0.055);
 }
 
 function manualVerifyDisabled(challenge: Challenge, status: string, ticket: string, pointCount: number, value: number) {

@@ -28,10 +28,10 @@
 - 启动时可自动执行 `migrations/postgres` 下的 PostgreSQL schema。
 - 启动时默认写入 demo 数据，可用 `CAPTCHA_SEED_DEMO=false` 关闭。
 - 已补充后端和 Gateway 容器镜像、默认 `docker-compose.yml`、开发依赖 `docker-compose.dev.yml` 与 GitHub Actions CI；CI 通过 `make verify` 覆盖 Go/CI/Docker/前端契约检查、HTTP/gRPC API 文档契约检查、验证码类型契约检查、Browser smoke 路由覆盖契约检查、文档命令契约检查、Go 测试、protobuf drift 检查、生产安全闸门 smoke、HTTP/gRPC smoke、workspace 测试、前端/中间件构建、Runtime gzip 预算检查和 Docker Compose 配置校验，并通过 `make docker-build` 构建后端/Gateway Docker 镜像。仓库还提供可选的 `make browser-smoke`，用真实浏览器验证 Runtime 和管理台主页面渲染与交互。
-- Runtime 已覆盖 `RANDOM` 请求入口，以及 `PROOF_OF_WORK`、`GESTURE`、`CURVE`、`CURVE_V2`、`CURVE_V3`、`SLIDER`、`SLIDER_V2`、`ROTATE`、`CONCAT`、`ROTATE_DEGREE`、`WORD_IMAGE_CLICK`、`IMAGE_CLICK`、`JIGSAW`、`GRID_IMAGE_CLICK` 的展示和提交；拖动和绘制类控件会采集真实 pointer 轨迹并在松手后自动提交验证，答案未形成前手动验证按钮保持禁用，避免空提交或误触直接失败；`CURVE` 系列参考 Tianai 在线体验，使用背景图叠加 canvas 曲线层，底部滑块推进移动曲线与目标曲线重合，不再复用 `GESTURE` 的自由描绘，也不使用竖向缺口片段或可移动图片 piece；`CONCAT` 使用静态下半片叠加单个透明移动上半片，背景不再挖出目标缺口或答案边界；点选类验证码独立校验点击坐标，避免滑动轨迹评分误伤。`WORD_ORDER_IMAGE_CLICK` 已降级为兼容别名，不再作为独立验证码类型维护。
+- Runtime 已覆盖 `RANDOM` 请求入口，以及 `PROOF_OF_WORK`、`GESTURE`、`CURVE`、`CURVE_V2`、`CURVE_V3`、`SLIDER`、`SLIDER_V2`、`ROTATE`、`CONCAT`、`ROTATE_DEGREE`、`WORD_IMAGE_CLICK`、`IMAGE_CLICK`、`JIGSAW`、`GRID_IMAGE_CLICK` 的展示和提交；拖动和绘制类控件会采集真实 pointer 轨迹并在松手后自动提交验证，答案未形成前手动验证按钮保持禁用，避免空提交或误触直接失败；点选类验证码不在点击后自动验证，用户可再次点击已选点取消选择，再手动提交；`CURVE` 系列参考 Tianai 在线体验，使用后端 PNG 背景目标虚影叠加 canvas 曲线层，底部滑块推进移动曲线与目标曲线重合，不再复用 `GESTURE` 的自由描绘，也不使用竖向缺口片段或可移动图片 piece；`CONCAT` 使用静态下半片叠加单个透明移动上半片，背景不再挖出目标缺口或答案边界；点选类验证码独立校验点击坐标，避免滑动轨迹评分误伤。`WORD_ORDER_IMAGE_CLICK` 已降级为兼容别名，不再作为独立验证码类型维护。
 - Demo 宿主页会区分请求类型和实际类型：`RANDOM` 请求由服务端随机落到具体验证码后，Runtime 通过 `CAPTCHA_READY` 消息回传实际 `captchaType`，宿主侧展示“请求/实际”，避免把随机选择器误认为一个独立验证码。
 - 点选类验证码的默认生成器必须优先保证可读性和可点击性：目标采用稳定三列布局并保留安全间距，避免 Tianai 类体验中常见的字体堆叠、背景噪声压字、目标过近导致误点等问题；同时不能在目标背后绘制稳定圆形/靶心等可被脚本直接识别的泄露特征。
-- `JIGSAW` 属于拼图片还原而非点击精确圆心：内置生成器将完整图片切成 4x4 瓦片并随机交换两块，不再绘制红框或答案高亮；Runtime 会以瓦片层展示乱序图片，支持拖动一块到另一块或点击两块完成可见交换并自动验证，服务端按目标瓦片区域判定命中。
+- `JIGSAW` 属于拼图片还原而非点击精确圆心：内置生成器将完整图片切成 2x2 瓦片并随机交换两块，不再绘制红框或答案高亮；Runtime 会以瓦片层展示乱序图片，支持拖动一块到另一块后松手自动验证，也支持点击两块完成可见交换后手动验证，服务端按目标瓦片区域判定命中。
 - Runtime 支持 `session_id` 启动、按 `client_id/scene/captcha_type` 创建 session、真实刷新 challenge，并能从服务端 session 恢复 `route`、`request_nonce`、`resource_tag` 和 `return_url`。verify 时回传或使用 session 上下文，并在成功后通过 `postMessage` 返回 ticket、session、route、request nonce 和 return URL；失败时会清理本次交互轨迹/点击标记，拖动类控件会回到初始位置且验证按钮重新禁用，并通过 `postMessage` 同步失败状态，避免 Demo 或宿主页面仍显示“待验证”。当服务端返回 `challenge_harder` 且允许刷新时，Runtime 会刷新同一 session 并展示升级后的验证码，升级序列默认 `SLIDER -> ROTATE -> CONCAT -> WORD_IMAGE_CLICK`，也可由服务端配置覆盖。独立打开的 redirect 模式会在验证成功后跳转到通过 allowlist 校验的绝对 `http/https` `return_url`，并追加 ticket 与绑定上下文查询参数。由策略评估创建的 session 会保存 route、请求 IP/UA 摘要，并把它们绑定到签发 ticket。
 - Challenge session 已按一次性状态机处理：成功验证后的 session 不能再次换票；同一 session 连续失败达到上限后会被置为不可继续刷新或验证。
 - HTTP API 支持通过 `CAPTCHA_ALLOWED_ORIGINS` 配置浏览器 CORS 来源白名单；未配置时默认 `*` 便于本地开发。
@@ -193,18 +193,18 @@ operator configuration
 | `RANDOM` | 随机 | `AUTO` / `RANDOM` | 已实现 | `AUTO` 按策略选择类型；`RANDOM` 请求会随机选择一个具体验证码。 |
 | `POW` | 工作量证明 | `PROOF_OF_WORK` | 已实现 | 前端执行轻量 hash puzzle，服务端校验 nonce/difficulty。 |
 | `GESTURE` | 曲线绘制 | `GESTURE` | 已实现 | 用户按指定曲线绘制，校验轨迹贴合度、方向和耗时。 |
-| `CURVE3` | 滑动曲线 V3 | `CURVE_V3` | 已实现，待人工验收 | 已按 Tianai 观察基线重做为背景图 + 双 canvas + 固定/隐藏端点 + slider 按钮和轨道 mask；滑块驱动曲线形变匹配，不做整条 `translateX`，也不使用图片 piece。 |
+| `CURVE3` | 滑动曲线 V3 | `CURVE_V3` | 已实现，待人工验收 | 已按 Tianai 观察基线重做为后端 PNG 目标虚影 + 双 canvas + 固定/隐藏端点 + slider 按钮和轨道 mask；滑块驱动曲线形变匹配，不做整条 `translateX`，也不使用图片 piece。 |
 | `CURVE2` | 滑动曲线 V2 | `CURVE_V2` | 已实现，待人工验收 | 与 `CURVE_V3` 共享滑动曲线体验，端点策略和曲线复杂度不同；browser smoke 覆盖正确匹配通过和错误偏移失败。 |
 | `CURVE` | 滑动曲线 | `CURVE` | 已实现，待人工验收 | 基础滑动曲线，端点初始可见且拖动中不随 slider 平移；仍需人工对照参考站点确认视觉和手感。 |
 | `SLIDER2` | 滑块验证 V2 | `SLIDER_V2` | 已实现 | 滑块增强版，可复用滑块引擎但使用独立资源和评分策略。 |
 | `SLIDER` | 滑块验证 | `SLIDER` | 已实现 | 已具备生成、展示、校验、ticket 闭环。 |
-| `ROTATE` | 旋转验证 | `ROTATE` | 已实现 | 已具备生成、展示、校验、ticket 闭环。 |
+| `ROTATE` | 旋转验证 | `ROTATE` | 已实现 | 后端返回已按随机初始角度旋转后的圆形图片，前端只叠加用户旋转增量，不下发 answer-equivalent 初始角度。 |
 | `CONCAT` | 滑动还原 | `CONCAT` | 已实现 | 已具备生成、展示、校验、ticket 闭环。 |
 | `ROTATE_DEGREE` | 角度验证 | `ROTATE_DEGREE` | 已实现 | 与 `ROTATE` 不混同；按角度刻度或指针完成验证。 |
 | `WORD_IMAGE_CLICK` | 文字点选 | `WORD_IMAGE_CLICK` | 已实现 | 已具备生成、展示、校验、ticket 闭环。 |
 | `IMAGE_CLICK` | 图标点选 | `IMAGE_CLICK` | 已实现 | 用户按提示点击图标目标，校验顺序和坐标。 |
-| `JIGSAW` | 乱序拼图 | `JIGSAW` | 已实现 | 用户拖动或点击交换错位碎片，Runtime 会展示可见瓦片交换后自动验证。 |
-| Google-like grid | 图片格子点选 | `GRID_IMAGE_CLICK` | 已实现 | 类 reCAPTCHA 的 3x3 图片格子二次挑战，用户选择所有包含目标物的格子。 |
+| `JIGSAW` | 乱序拼图 | `JIGSAW` | 已实现 | 2x2 乱序拼图；用户拖动交换错位碎片后松手自动验证，点击交换模式需要手动验证。 |
+| Google-like grid | 图片格子点选 | `GRID_IMAGE_CLICK` | 已实现 | 类 reCAPTCHA 的 3x3 图片格子二次挑战，用户选择所有包含目标物的格子后手动验证。 |
 
 `WORD_ORDER_IMAGE_CLICK` 曾作为独立类型存在，但与文字点选重复，已降级为兼容别名并映射到 `WORD_IMAGE_CLICK`；新接入不再使用该类型。
 
@@ -1218,20 +1218,23 @@ create session
 |---|---|---|---|---|
 | `PROOF_OF_WORK` | 等待或点击后完成计算 | nonce、difficulty、hash 前缀 | 无图形资源，可配置难度 | hash 正确性、耗时、重放保护 |
 | `GESTURE` | 按提示绘制曲线 | 曲线路径、方向、容差带 | 背景图、曲线模板 | 轨迹贴合度、方向、速度、断点 |
-| `CURVE` | 滑动匹配曲线 | 目标 x、容差 | 背景图、canvas 曲线 profile、drive 向量 | `single-rope` 基础单绳；固定端点、曲线形变匹配、错误偏移失败、轨迹末端一致 |
-| `CURVE_V2` | 滑动匹配增强曲线 | 目标 x、容差 | 主题背景、canvas 曲线 profile、drive 向量 | `dual-noise` 颗粒双轨；隐藏端点、曲线形变匹配、错误偏移失败、轨迹末端一致 |
-| `CURVE_V3` | 滑动匹配圆环曲线 | 目标 x、容差 | 闭合圆环曲线模板、canvas 曲线 profile、周期 drive 向量 | `ring-deform` 圆环形变；隐藏端点、曲线形变匹配、错误偏移失败、轨迹末端一致 |
+| `CURVE` | 滑动匹配曲线 | 目标 x、容差 | 后端 PNG 目标虚影、canvas 曲线 profile、drive 向量 | `single-rope` 基础单绳；固定端点、曲线形变匹配、错误偏移失败、轨迹末端一致 |
+| `CURVE_V2` | 滑动匹配增强曲线 | 目标 x、容差 | 后端主题背景目标虚影、canvas 曲线 profile、drive 向量 | `dual-noise` 颗粒双轨；隐藏端点、曲线形变匹配、错误偏移失败、轨迹末端一致 |
+| `CURVE_V3` | 滑动匹配圆环曲线 | 目标 x、容差 | 后端闭合圆环目标虚影、canvas 曲线 profile、周期 drive 向量 | `ring-deform` 圆环形变；隐藏端点、曲线形变匹配、错误偏移失败、轨迹末端一致 |
 
 曲线 profile 的移动曲线使用浮点坐标，初始错位按像素级动态错位生成后再反推 drive，避免初始态过度重叠；服务端目标值必须与视觉最佳重合点一致，当前单元测试约束平均初始错位、最大错位、视觉目标反推一致性和三种曲线 `visual_style` 差异。当前 `CURVE_V2` 保留双轨噪声效果；Tianai V2 的“闭合圆环形变、无显式起点”效果迁入 `CURVE_V3`。
 | `SLIDER_V2` | 拖动增强滑块 | 目标 x/y、容差 | 背景图、增强 mask、滑块图 | 终点、轨迹、素材扰动 |
-| `JIGSAW` | 交换或拖拽拼图片 | 碎片排列、瓦片区域 | 背景图、切片模板 | 排列正确性、瓦片区域命中、拖拽轨迹 |
-| `GRID_IMAGE_CLICK` | 选择包含目标物的图片格 | 目标格子集合、瓦片区域 | 图片格素材、目标类别 | 多选集合、错选/漏选、点击节奏 |
+| `JIGSAW` | 交换或拖拽拼图片 | 碎片排列、瓦片区域 | 背景图库、2x2 切片模板 | 排列正确性、瓦片区域命中、拖拽轨迹 |
+| `GRID_IMAGE_CLICK` | 选择包含目标物的图片格 | 目标格子集合、瓦片区域 | 分类图片格图库、目标类别 | 多选集合、错选/漏选、点击节奏 |
 
 资源要求：
 
 ```text
 background image
-  所有类型都需要。
+  所有图片型类型都需要；单张图片只作为 fallback，不作为长期素材组织方式。
+
+background library
+  SLIDER / ROTATE / CONCAT / ROTATE_DEGREE / GESTURE / CURVE / CURVE_V2 / CURVE_V3 / JIGSAW 等需要按场景、难度、背景形态分组的图库。
 
 cut / mask template
   SLIDER 使用。
@@ -1247,6 +1250,12 @@ font resource
 
 icon resource
   IMAGE_CLICK 使用。
+
+icon library
+  IMAGE_CLICK 使用；项目会内置用户提供的 SVG 集，后续可按 tag/scene 扩展。
+
+grid category library
+  GRID_IMAGE_CLICK 使用；按 category 管理目标/非目标图片格素材。
 
 degree template
   ROTATE_DEGREE 使用。
@@ -1276,6 +1285,9 @@ database metadata
 - 支持资源尺寸校验和预处理。
 - 支持资源安全扫描和格式白名单。
 - 后端只返回渲染所需素材，不返回标准答案。
+- 图片格子必须使用分类图库：metadata 记录 `category`、`labels`、素材清单和目标/非目标标注，服务端抽样生成本次格子集合，只保存目标格集合在 session 内。
+- 图标点选使用图标库：内置 SVG 由项目维护或用户提供，Runtime 只看到渲染后的题面与提示序列，不通过 DOM 暴露标准坐标。
+- 其它图片型验证码按 `background_library` 建立背景图库，可用 `background_form`、`difficulty`、`variant`、`scene` 和 `tag` 区分滑块、旋转、曲线、拼图等不同背景形态。
 
 当前实现：
 
@@ -1284,7 +1296,7 @@ database metadata
 - 创建或刷新 challenge 时会从 active 资源中选择与场景、验证码类型和可选 tag 匹配的资源；精确 `captcha_type` 优先于 `AUTO` 兜底，精确 `scene` 优先于全局资源，请求 tag 优先于 default/空 tag，同一 `resource_type` 只选择一个资源。
 - `AUTO` 类型在生成 challenge 前会被解析为具体类型，资源选择阶段只处理已确定的具体验证码类型。
 - 选中的资源以 `challenge.parameters.resources` 返回给 Runtime，字段包含 `id`、`scene`、`captcha_type`、`resource_type`、`storage_type`、`uri`、`tag`、`checksum`、脱敏后的 `metadata` 和 `status`；Runtime metadata 会递归过滤答案、目标点、容差、校验/评分规则、密钥和 token 类字段，控制面存储与配置快照仍保留原始 metadata 供管理使用。
-- 当前使用内置 PNG 生成器作为默认兜底，避免 fallback 图像把精确答案作为可解析 SVG 属性暴露；`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图已经可以由服务端合成为 `SLIDER`、`ROTATE`、`CONCAT` 和 `WORD_IMAGE_CLICK` 的 PNG challenge，完整类型矩阵均已支持资源登记、选择和内置 PNG 兜底生成，资源合成会继续细化。URL 与对象存储 endpoint 拉取会限制状态码、MIME、大小、checksum 和不安全主机，渲染前还会核对实际图片格式与 metadata 声明的 `mime_type`、`width`、`height`。对象存储支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，或通过 `endpoint` / `endpoint_url` / `base_url` / `public_endpoint` 拼接 `s3`、`oss`、`cos`、`obs`、`minio` URI，默认 path-style，`addressing_style=virtual_hosted` 时使用 bucket 子域名。模板和字体资源已进入服务端合成链路：`slider_template` 作为滑块 mask，`rotate_template` 作为覆盖层，`concat_template` 支持 JSON/metadata 配置 `split_y`、`split_ratio`、`gap_color` 和 `border_color`，并会输出透明下半区的移动上半片还原 piece；`font` 支持 `glyph_scale`、`palette` 和自定义点阵 `glyphs` metadata；`icon`、`degree_template`、`curve_template`、`gesture_template`、`jigsaw_template`、`pow_challenge` 已作为资源类型开放登记。
+- 当前使用内置 PNG 生成器作为默认兜底，避免 fallback 图像把精确答案作为可解析 SVG 属性暴露；`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图已经可以由服务端合成为 `SLIDER`、`ROTATE`、`CONCAT` 和 `WORD_IMAGE_CLICK` 的 PNG challenge，完整类型矩阵均已支持资源登记、选择和内置 PNG 兜底生成，资源合成会继续细化。URL 与对象存储 endpoint 拉取会限制状态码、MIME、大小、checksum 和不安全主机，渲染前还会核对实际图片格式与 metadata 声明的 `mime_type`、`width`、`height`。对象存储支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，或通过 `endpoint` / `endpoint_url` / `base_url` / `public_endpoint` 拼接 `s3`、`oss`、`cos`、`obs`、`minio` URI，默认 path-style，`addressing_style=virtual_hosted` 时使用 bucket 子域名。模板和字体资源已进入服务端合成链路：`slider_template` 作为滑块 mask，`rotate_template` 作为覆盖层，`concat_template` 支持 JSON/metadata 配置 `split_y`、`split_ratio`、`gap_color` 和 `border_color`，并会输出透明下半区的移动上半片还原 piece；`font` 支持 `glyph_scale`、`palette` 和自定义点阵 `glyphs` metadata；`icon`、`background_library`、`grid_category_library`、`icon_library`、`degree_template`、`curve_template`、`gesture_template`、`jigsaw_template`、`pow_challenge` 已作为资源类型开放登记。
 
 ## 13. 滑动轨迹人机校验
 
@@ -1791,11 +1803,14 @@ updated_at
 
 ```text
 background_image
+background_library
+grid_category_library
 slider_template
 rotate_template
 concat_template
 font
 icon
+icon_library
 degree_template
 curve_template
 gesture_template

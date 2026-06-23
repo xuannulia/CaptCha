@@ -224,11 +224,14 @@ const captchaTypes = [
 ];
 const resourceTypes = [
   "background_image",
+  "background_library",
+  "grid_category_library",
   "slider_template",
   "rotate_template",
   "concat_template",
   "font",
   "icon",
+  "icon_library",
   "degree_template",
   "curve_template",
   "gesture_template",

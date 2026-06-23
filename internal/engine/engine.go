@@ -51,10 +51,10 @@ const (
 	slider2PieceSize   = 44
 	concatMaxMovement  = 160
 	concatPieceWidth   = 320 + concatMaxMovement
-	jigsawTileCols     = 4
-	jigsawTileRows     = 4
-	jigsawTileWidth    = 80
-	jigsawTileHeight   = 40
+	jigsawTileCols     = 2
+	jigsawTileRows     = 2
+	jigsawTileWidth    = 160
+	jigsawTileHeight   = 80
 	gridImageCols      = 3
 	gridImageRows      = 3
 	gridImageTileSize  = 100
@@ -1285,14 +1285,16 @@ func drawCurveImageTexture(img *image.RGBA, variant int) {
 func drawCurveTarget(img *image.RGBA, variant int, points []image.Point) {
 	switch variant {
 	case 2:
-		drawPolyline(img, offsetImagePoints(points, 0, -3), 14, color.RGBA{R: 255, G: 92, B: 173, A: 255})
+		drawPolyline(img, offsetImagePoints(points, 0, -4), 18, color.RGBA{R: 255, G: 255, B: 255, A: 185})
+		drawPolyline(img, offsetImagePoints(points, 0, -3), 13, color.RGBA{R: 255, G: 92, B: 173, A: 255})
 		drawPolyline(img, points, 7, color.RGBA{R: 192, G: 132, B: 252, A: 255})
 	case 3:
-		drawPolyline(img, offsetImagePoints(points, 0, -2), 13, color.RGBA{R: 255, G: 255, B: 255, A: 255})
-		drawPolyline(img, points, 7, color.RGBA{R: 248, G: 113, B: 113, A: 255})
+		drawPolyline(img, offsetImagePoints(points, 0, -2), 17, color.RGBA{R: 255, G: 255, B: 255, A: 220})
+		drawPolyline(img, points, 8, color.RGBA{R: 248, G: 113, B: 113, A: 255})
 	default:
-		drawPolyline(img, offsetImagePoints(points, 0, 5), 13, color.RGBA{R: 75, G: 85, B: 132, A: 255})
-		drawPolyline(img, points, 8, color.RGBA{R: 125, G: 211, B: 252, A: 255})
+		drawPolyline(img, offsetImagePoints(points, 0, 5), 16, color.RGBA{R: 75, G: 85, B: 132, A: 255})
+		drawPolyline(img, points, 10, color.RGBA{R: 125, G: 211, B: 252, A: 255})
+		drawPolyline(img, points, 4, color.RGBA{R: 224, G: 242, B: 254, A: 245})
 	}
 }
 
@@ -1602,7 +1604,7 @@ func drawJigsawBase() *image.RGBA {
 
 func jigsawSwapPoints() []types.Point {
 	pairs := [][2]int{
-		{0, 15}, {3, 12}, {1, 14}, {4, 11}, {7, 8}, {2, 13},
+		{0, 3}, {1, 2}, {0, 2}, {1, 3},
 	}
 	pair := pairs[mustRandomInt(0, len(pairs)-1)]
 	return []types.Point{
