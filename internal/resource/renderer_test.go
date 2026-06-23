@@ -24,10 +24,11 @@ func TestApplyVisualsUsesLocalFileBackground(t *testing.T) {
 	background := color.RGBA{R: 12, G: 180, B: 90, A: 255}
 	path, checksum := writeTestPNG(t, 40, 30, background)
 	payload := types.RenderPayload{
-		Type:  types.CaptchaSlider,
-		View:  types.View{Width: 120, Height: 80},
-		Image: "fallback-image",
-		Piece: "fallback-piece",
+		Type:       types.CaptchaSlider,
+		View:       types.View{Width: 120, Height: 80},
+		Image:      "fallback-image",
+		Piece:      "fallback-piece",
+		Parameters: map[string]any{"piece_size": 48},
 	}
 
 	composed := ApplyVisuals(payload, types.Answer{X: 60, Y: 20}, []types.CaptchaResource{
@@ -47,8 +48,8 @@ func TestApplyVisualsUsesLocalFileBackground(t *testing.T) {
 	image := decodePNGDataURL(t, composed.Image)
 	assertPixel(t, image, 5, 5, background)
 	piece := decodePNGDataURL(t, composed.Piece)
-	if piece.Bounds().Dx() != 42 || piece.Bounds().Dy() != 42 {
-		t.Fatalf("expected slider piece size 42x42, got %s", piece.Bounds())
+	if piece.Bounds().Dx() != 48 || piece.Bounds().Dy() != 48 {
+		t.Fatalf("expected slider piece size 48x48, got %s", piece.Bounds())
 	}
 }
 
@@ -72,10 +73,11 @@ func TestApplyVisualsUsesRemoteURLBackground(t *testing.T) {
 	})})
 
 	payload := types.RenderPayload{
-		Type:  types.CaptchaSlider,
-		View:  types.View{Width: 120, Height: 80},
-		Image: "fallback-image",
-		Piece: "fallback-piece",
+		Type:       types.CaptchaSlider,
+		View:       types.View{Width: 120, Height: 80},
+		Image:      "fallback-image",
+		Piece:      "fallback-piece",
+		Parameters: map[string]any{"piece_size": 48},
 	}
 	composed := ApplyVisuals(payload, types.Answer{X: 60, Y: 20}, []types.CaptchaResource{
 		{
@@ -104,10 +106,11 @@ func TestApplyVisualsUsesClasspathBackground(t *testing.T) {
 	t.Setenv("CAPTCHA_RESOURCE_CLASSPATH_DIRS", root)
 
 	payload := types.RenderPayload{
-		Type:  types.CaptchaSlider,
-		View:  types.View{Width: 120, Height: 80},
-		Image: "fallback-image",
-		Piece: "fallback-piece",
+		Type:       types.CaptchaSlider,
+		View:       types.View{Width: 120, Height: 80},
+		Image:      "fallback-image",
+		Piece:      "fallback-piece",
+		Parameters: map[string]any{"piece_size": 48},
 	}
 	composed := ApplyVisuals(payload, types.Answer{X: 60, Y: 20}, []types.CaptchaResource{
 		{
@@ -299,10 +302,11 @@ func TestApplyVisualsUsesSliderTemplateMask(t *testing.T) {
 	backgroundPath, _ := writeTestPNG(t, 60, 60, color.RGBA{R: 18, G: 160, B: 75, A: 255})
 	templatePath := writeSliderMaskPNG(t)
 	payload := types.RenderPayload{
-		Type:  types.CaptchaSlider,
-		View:  types.View{Width: 120, Height: 80},
-		Image: "fallback-image",
-		Piece: "fallback-piece",
+		Type:       types.CaptchaSlider,
+		View:       types.View{Width: 120, Height: 80},
+		Image:      "fallback-image",
+		Piece:      "fallback-piece",
+		Parameters: map[string]any{"piece_size": 48},
 	}
 
 	composed := ApplyVisuals(payload, types.Answer{X: 40, Y: 20}, []types.CaptchaResource{
@@ -323,10 +327,13 @@ func TestApplyVisualsUsesSliderTemplateMask(t *testing.T) {
 	})
 
 	piece := decodePNGDataURL(t, composed.Piece)
+	if piece.Bounds().Dx() != 48 || piece.Bounds().Dy() != 48 {
+		t.Fatalf("expected slider resource piece to honor piece_size, got %s", piece.Bounds())
+	}
 	if alphaAt(t, piece, 0, 0) != 0 {
 		t.Fatalf("expected transparent corner from slider template mask")
 	}
-	if alphaAt(t, piece, 21, 21) == 0 {
+	if alphaAt(t, piece, 24, 24) == 0 {
 		t.Fatalf("expected opaque center from slider template mask")
 	}
 }

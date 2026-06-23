@@ -55,9 +55,13 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 	switch payload.Type {
 	case types.CaptchaSlider:
 		sliderTemplate, _ := loadResourceImageByType(resources, "slider_template")
-		composed, piece := composeSlider(base, answer, sliderTemplate)
+		size := sliderPieceSize(payload.Parameters, sliderTemplateSize)
+		composed, piece := composeSlider(base, answer, sliderTemplate, size)
 		payload.Image = pngDataURL(composed)
 		payload.Piece = pngDataURL(piece)
+		parameters := cloneParameters(payload.Parameters)
+		parameters["piece_size"] = size
+		payload.Parameters = parameters
 	case types.CaptchaRotate:
 		start := ((360-answer.Angle)%360 + 360) % 360
 		rotated := rotateImage(base, start)
@@ -549,27 +553,105 @@ func resizeNearest(src image.Image, width, height int) *image.RGBA {
 	return dst
 }
 
-func composeSlider(base *image.RGBA, answer types.Answer, template image.Image) (*image.RGBA, *image.RGBA) {
+func resizeAlphaMask(src image.Image, width, height int) *image.RGBA {
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	bounds := src.Bounds()
+	srcWidth := bounds.Dx()
+	srcHeight := bounds.Dy()
+	if width <= 0 || height <= 0 || srcWidth <= 0 || srcHeight <= 0 {
+		return dst
+	}
+	scaleX := float64(srcWidth) / float64(width)
+	scaleY := float64(srcHeight) / float64(height)
+	for y := 0; y < height; y++ {
+		sourceY := (float64(y)+0.5)*scaleY - 0.5
+		y0 := clamp(bounds.Min.Y+int(math.Floor(sourceY)), bounds.Min.Y, bounds.Max.Y-1)
+		y1 := clamp(y0+1, bounds.Min.Y, bounds.Max.Y-1)
+		wy := sourceY - math.Floor(sourceY)
+		for x := 0; x < width; x++ {
+			sourceX := (float64(x)+0.5)*scaleX - 0.5
+			x0 := clamp(bounds.Min.X+int(math.Floor(sourceX)), bounds.Min.X, bounds.Max.X-1)
+			x1 := clamp(x0+1, bounds.Min.X, bounds.Max.X-1)
+			wx := sourceX - math.Floor(sourceX)
+			alpha := bilinearAlpha(src, x0, y0, x1, y1, wx, wy)
+			dst.SetRGBA(x, y, color.RGBA{R: alpha, G: alpha, B: alpha, A: alpha})
+		}
+	}
+	return softenAlphaMask(dst)
+}
+
+func bilinearAlpha(src image.Image, x0, y0, x1, y1 int, wx, wy float64) uint8 {
+	a00 := float64(colorAlpha(src.At(x0, y0)))
+	a10 := float64(colorAlpha(src.At(x1, y0)))
+	a01 := float64(colorAlpha(src.At(x0, y1)))
+	a11 := float64(colorAlpha(src.At(x1, y1)))
+	top := a00*(1-wx) + a10*wx
+	bottom := a01*(1-wx) + a11*wx
+	return uint8(math.Round(top*(1-wy) + bottom*wy))
+}
+
+func softenAlphaMask(src *image.RGBA) *image.RGBA {
+	bounds := src.Bounds()
+	dst := image.NewRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			var weighted, weight int
+			for dy := -1; dy <= 1; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					sx, sy := x+dx, y+dy
+					if sx < bounds.Min.X || sx >= bounds.Max.X || sy < bounds.Min.Y || sy >= bounds.Max.Y {
+						continue
+					}
+					w := 1
+					if dx == 0 && dy == 0 {
+						w = 4
+					} else if dx == 0 || dy == 0 {
+						w = 2
+					}
+					weighted += int(colorAlpha(src.At(sx, sy))) * w
+					weight += w
+				}
+			}
+			if weight == 0 {
+				continue
+			}
+			alpha := uint8(weighted / weight)
+			dst.SetRGBA(x, y, color.RGBA{R: alpha, G: alpha, B: alpha, A: alpha})
+		}
+	}
+	return dst
+}
+
+func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, size int) (*image.RGBA, *image.RGBA) {
 	img := cloneRGBA(base)
-	size := sliderTemplateSize
+	size = clamp(size, 16, min(img.Bounds().Dx(), img.Bounds().Dy()))
 	x := clamp(answer.X, 0, img.Bounds().Dx()-size)
 	y := clamp(answer.Y, 0, img.Bounds().Dy()-size)
 	if template != nil {
-		mask := resizeNearest(template, size, size)
+		mask := resizeAlphaMask(template, size, size)
 		piece := image.NewRGBA(image.Rect(0, 0, size, size))
 		for py := 0; py < size; py++ {
 			for px := 0; px < size; px++ {
 				alpha := colorAlpha(mask.At(px, py))
-				if alpha <= 12 {
+				if alpha <= 4 {
 					continue
 				}
-				baseColor := color.NRGBAModel.Convert(base.At(x+px, y+py)).(color.NRGBA)
-				baseColor.A = alpha
-				piece.Set(px, py, baseColor)
-				fillRect(img, x+px, y+py, 1, 1, color.RGBA{R: 15, G: 23, B: 42, A: uint8(int(alpha) * 110 / 255)})
+				source := rgbaAt(base, x+px, y+py)
+				alphaRatio := float64(alpha) / 255
+				edgeBand := sliderTemplateEdgeBandStrength(mask, px, py, 4)
+				innerBand := sliderTemplateEdgeBandStrength(mask, px, py, 2)
+
+				gapPixel := mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, 0.22+edgeBand*0.08)
+				gapPixel = mixRGBA(gapPixel, color.RGBA{R: 121, G: 126, B: 134, A: 255}, innerBand*0.30)
+				img.Set(x+px, y+py, gapPixel)
+
+				piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.07)
+				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 245, G: 247, B: 250, A: 255}, math.Min(0.98, math.Pow(1-alphaRatio, 0.45)*1.15+edgeBand*0.92))
+				borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 118, G: 123, B: 132, A: 255}, innerBand*0.72)
+				piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.62, innerBand*0.48))
+				piece.Set(px, py, color.NRGBA{R: piecePixel.R, G: piecePixel.G, B: piecePixel.B, A: alpha})
 			}
 		}
-		strokeRect(img, x, y, size, size, 2, color.RGBA{R: 248, G: 250, B: 252, A: 220})
 		return img, piece
 	}
 	piece := image.NewRGBA(image.Rect(0, 0, size, size))
@@ -584,6 +666,28 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image) 
 func colorAlpha(c color.Color) uint8 {
 	_, _, _, alpha := c.RGBA()
 	return uint8(alpha >> 8)
+}
+
+func sliderTemplateEdgeBandStrength(mask image.Image, x, y, radius int) float64 {
+	if radius <= 0 || colorAlpha(mask.At(x, y)) <= 4 {
+		return 0
+	}
+	best := float64(radius + 1)
+	for dy := -radius; dy <= radius; dy++ {
+		for dx := -radius; dx <= radius; dx++ {
+			distance := math.Hypot(float64(dx), float64(dy))
+			if distance > float64(radius) || distance >= best {
+				continue
+			}
+			if colorAlpha(mask.At(x+dx, y+dy)) <= 42 {
+				best = distance
+			}
+		}
+	}
+	if best > float64(radius) {
+		return 0
+	}
+	return math.Max(0, math.Min(1, (float64(radius)+0.5-best)/float64(radius)))
 }
 
 func rotateImage(src *image.RGBA, angle int) *image.RGBA {
@@ -736,6 +840,35 @@ func cloneParameters(parameters map[string]any) map[string]any {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func sliderPieceSize(parameters map[string]any, fallback int) int {
+	if len(parameters) == 0 {
+		return fallback
+	}
+	value, ok := parameters["piece_size"]
+	if !ok {
+		return fallback
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(math.Round(typed))
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err == nil {
+			return int(parsed)
+		}
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err == nil {
+			return parsed
+		}
+	}
+	return fallback
 }
 
 func concatControlMax(offset, viewWidth, splitX, pieceWidth int) int {
