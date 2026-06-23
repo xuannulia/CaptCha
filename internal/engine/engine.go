@@ -493,7 +493,8 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 	case types.CaptchaSlider:
 		x := mustRandomInt(82, 238)
 		y := mustRandomInt(38, 88)
-		image, piece := drawSliderChallenge(x, y, sliderPieceSize)
+		mask := randomSliderMask()
+		image, piece := drawSliderChallenge(x, y, sliderPieceSize, mask)
 		return types.Answer{X: x, Y: y}, types.RenderPayload{
 			Type:   types.CaptchaSlider,
 			Prompt: "拖动滑块完成拼图",
@@ -510,7 +511,8 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 	case types.CaptchaSlider2:
 		x := mustRandomInt(82, 238)
 		y := mustRandomInt(38, 88)
-		image, piece := drawSlider2Challenge(x, y, slider2PieceSize)
+		mask := randomSliderMask()
+		image, piece := drawSlider2Challenge(x, y, slider2PieceSize, mask)
 		return types.Answer{X: x, Y: y}, types.RenderPayload{
 			Type:   types.CaptchaSlider2,
 			Prompt: "拖动增强滑块完成拼图",
@@ -569,23 +571,22 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 			},
 		}, nil
 	case types.CaptchaWordImageClick:
-		words := []string{"A", "B", "C"}
-		points := spacedClickPoints()
+		words, points, decoyWords, decoyPoints := wordClickChallenge()
 		return types.Answer{Points: points}, types.RenderPayload{
 			Type:   types.CaptchaWordImageClick,
-			Prompt: "依次点击：A、B、C",
+			Prompt: "依次点击：" + strings.Join(words, "、"),
 			View:   types.View{Width: 320, Height: 160},
-			Image:  pngDataURL(drawWordImage(words, points)),
+			Image:  pngDataURL(drawWordImage(words, points, decoyWords, decoyPoints)),
 			Words:  words,
 		}, nil
 	case types.CaptchaImageClick:
-		words := []string{"圆形", "方形", "三角"}
-		points := spacedClickPoints()
+		icons, points := iconClickChallenge()
+		words := iconLabels(icons)
 		return types.Answer{Points: points}, types.RenderPayload{
 			Type:   types.CaptchaImageClick,
-			Prompt: "依次点击：圆形、方形、三角",
+			Prompt: "依次点击：" + strings.Join(words, "、"),
 			View:   types.View{Width: 320, Height: 160},
-			Image:  pngDataURL(drawIconClickImage(points)),
+			Image:  pngDataURL(drawIconClickImage(icons, points)),
 			Words:  words,
 		}, nil
 	case types.CaptchaJigsaw:
@@ -731,46 +732,61 @@ func pngDataURL(img image.Image) string {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
-func drawSliderChallenge(targetX, targetY, size int) (image.Image, image.Image) {
+type sliderMaskKind string
+
+const (
+	sliderMaskPuzzle sliderMaskKind = "puzzle"
+	sliderMaskPlane  sliderMaskKind = "plane"
+)
+
+func randomSliderMask() sliderMaskKind {
+	if mustRandomInt(0, 1) == 0 {
+		return sliderMaskPlane
+	}
+	return sliderMaskPuzzle
+}
+
+func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image.Image, image.Image) {
 	base := drawSliderScene()
 	bg := copyRGBA(base)
 	piece := newCanvas(size, size, color.RGBA{A: 0})
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			if !insidePuzzlePiece(x, y, size) {
+			if !insideSliderMask(x, y, size, mask) {
 				continue
 			}
 			gx, gy := targetX+x, targetY+y
 			source := rgbaAt(base, gx, gy)
-			if puzzleBorder(x, y, size) {
-				bg.Set(gx, gy, color.RGBA{R: 15, G: 23, B: 42, A: 235})
-				piece.Set(x, y, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+			if sliderMaskEdge(x, y, size, mask, 1) {
+				bg.Set(gx, gy, color.RGBA{R: 118, G: 128, B: 141, A: 255})
+				piece.Set(x, y, mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.18))
 				continue
 			}
-			bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.62))
-			piece.Set(x, y, mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.08))
+			bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 245, G: 248, B: 252, A: 255}, 0.58))
+			piece.Set(x, y, mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.06))
 		}
 	}
 	return bg, piece
 }
 
-func drawSlider2Challenge(targetX, targetY, size int) (image.Image, image.Image) {
-	bg, piece := drawSliderChallenge(targetX, targetY, size)
+func drawSlider2Challenge(targetX, targetY, size int, mask sliderMaskKind) (image.Image, image.Image) {
+	bg, piece := drawSliderChallenge(targetX, targetY, size, mask)
 	bgRGBA := copyRGBA(bg)
 	for _, decoy := range []image.Point{{X: 46, Y: 38}, {X: 244, Y: 92}} {
 		if abs(decoy.X-targetX) < 42 && abs(decoy.Y-targetY) < 42 {
 			continue
 		}
-		drawPuzzleOutline(bgRGBA, decoy.X, decoy.Y, size, color.RGBA{R: 59, G: 130, B: 246, A: 170})
+		drawSliderMaskOutline(bgRGBA, decoy.X, decoy.Y, size, mask, color.RGBA{R: 96, G: 165, B: 250, A: 105})
 	}
 	return bgRGBA, piece
 }
 
-func drawPuzzleOutline(img *image.RGBA, ox, oy, size int, c color.RGBA) {
+func drawSliderMaskOutline(img *image.RGBA, ox, oy, size int, mask sliderMaskKind, c color.RGBA) {
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			if puzzleBorder(x, y, size) {
-				img.Set(ox+x, oy+y, c)
+			if sliderMaskEdge(x, y, size, mask, 1) {
+				gx, gy := ox+x, oy+y
+				img.Set(gx, gy, mixRGBA(rgbaAt(img, gx, gy), c, 0.34))
 			}
 		}
 	}
@@ -1356,29 +1372,52 @@ func drawSliderScene() *image.RGBA {
 	return img
 }
 
-func insidePuzzlePiece(x, y, size int) bool {
-	margin := 5
-	radius := 8
-	center := size / 2
-	body := x >= margin && x < size-margin && y >= margin && y < size-margin
-	topTab := square(x-center)+square(y-margin) <= square(radius) && y < margin+radius
-	rightTab := square(x-(size-margin))+square(y-center) <= square(radius) && x >= size-margin-radius
-	leftNotch := square(x-margin)+square(y-center) <= square(radius) && x < margin+radius+1
-	return (body || topTab || rightTab) && !leftNotch
+func insideSliderMask(x, y, size int, mask sliderMaskKind) bool {
+	switch mask {
+	case sliderMaskPlane:
+		return insidePlaneMask(x, y, size)
+	default:
+		return insidePuzzleMask(x, y, size)
+	}
 }
 
-func puzzleBorder(x, y, size int) bool {
-	if !insidePuzzlePiece(x, y, size) {
+func sliderMaskEdge(x, y, size int, mask sliderMaskKind, radius int) bool {
+	if !insideSliderMask(x, y, size, mask) {
 		return false
 	}
-	for dy := -2; dy <= 2; dy++ {
-		for dx := -2; dx <= 2; dx++ {
-			if !insidePuzzlePiece(x+dx, y+dy, size) {
+	for dy := -radius; dy <= radius; dy++ {
+		for dx := -radius; dx <= radius; dx++ {
+			if !insideSliderMask(x+dx, y+dy, size, mask) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func insidePuzzleMask(x, y, size int) bool {
+	margin := max(4, size/9)
+	radius := max(6, size/5)
+	center := size / 2
+	body := x >= margin && x < size-margin && y >= margin+2 && y < size-margin
+	topTab := square(x-center)+square(y-(margin+2)) <= square(radius) && y < margin+radius+2
+	rightTab := square(x-(size-margin))+square(y-center) <= square(radius-1) && x >= size-margin-radius
+	leftNotch := square(x-margin)+square(y-center) <= square(radius-1) && x < margin+radius+1
+	return (body || topTab || rightTab) && !leftNotch
+}
+
+func insidePlaneMask(x, y, size int) bool {
+	center := size / 2
+	body := []image.Point{
+		{X: size - 4, Y: center},
+		{X: 6, Y: 7},
+		{X: 17, Y: center - 6},
+		{X: 4, Y: center - 3},
+		{X: 4, Y: center + 3},
+		{X: 17, Y: center + 6},
+		{X: 6, Y: size - 7},
+	}
+	return pointInPolygon(x, y, body)
 }
 
 func drawRotateImage(start int) image.Image {
@@ -1519,7 +1558,30 @@ func drawConcatScene() *image.RGBA {
 	return img
 }
 
-func drawWordImage(words []string, points []types.Point) image.Image {
+type clickIcon struct {
+	ID    string
+	Label string
+}
+
+func wordClickChallenge() ([]string, []types.Point, []string, []types.Point) {
+	targetCount := mustRandomInt(3, 4)
+	decoyCount := mustRandomInt(1, 2)
+	words := randomStrings(wordClickWordBank, targetCount)
+	excluded := make(map[string]struct{}, len(words))
+	for _, word := range words {
+		excluded[word] = struct{}{}
+	}
+	decoys := randomStringsExcluding(wordClickWordBank, decoyCount, excluded)
+	points := separatedClickPoints(targetCount + decoyCount)
+	return words, points[:targetCount], decoys, points[targetCount:]
+}
+
+func iconClickChallenge() ([]clickIcon, []types.Point) {
+	icons := randomIcons(iconClickLibrary, 3)
+	return icons, separatedClickPoints(len(icons))
+}
+
+func drawWordImage(words []string, points []types.Point, decoyWords []string, decoyPoints []types.Point) image.Image {
 	img := newCanvas(320, 160, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	for i := 0; i < 18; i++ {
 		drawCircle(img, mustRandomInt(10, 310), mustRandomInt(10, 150), mustRandomInt(1, 3), color.RGBA{R: 203, G: 213, B: 225, A: 255})
@@ -1528,36 +1590,101 @@ func drawWordImage(words []string, points []types.Point) image.Image {
 		{R: 31, G: 41, B: 55, A: 255},
 		{R: 37, G: 99, B: 235, A: 255},
 		{R: 190, G: 24, B: 93, A: 255},
+		{R: 126, G: 34, B: 206, A: 255},
 	}
 	for i, word := range words {
 		if i >= len(points) {
 			break
 		}
-		drawBlockGlyph(img, word, points[i].X, points[i].Y, 5, colors[i%len(colors)])
+		drawBlockGlyph(img, word, points[i].X, points[i].Y, 4, colors[i%len(colors)])
+	}
+	for i, word := range decoyWords {
+		if i >= len(decoyPoints) {
+			break
+		}
+		drawBlockGlyph(img, word, decoyPoints[i].X, decoyPoints[i].Y, 4, color.RGBA{R: 100, G: 116, B: 139, A: 210})
 	}
 	return img
 }
 
-func drawIconClickImage(points []types.Point) image.Image {
+func drawIconClickImage(icons []clickIcon, points []types.Point) image.Image {
 	img := newCanvas(320, 160, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	for i := 0; i < 16; i++ {
 		drawCircle(img, mustRandomInt(12, 308), mustRandomInt(12, 148), mustRandomInt(1, 3), color.RGBA{R: 203, G: 213, B: 225, A: 255})
 	}
-	if len(points) >= 1 {
-		drawCircle(img, points[0].X, points[0].Y, 17, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+	palette := []color.RGBA{
+		{R: 37, G: 99, B: 235, A: 255},
+		{R: 20, G: 184, B: 166, A: 255},
+		{R: 225, G: 29, B: 72, A: 255},
 	}
-	if len(points) >= 2 {
-		fillRect(img, points[1].X-17, points[1].Y-17, 34, 34, color.RGBA{R: 20, G: 184, B: 166, A: 255})
-		strokeRect(img, points[1].X-17, points[1].Y-17, 34, 34, 3, color.RGBA{R: 15, G: 118, B: 110, A: 255})
-	}
-	if len(points) >= 3 {
-		fillPolygon(img, []image.Point{
-			{X: points[2].X, Y: points[2].Y - 22},
-			{X: points[2].X + 22, Y: points[2].Y + 19},
-			{X: points[2].X - 22, Y: points[2].Y + 19},
-		}, color.RGBA{R: 225, G: 29, B: 72, A: 255})
+	for i, icon := range icons {
+		if i >= len(points) {
+			break
+		}
+		drawClickIcon(img, icon.ID, points[i].X, points[i].Y, 38, palette[i%len(palette)])
 	}
 	return img
+}
+
+func drawClickIcon(img *image.RGBA, id string, cx, cy, size int, c color.RGBA) {
+	shadow := color.RGBA{R: 15, G: 23, B: 42, A: 45}
+	switch id {
+	case "drinks-fill":
+		fillPolygon(img, []image.Point{{cx - 15, cy - 16}, {cx + 15, cy - 16}, {cx + 10, cy + 17}, {cx - 10, cy + 17}}, shadow)
+		fillPolygon(img, []image.Point{{cx - 16, cy - 18}, {cx + 16, cy - 18}, {cx + 11, cy + 16}, {cx - 11, cy + 16}}, c)
+		fillRect(img, cx-21, cy-24, 42, 6, c)
+	case "shuji":
+		fillRect(img, cx-18, cy-22, 36, 44, shadow)
+		fillRect(img, cx-20, cy-24, 38, 44, c)
+		fillRect(img, cx-14, cy-13, 26, 4, color.RGBA{R: 255, G: 255, B: 255, A: 155})
+		fillRect(img, cx-14, cy-2, 24, 4, color.RGBA{R: 255, G: 255, B: 255, A: 135})
+	case "bingqilin":
+		drawCircle(img, cx, cy-12, 17, shadow)
+		drawCircle(img, cx, cy-14, 17, c)
+		fillPolygon(img, []image.Point{{cx - 16, cy}, {cx + 16, cy}, {cx, cy + 27}}, c)
+	case "pingguo":
+		drawCircle(img, cx-8, cy, 16, shadow)
+		drawCircle(img, cx+7, cy, 16, shadow)
+		drawCircle(img, cx-8, cy-2, 16, c)
+		drawCircle(img, cx+7, cy-2, 16, c)
+		drawPolyline(img, []image.Point{{cx, cy - 17}, {cx + 5, cy - 27}}, 4, color.RGBA{R: 71, G: 85, B: 105, A: 220})
+		fillPolygon(img, []image.Point{{cx + 7, cy - 26}, {cx + 22, cy - 25}, {cx + 11, cy - 16}}, color.RGBA{R: 22, G: 163, B: 74, A: 230})
+	case "niuyouguo":
+		drawCircle(img, cx, cy, 22, shadow)
+		drawCircle(img, cx, cy-2, 22, c)
+		drawCircle(img, cx, cy+2, 10, color.RGBA{R: 250, G: 204, B: 21, A: 230})
+	case "ipad-fill":
+		fillRect(img, cx-17, cy-24, 34, 48, shadow)
+		fillRect(img, cx-18, cy-25, 36, 50, c)
+		drawCircle(img, cx, cy+17, 3, color.RGBA{R: 255, G: 255, B: 255, A: 160})
+	case "diannao":
+		fillRect(img, cx-23, cy-18, 46, 30, shadow)
+		fillRect(img, cx-24, cy-20, 48, 31, c)
+		fillRect(img, cx-7, cy+11, 14, 11, c)
+		fillRect(img, cx-19, cy+22, 38, 5, c)
+	case "lizi":
+		drawCircle(img, cx, cy+3, 20, shadow)
+		drawCircle(img, cx, cy+1, 20, c)
+		drawCircle(img, cx, cy-17, 11, c)
+		drawPolyline(img, []image.Point{{cx + 2, cy - 25}, {cx + 8, cy - 33}}, 4, color.RGBA{R: 71, G: 85, B: 105, A: 220})
+	case "bangbangtang":
+		drawCircle(img, cx-3, cy-8, 19, shadow)
+		drawCircle(img, cx-4, cy-10, 19, c)
+		drawPolyline(img, []image.Point{{cx + 9, cy + 5}, {cx + 24, cy + 27}}, 6, color.RGBA{R: 148, G: 163, B: 184, A: 230})
+		drawPolyline(img, []image.Point{{cx - 15, cy - 10}, {cx - 3, cy - 19}, {cx + 10, cy - 8}, {cx, cy + 4}}, 4, color.RGBA{R: 255, G: 255, B: 255, A: 135})
+	case "daijingyingtao":
+		drawCircle(img, cx-9, cy+7, 12, c)
+		drawCircle(img, cx+10, cy+7, 12, c)
+		drawPolyline(img, []image.Point{{cx - 9, cy - 5}, {cx, cy - 24}, {cx + 10, cy - 5}}, 4, color.RGBA{R: 71, G: 85, B: 105, A: 220})
+		fillPolygon(img, []image.Point{{cx + 1, cy - 25}, {cx + 17, cy - 27}, {cx + 7, cy - 17}}, color.RGBA{R: 22, G: 163, B: 74, A: 225})
+	case "shouji":
+		fillRect(img, cx-14, cy-25, 28, 50, shadow)
+		fillRect(img, cx-15, cy-26, 30, 52, c)
+		fillRect(img, cx-10, cy-18, 20, 32, color.RGBA{R: 255, G: 255, B: 255, A: 85})
+		drawCircle(img, cx, cy+19, 3, color.RGBA{R: 255, G: 255, B: 255, A: 150})
+	default:
+		drawCircle(img, cx, cy, size/2, c)
+	}
 }
 
 func drawJigsawImage(points []types.Point) image.Image {
@@ -1719,36 +1846,93 @@ func drawGridDecoy(img *image.RGBA, index, centerX, centerY int) {
 	}
 }
 
-func spacedClickPoints() []types.Point {
-	return jitterClickPoints([]types.Point{
-		{X: 72, Y: 80},
-		{X: 160, Y: 80},
-		{X: 248, Y: 80},
-	}, 8, 22)
+var wordClickWordBank = []string{"山", "水", "火", "木", "田", "日", "月", "口", "中", "王", "文"}
+
+var iconClickLibrary = []clickIcon{
+	{ID: "drinks-fill", Label: "饮料"},
+	{ID: "shuji", Label: "书籍"},
+	{ID: "bingqilin", Label: "冰淇淋"},
+	{ID: "pingguo", Label: "苹果"},
+	{ID: "niuyouguo", Label: "牛油果"},
+	{ID: "ipad-fill", Label: "平板"},
+	{ID: "diannao", Label: "电脑"},
+	{ID: "lizi", Label: "梨子"},
+	{ID: "bangbangtang", Label: "棒棒糖"},
+	{ID: "daijingyingtao", Label: "樱桃"},
+	{ID: "shouji", Label: "手机"},
 }
 
-func orderedWordClickPoints() map[string]types.Point {
-	points := jitterClickPoints([]types.Point{
-		{X: 72, Y: 80},
-		{X: 160, Y: 80},
-		{X: 248, Y: 80},
-	}, 8, 22)
-	return map[string]types.Point{
-		"A": points[0],
-		"B": points[1],
-		"C": points[2],
+func separatedClickPoints(count int) []types.Point {
+	anchors := []types.Point{
+		{X: 52, Y: 44},
+		{X: 160, Y: 44},
+		{X: 268, Y: 44},
+		{X: 52, Y: 122},
+		{X: 160, Y: 122},
+		{X: 268, Y: 122},
 	}
-}
-
-func jitterClickPoints(anchors []types.Point, jitterX, jitterY int) []types.Point {
-	points := make([]types.Point, 0, len(anchors))
-	for _, anchor := range anchors {
+	indexes := randomIndexes(len(anchors), min(count, len(anchors)))
+	points := make([]types.Point, 0, count)
+	for _, index := range indexes {
+		anchor := anchors[index]
 		points = append(points, types.Point{
-			X: anchor.X + mustRandomInt(-jitterX, jitterX),
-			Y: anchor.Y + mustRandomInt(-jitterY, jitterY),
+			X: anchor.X + mustRandomInt(-4, 4),
+			Y: anchor.Y + mustRandomInt(-3, 3),
 		})
 	}
 	return points
+}
+
+func randomStrings(pool []string, count int) []string {
+	return randomStringsExcluding(pool, count, nil)
+}
+
+func randomStringsExcluding(pool []string, count int, excluded map[string]struct{}) []string {
+	filtered := make([]string, 0, len(pool))
+	for _, item := range pool {
+		if _, ok := excluded[item]; ok {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	indexes := randomIndexes(len(filtered), min(count, len(filtered)))
+	out := make([]string, 0, len(indexes))
+	for _, index := range indexes {
+		out = append(out, filtered[index])
+	}
+	return out
+}
+
+func randomIcons(pool []clickIcon, count int) []clickIcon {
+	indexes := randomIndexes(len(pool), min(count, len(pool)))
+	out := make([]clickIcon, 0, len(indexes))
+	for _, index := range indexes {
+		out = append(out, pool[index])
+	}
+	return out
+}
+
+func randomIndexes(length, count int) []int {
+	if length <= 0 || count <= 0 {
+		return nil
+	}
+	indexes := make([]int, length)
+	for i := range indexes {
+		indexes[i] = i
+	}
+	for i := 0; i < length; i++ {
+		j := mustRandomInt(i, length-1)
+		indexes[i], indexes[j] = indexes[j], indexes[i]
+	}
+	return indexes[:min(count, length)]
+}
+
+func iconLabels(icons []clickIcon) []string {
+	labels := make([]string, 0, len(icons))
+	for _, icon := range icons {
+		labels = append(labels, icon.Label)
+	}
+	return labels
 }
 
 func verifyPointSequence(expected, actual []types.Point) (bool, string) {
@@ -2346,6 +2530,127 @@ var glyphPatterns = map[string][]string{
 		"10000",
 		"10000",
 		"01111",
+	},
+	"山": {
+		"000010000",
+		"000010000",
+		"100010001",
+		"100010001",
+		"100010001",
+		"100010001",
+		"111111111",
+		"100000001",
+		"100000001",
+	},
+	"水": {
+		"000010000",
+		"100010001",
+		"010010010",
+		"001010100",
+		"000111000",
+		"001010100",
+		"010010010",
+		"100010001",
+		"000010000",
+	},
+	"火": {
+		"000010000",
+		"010010010",
+		"010010010",
+		"001010100",
+		"000111000",
+		"001010100",
+		"010000010",
+		"100000001",
+		"000000000",
+	},
+	"木": {
+		"000010000",
+		"000010000",
+		"000010000",
+		"111111111",
+		"001010100",
+		"010010010",
+		"100010001",
+		"000010000",
+		"000010000",
+	},
+	"田": {
+		"111111111",
+		"100010001",
+		"100010001",
+		"111111111",
+		"100010001",
+		"100010001",
+		"100010001",
+		"111111111",
+		"000000000",
+	},
+	"日": {
+		"111111111",
+		"100000001",
+		"100000001",
+		"111111111",
+		"100000001",
+		"100000001",
+		"100000001",
+		"111111111",
+		"000000000",
+	},
+	"月": {
+		"011111100",
+		"010000100",
+		"010000100",
+		"011111100",
+		"010000100",
+		"010000100",
+		"010000100",
+		"100001100",
+		"000000000",
+	},
+	"口": {
+		"111111111",
+		"100000001",
+		"100000001",
+		"100000001",
+		"100000001",
+		"100000001",
+		"100000001",
+		"111111111",
+		"000000000",
+	},
+	"中": {
+		"000010000",
+		"111111111",
+		"100010001",
+		"100010001",
+		"111111111",
+		"000010000",
+		"000010000",
+		"000010000",
+		"000010000",
+	},
+	"王": {
+		"111111111",
+		"000010000",
+		"000010000",
+		"011111110",
+		"000010000",
+		"000010000",
+		"000010000",
+		"111111111",
+		"000000000",
+	},
+	"文": {
+		"000010000",
+		"000010000",
+		"111111111",
+		"000010000",
+		"000101000",
+		"001000100",
+		"010000010",
+		"100000001",
+		"000000000",
 	},
 }
 

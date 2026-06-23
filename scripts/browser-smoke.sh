@@ -279,9 +279,13 @@ open_demo_failure_reset_checks() {
 
 		await wordFrame.getByRole("button", { name: "刷新" }).click();
 		await page.waitForTimeout(300);
-		await clickBoardAt(wordBoard, 20, 20);
-		await clickBoardAt(wordBoard, 20, 140);
-		await clickBoardAt(wordBoard, 300, 140);
+		const targetCount = await wordFrame.locator("header strong").innerText().then((text) => {
+			const prompt = text.split("：")[1] || "";
+			return Math.max(3, prompt.split("、").filter(Boolean).length);
+		});
+		for (const point of [{ x: 20, y: 20 }, { x: 20, y: 140 }, { x: 300, y: 140 }, { x: 300, y: 20 }].slice(0, targetCount)) {
+			await clickBoardAt(wordBoard, point.x, point.y);
+		}
 		await wordFrame.getByRole("button", { name: "验证" }).click();
 		await page.waitForTimeout(800);
 		const wordResult = {
@@ -331,7 +335,7 @@ open_demo_failure_reset_checks() {
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
-		if (result.progress.marks !== 1 || !result.progress.footer.includes("已选择 1/3")) {
+		if (result.progress.marks !== 1 || !result.progress.footer.includes("已选择 1/")) {
 			console.error(`unexpected word click progress result: ${JSON.stringify(result.progress)}`);
 			process.exit(1);
 		}
@@ -615,13 +619,11 @@ open_demo_point_click_success_check() {
 		const cases = [
 			{
 				type: "WORD_IMAGE_CLICK",
-				button: /文字点选 WORD_IMAGE_CLICK/,
-				points: [{ x: 72, y: 80 }, { x: 160, y: 80 }, { x: 248, y: 80 }]
+				button: /文字点选 WORD_IMAGE_CLICK/
 			},
 			{
 				type: "IMAGE_CLICK",
-				button: /图标点选 IMAGE_CLICK/,
-				points: [{ x: 72, y: 80 }, { x: 160, y: 80 }, { x: 248, y: 80 }]
+				button: /图标点选 IMAGE_CLICK/
 			}
 		];
 		const results = [];
@@ -632,6 +634,70 @@ open_demo_point_click_success_check() {
 			const frame = page.frames().find((candidate) => candidate.url().includes(`captcha_type=${item.type}`));
 			const board = frame.locator(".board");
 			await board.waitFor();
+			const points = await frame.evaluate(async (type) => {
+				const promptText = document.querySelector("header strong")?.textContent || "";
+				const targetCount = Math.max(1, (promptText.split("：")[1] || "").split("、").filter(Boolean).length);
+				const palette = type === "WORD_IMAGE_CLICK"
+					? [
+						{ r: 31, g: 41, b: 55 },
+						{ r: 37, g: 99, b: 235 },
+						{ r: 190, g: 24, b: 93 },
+						{ r: 126, g: 34, b: 206 }
+					]
+					: [
+						{ r: 37, g: 99, b: 235 },
+						{ r: 20, g: 184, b: 166 },
+						{ r: 225, g: 29, b: 72 }
+					];
+				const img = document.querySelector(".board > img");
+				if (!img) throw new Error("missing point-click image");
+				if (!img.complete || !img.naturalWidth) {
+					await new Promise((resolve, reject) => {
+						img.addEventListener("load", resolve, { once: true });
+						img.addEventListener("error", reject, { once: true });
+					});
+				}
+				const canvas = document.createElement("canvas");
+				canvas.width = img.naturalWidth;
+				canvas.height = img.naturalHeight;
+				const context = canvas.getContext("2d");
+				context.drawImage(img, 0, 0);
+				const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+				function closeTo(pixel, color) {
+					return Math.abs(pixel.r - color.r) + Math.abs(pixel.g - color.g) + Math.abs(pixel.b - color.b) < 18;
+				}
+				const points = [];
+				for (let index = 0; index < targetCount; index += 1) {
+					const color = palette[index % palette.length];
+					let count = 0;
+					let minX = width;
+					let minY = height;
+					let maxX = -1;
+					let maxY = -1;
+					for (let y = 0; y < height; y += 1) {
+						for (let x = 0; x < width; x += 1) {
+							const offset = (y * width + x) * 4;
+							const pixel = { r: data[offset], g: data[offset + 1], b: data[offset + 2], a: data[offset + 3] };
+							if (pixel.a > 180 && closeTo(pixel, color)) {
+								count += 1;
+								minX = Math.min(minX, x);
+								minY = Math.min(minY, y);
+								maxX = Math.max(maxX, x);
+								maxY = Math.max(maxY, y);
+							}
+						}
+					}
+					if (count < 60) {
+						throw new Error(`could not infer ${type} target ${index}: count=${count}`);
+					}
+					points.push({
+						x: Math.round((minX + maxX) / 2),
+						y: Math.round((minY + maxY) / 2),
+						count
+					});
+				}
+				return points;
+			}, item.type);
 			async function clickBoardAt(point) {
 				await board.dispatchEvent("click", await board.evaluate((el, payload) => {
 					const rect = el.getBoundingClientRect();
@@ -643,12 +709,12 @@ open_demo_point_click_success_check() {
 					};
 				}, point));
 			}
-			await clickBoardAt(item.points[0]);
+			await clickBoardAt(points[0]);
 			await page.waitForTimeout(90);
-			await clickBoardAt(item.points[0]);
+			await clickBoardAt(points[0]);
 			await page.waitForTimeout(90);
 			const canceledMarks = await frame.locator(".mark").count();
-			for (const point of item.points) {
+			for (const point of points) {
 				await clickBoardAt(point);
 				await page.waitForTimeout(90);
 			}
@@ -660,7 +726,8 @@ open_demo_point_click_success_check() {
 				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 				footer: await frame.locator("footer").innerText(),
 				marks: await frame.locator(".mark").count(),
-				canceledMarks
+				canceledMarks,
+				expectedMarks: points.length
 			});
 		}
 		return results;
@@ -670,7 +737,7 @@ open_demo_point_click_success_check() {
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const results = JSON.parse(output.result);
 		for (const result of results) {
-			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.marks !== 3 || result.canceledMarks !== 0) {
+			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.marks !== result.expectedMarks || result.canceledMarks !== 0) {
 				console.error(`unexpected point click success result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
@@ -1092,6 +1159,10 @@ open_demo_curve_match_success_check() {
 	node -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
+		if (!Object.prototype.hasOwnProperty.call(output, "result")) {
+			console.error(`curve match smoke did not return a result: ${JSON.stringify(output)}`);
+			process.exit(1);
+		}
 		const results = JSON.parse(output.result);
 		for (const result of results) {
 			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.rootCount !== 1 || result.bgCanvasCount !== 1 || result.moveCanvasCount !== 1 || result.endpointCount !== 2 || result.pieceCount !== 0) {
@@ -1359,9 +1430,9 @@ open_demo_slider_success_check() {
 				}
 				const bg = await imageDataFor(".board > img");
 				const pieceData = await imageDataFor(".piece");
-				let bgDarkCount = 0;
-				const darkColumns = Array(bg.width).fill(0);
-				const darkRows = Array(bg.height).fill(0);
+				let bgEdgeCount = 0;
+				const edgeColumns = Array(bg.width).fill(0);
+				const edgeRows = Array(bg.height).fill(0);
 				for (let y = 0; y < bg.height; y += 1) {
 					for (let x = 0; x < bg.width; x += 1) {
 						const index = (y * bg.width + x) * 4;
@@ -1369,17 +1440,17 @@ open_demo_slider_success_check() {
 						const green = bg.data[index + 1];
 						const blue = bg.data[index + 2];
 						const alpha = bg.data[index + 3];
-						if (alpha > 200 && red < 35 && green < 50 && blue < 75) {
-							bgDarkCount += 1;
-							darkColumns[x] += 1;
-							darkRows[y] += 1;
+						if (alpha > 200 && red >= 104 && red <= 132 && green >= 114 && green <= 144 && blue >= 126 && blue <= 156) {
+							bgEdgeCount += 1;
+							edgeColumns[x] += 1;
+							edgeRows[y] += 1;
 						}
 					}
 				}
 				const groups = [];
 				let currentGroup = null;
-				for (let x = 0; x < darkColumns.length; x += 1) {
-					const count = darkColumns[x];
+				for (let x = 0; x < edgeColumns.length; x += 1) {
+					const count = edgeColumns[x];
 					if (count <= 0) continue;
 					if (!currentGroup || x > currentGroup.maxX + 1) {
 						currentGroup = { minX: x, maxX: x, count, maxColumn: count };
@@ -1391,7 +1462,7 @@ open_demo_slider_success_check() {
 					}
 				}
 				const gapGroup = groups
-					.filter((group) => group.maxX - group.minX >= 20 && group.count >= 80)
+					.filter((group) => group.maxX - group.minX >= 18 && group.count >= 35)
 					.sort((a, b) => b.count - a.count || b.maxColumn - a.maxColumn)[0];
 				let pieceOpaqueCount = 0;
 				let pieceMinX = pieceData.width;
@@ -1407,13 +1478,13 @@ open_demo_slider_success_check() {
 					}
 				}
 				if (!gapGroup || pieceOpaqueCount < 200) {
-					throw new Error(`could not infer slider target, bgDark=${bgDarkCount}, groups=${JSON.stringify(groups)}, pieceOpaque=${pieceOpaqueCount}`);
+					throw new Error(`could not infer slider target, bgEdge=${bgEdgeCount}, groups=${JSON.stringify(groups)}, pieceOpaque=${pieceOpaqueCount}`);
 				}
-				const activeRows = darkRows.map((count, y) => ({ count, y })).filter((row) => row.count > 0);
+				const activeRows = edgeRows.map((count, y) => ({ count, y })).filter((row) => row.count > 0);
 				const x = Math.round(gapGroup.minX - pieceMinX);
 				return {
 					x,
-					bgDarkCount,
+					bgEdgeCount,
 					pieceOpaqueCount,
 					bgBounds: {
 						minX: gapGroup.minX,
@@ -1928,8 +1999,8 @@ run_smoke_step "runtime slider render" open_runtime_challenge "SLIDER" "拖动�
 run_smoke_step "runtime rotate render" open_runtime_challenge "ROTATE" "旋转图形至正向" "disabled"
 run_smoke_step "runtime concat render" open_runtime_challenge "CONCAT" "拖动滑块完成拼图" "disabled"
 run_smoke_step "runtime rotate degree render" open_runtime_challenge "ROTATE_DEGREE" "拖动指针指向红色刻度" "disabled"
-run_smoke_step "runtime word click render" open_runtime_challenge "WORD_IMAGE_CLICK" "依次点击：A、B、C" "disabled"
-run_smoke_step "runtime image click render" open_runtime_challenge "IMAGE_CLICK" "依次点击：圆形、方形、三角" "disabled"
+run_smoke_step "runtime word click render" open_runtime_challenge "WORD_IMAGE_CLICK" "依次点击：" "disabled"
+run_smoke_step "runtime image click render" open_runtime_challenge "IMAGE_CLICK" "依次点击：" "disabled"
 run_smoke_step "runtime jigsaw render" open_runtime_challenge "JIGSAW" "拖动或点击交换错位拼图" "disabled"
 run_smoke_step "runtime grid image click render" open_runtime_challenge "GRID_IMAGE_CLICK" "选择所有包含蓝色圆形的图片" "disabled"
 
