@@ -1443,43 +1443,11 @@ open_demo_slider_success_check() {
 				}
 				const bg = await imageDataFor(".board > img");
 				const pieceData = await imageDataFor(".piece");
-				let bgEdgeCount = 0;
-				const edgeColumns = Array(bg.width).fill(0);
-				const edgeRows = Array(bg.height).fill(0);
-				for (let y = 0; y < bg.height; y += 1) {
-					for (let x = 0; x < bg.width; x += 1) {
-						const index = (y * bg.width + x) * 4;
-						const red = bg.data[index];
-						const green = bg.data[index + 1];
-						const blue = bg.data[index + 2];
-						const alpha = bg.data[index + 3];
-						if (alpha > 200 && red >= 104 && red <= 132 && green >= 114 && green <= 144 && blue >= 126 && blue <= 156) {
-							bgEdgeCount += 1;
-							edgeColumns[x] += 1;
-							edgeRows[y] += 1;
-						}
-					}
-				}
-				const groups = [];
-				let currentGroup = null;
-				for (let x = 0; x < edgeColumns.length; x += 1) {
-					const count = edgeColumns[x];
-					if (count <= 0) continue;
-					if (!currentGroup || x > currentGroup.maxX + 1) {
-						currentGroup = { minX: x, maxX: x, count, maxColumn: count };
-						groups.push(currentGroup);
-					} else {
-						currentGroup.maxX = x;
-						currentGroup.count += count;
-						currentGroup.maxColumn = Math.max(currentGroup.maxColumn, count);
-					}
-				}
-				const gapGroup = groups
-					.filter((group) => group.maxX - group.minX >= 18 && group.count >= 35)
-					.sort((a, b) => b.count - a.count || b.maxColumn - a.maxColumn)[0];
 				let pieceOpaqueCount = 0;
 				let pieceMinX = pieceData.width;
 				let pieceMaxX = -1;
+				let pieceMinY = pieceData.height;
+				let pieceMaxY = -1;
 				for (let y = 0; y < pieceData.height; y += 1) {
 					for (let x = 0; x < pieceData.width; x += 1) {
 						const alpha = pieceData.data[(y * pieceData.width + x) * 4 + 3];
@@ -1487,26 +1455,58 @@ open_demo_slider_success_check() {
 							pieceOpaqueCount += 1;
 							pieceMinX = Math.min(pieceMinX, x);
 							pieceMaxX = Math.max(pieceMaxX, x);
+							pieceMinY = Math.min(pieceMinY, y);
+							pieceMaxY = Math.max(pieceMaxY, y);
 						}
 					}
 				}
-				if (!gapGroup || pieceOpaqueCount < 200) {
-					throw new Error(`could not infer slider target, bgEdge=${bgEdgeCount}, groups=${JSON.stringify(groups)}, pieceOpaque=${pieceOpaqueCount}`);
+				const pieceElement = document.querySelector(".piece");
+				const board = document.querySelector(".board");
+				const control = document.querySelector(".drag-control");
+				const max = Number(control?.getAttribute("aria-valuemax") || bg.width - pieceData.width);
+				const pieceRect = pieceElement.getBoundingClientRect();
+				const boardRect = board.getBoundingClientRect();
+				const pieceTop = Math.round((pieceRect.top - boardRect.top) / boardRect.height * bg.height);
+				const candidateMin = 70;
+				const candidateMax = Math.min(max, bg.width - pieceData.width - 18);
+				let best = { x: 0, score: Number.POSITIVE_INFINITY, count: 0 };
+				let second = { x: 0, score: Number.POSITIVE_INFINITY, count: 0 };
+				for (let candidate = candidateMin; candidate <= candidateMax; candidate += 1) {
+					let score = 0;
+					let count = 0;
+					for (let y = pieceMinY; y <= pieceMaxY; y += 3) {
+						const gy = pieceTop + y;
+						if (gy < 0 || gy >= bg.height) continue;
+						for (let x = pieceMinX; x <= pieceMaxX; x += 3) {
+							const pieceOffset = (y * pieceData.width + x) * 4;
+							const alpha = pieceData.data[pieceOffset + 3];
+							if (alpha <= 45) continue;
+							const gx = candidate + x;
+							if (gx < 0 || gx >= bg.width) continue;
+							const bgOffset = (gy * bg.width + gx) * 4;
+							const delta = Math.abs(pieceData.data[pieceOffset] - bg.data[bgOffset]) +
+								Math.abs(pieceData.data[pieceOffset + 1] - bg.data[bgOffset + 1]) +
+								Math.abs(pieceData.data[pieceOffset + 2] - bg.data[bgOffset + 2]);
+							score += delta;
+							count += 1;
+						}
+					}
+					const normalized = count ? score / count : Number.POSITIVE_INFINITY;
+					if (normalized < best.score) {
+						second = best;
+						best = { x: candidate, score: normalized, count };
+					} else if (normalized < second.score) {
+						second = { x: candidate, score: normalized, count };
+					}
 				}
-				const activeRows = edgeRows.map((count, y) => ({ count, y })).filter((row) => row.count > 0);
-				const x = Math.round(gapGroup.minX - pieceMinX);
+				if (pieceOpaqueCount < 200 || !Number.isFinite(best.score) || best.count < 80) {
+					throw new Error(`could not infer slider target, best=${JSON.stringify(best)}, second=${JSON.stringify(second)}, pieceOpaque=${pieceOpaqueCount}, top=${pieceTop}`);
+				}
 				return {
-					x,
-					bgEdgeCount,
+					x: best.x,
 					pieceOpaqueCount,
-					bgBounds: {
-						minX: gapGroup.minX,
-						maxX: gapGroup.maxX,
-						minY: Math.min(...activeRows.map((row) => row.y)),
-						maxY: Math.max(...activeRows.map((row) => row.y))
-					},
-					darkGroups: groups,
-					pieceBounds: { minX: pieceMinX, maxX: pieceMaxX }
+					match: { best, second, pieceTop, candidateMin, candidateMax },
+					pieceBounds: { minX: pieceMinX, maxX: pieceMaxX, minY: pieceMinY, maxY: pieceMaxY }
 				};
 			});
 			const max = Number(await control.getAttribute("aria-valuemax"));
@@ -1543,7 +1543,10 @@ open_demo_slider_success_check() {
 			await page.waitForTimeout(150);
 			const duringLeft = await pieceLeftInViewUnits();
 			await control.dispatchEvent("pointerup", await eventInit(target.x, 0));
-			await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
+			await page.waitForFunction(() => {
+				const status = document.querySelector(".browser-bar strong")?.textContent?.trim();
+				return status === "通过" || status === "失败";
+			});
 			results.push({
 				type: item.type,
 				target,
@@ -1561,6 +1564,10 @@ open_demo_slider_success_check() {
 	node -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
+		if (!Object.prototype.hasOwnProperty.call(output, "result")) {
+			console.error(`slider smoke did not return a result: ${JSON.stringify(output)}`);
+			process.exit(1);
+		}
 		const results = JSON.parse(output.result);
 		for (const result of results) {
 			const value = Number(result.value);
@@ -1689,7 +1696,10 @@ open_demo_rotate_success_check() {
 		await page.waitForTimeout(150);
 		const duringTransform = await image.evaluate((el) => el.style.transform || "");
 		await control.dispatchEvent("pointerup", await eventInit(answer, 0));
-		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
+		await page.waitForFunction(() => {
+			const status = document.querySelector(".browser-bar strong")?.textContent?.trim();
+			return status === "通过" || status === "失败";
+		});
 		return {
 			answer,
 			beforeTransform,
@@ -1703,6 +1713,10 @@ open_demo_rotate_success_check() {
 	node -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
+		if (!Object.prototype.hasOwnProperty.call(output, "result")) {
+			console.error(`rotate smoke did not return a result: ${JSON.stringify(output)}`);
+			process.exit(1);
+		}
 		const result = JSON.parse(output.result);
 		if (result.beforeTransform === result.duringTransform || result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发")) {
 			console.error(`unexpected rotate success result: ${JSON.stringify(result)}`);

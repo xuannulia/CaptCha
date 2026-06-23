@@ -57,8 +57,8 @@ var svgMaskCache sync.Map
 
 const (
 	maxTrackPoints     = 256
-	sliderPieceSize    = 48
-	slider2PieceSize   = 44
+	sliderPieceSize    = 96
+	slider2PieceSize   = 88
 	concatMaxMovement  = 160
 	concatPieceWidth   = 320 + concatMaxMovement
 	jigsawTileCols     = 2
@@ -501,8 +501,8 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 			},
 		}, nil
 	case types.CaptchaSlider:
-		x := mustRandomInt(82, 238)
-		y := mustRandomInt(38, 88)
+		x := sliderTargetX(sliderPieceSize)
+		y := sliderTargetY(sliderPieceSize)
 		mask := randomSliderMask()
 		image, piece := drawSliderChallenge(x, y, sliderPieceSize, mask)
 		return types.Answer{X: x, Y: y}, types.RenderPayload{
@@ -519,8 +519,8 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 			},
 		}, nil
 	case types.CaptchaSlider2:
-		x := mustRandomInt(82, 238)
-		y := mustRandomInt(38, 88)
+		x := sliderTargetX(slider2PieceSize)
+		y := sliderTargetY(slider2PieceSize)
 		mask := randomSliderMask()
 		image, piece := drawSlider2Challenge(x, y, slider2PieceSize, mask)
 		return types.Answer{X: x, Y: y}, types.RenderPayload{
@@ -756,24 +756,38 @@ func randomSliderMask() sliderMaskKind {
 	return sliderMaskPuzzle
 }
 
+func sliderTargetX(size int) int {
+	return mustRandomInt(86, 320-size-20)
+}
+
+func sliderTargetY(size int) int {
+	return mustRandomInt(24, 160-size-14)
+}
+
 func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image.Image, image.Image) {
 	base := drawSliderScene()
 	bg := copyRGBA(base)
 	piece := newCanvas(size, size, color.RGBA{A: 0})
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			if !insideSliderMask(x, y, size, mask) {
+			maskAlpha := svgMaskAlpha(sliderMaskFile(mask), size, x, y)
+			if maskAlpha <= 35 {
 				continue
 			}
 			gx, gy := targetX+x, targetY+y
 			source := rgbaAt(base, gx, gy)
 			if sliderMaskEdge(x, y, size, mask, 1) {
-				bg.Set(gx, gy, color.RGBA{R: 118, G: 128, B: 141, A: 255})
-				piece.Set(x, y, mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.18))
+				bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 112, G: 121, B: 135, A: 255}, 0.34))
+				piece.Set(x, y, withAlpha(mixRGBA(source, color.RGBA{R: 104, G: 113, B: 128, A: 255}, 0.42), maskAlpha))
 				continue
 			}
-			bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 245, G: 248, B: 252, A: 255}, 0.58))
-			piece.Set(x, y, mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.06))
+			if sliderMaskEdge(x, y, size, mask, 2) {
+				bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 244, G: 247, B: 251, A: 255}, 0.35))
+				piece.Set(x, y, withAlpha(mixRGBA(source, color.RGBA{R: 132, G: 140, B: 153, A: 255}, 0.18), maskAlpha))
+				continue
+			}
+			bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, 0.26))
+			piece.Set(x, y, withAlpha(mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.05), maskAlpha))
 		}
 	}
 	return bg, piece
@@ -782,22 +796,40 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 func drawSlider2Challenge(targetX, targetY, size int, mask sliderMaskKind) (image.Image, image.Image) {
 	bg, piece := drawSliderChallenge(targetX, targetY, size, mask)
 	bgRGBA := copyRGBA(bg)
-	for _, decoy := range []image.Point{{X: 46, Y: 38}, {X: 244, Y: 92}} {
-		if abs(decoy.X-targetX) < 42 && abs(decoy.Y-targetY) < 42 {
+	for _, decoy := range sliderDecoyPoints(size) {
+		if abs(decoy.X-targetX) < size && abs(decoy.Y-targetY) < size {
 			continue
 		}
-		drawSliderMaskOutline(bgRGBA, decoy.X, decoy.Y, size, mask, color.RGBA{R: 96, G: 165, B: 250, A: 105})
+		drawSliderMaskGhost(bgRGBA, decoy.X, decoy.Y, size, mask, 0.42)
 	}
 	return bgRGBA, piece
 }
 
-func drawSliderMaskOutline(img *image.RGBA, ox, oy, size int, mask sliderMaskKind, c color.RGBA) {
+func sliderDecoyPoints(size int) []image.Point {
+	return []image.Point{
+		{X: 18, Y: 24},
+		{X: 320 - size - 18, Y: 160 - size - 22},
+	}
+}
+
+func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind, opacity float64) {
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			if sliderMaskEdge(x, y, size, mask, 1) {
-				gx, gy := ox+x, oy+y
-				img.Set(gx, gy, mixRGBA(rgbaAt(img, gx, gy), c, 0.34))
+			maskAlpha := svgMaskAlpha(sliderMaskFile(mask), size, x, y)
+			if maskAlpha <= 35 {
+				continue
 			}
+			gx, gy := ox+x, oy+y
+			if !image.Pt(gx, gy).In(img.Bounds()) {
+				continue
+			}
+			source := rgbaAt(img, gx, gy)
+			ratio := opacity * float64(maskAlpha) / 255
+			if sliderMaskEdge(x, y, size, mask, 1) {
+				img.Set(gx, gy, mixRGBA(source, color.RGBA{R: 116, G: 124, B: 138, A: 255}, ratio*0.55))
+				continue
+			}
+			img.Set(gx, gy, mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, ratio*0.45))
 		}
 	}
 }
@@ -2375,6 +2407,11 @@ func mixRGBA(a, b color.RGBA, ratio float64) color.RGBA {
 		B: uint8(float64(a.B)*keep + float64(b.B)*ratio),
 		A: uint8(float64(a.A)*keep + float64(b.A)*ratio),
 	}
+}
+
+func withAlpha(c color.RGBA, alpha uint8) color.RGBA {
+	c.A = alpha
+	return c
 }
 
 func square(v int) int {

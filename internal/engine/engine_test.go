@@ -115,6 +115,44 @@ func TestGeneratedPayloadsUsePNGDataURLs(t *testing.T) {
 	}
 }
 
+func TestSliderChallengesUseLargeSVGPiecesInBounds(t *testing.T) {
+	t.Parallel()
+
+	e := New(2 * time.Minute)
+	cases := map[types.CaptchaType]int{
+		types.CaptchaSlider:  sliderPieceSize,
+		types.CaptchaSlider2: slider2PieceSize,
+	}
+	for captchaType, expectedSize := range cases {
+		captchaType := captchaType
+		expectedSize := expectedSize
+		t.Run(string(captchaType), func(t *testing.T) {
+			t.Parallel()
+
+			for i := 0; i < 20; i++ {
+				session, err := e.NewSession("app_test", "login", captchaType)
+				if err != nil {
+					t.Fatalf("new session: %v", err)
+				}
+				size := intParam(t, session.RenderPayload.Parameters, "piece_size")
+				if size != expectedSize {
+					t.Fatalf("expected piece size %d, got %d", expectedSize, size)
+				}
+				if session.Answer.X < 0 || session.Answer.X+size > session.RenderPayload.View.Width {
+					t.Fatalf("slider x out of bounds: answer=%+v size=%d view=%+v", session.Answer, size, session.RenderPayload.View)
+				}
+				if session.Answer.Y < 0 || session.Answer.Y+size > session.RenderPayload.View.Height {
+					t.Fatalf("slider y out of bounds: answer=%+v size=%d view=%+v", session.Answer, size, session.RenderPayload.View)
+				}
+				piece := decodePNGDataURL(t, session.RenderPayload.Piece)
+				if piece.Bounds().Dx() != size || piece.Bounds().Dy() != size {
+					t.Fatalf("piece PNG dimensions should match piece_size: bounds=%+v size=%d", piece.Bounds(), size)
+				}
+			}
+		})
+	}
+}
+
 func TestRotateChallengeDoesNotExposeAnswerEquivalentInitialAngle(t *testing.T) {
 	t.Parallel()
 
