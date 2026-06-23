@@ -493,6 +493,15 @@ func TestCurveChallengesVerifyMatchOffset(t *testing.T) {
 				t.Fatalf("expected wrong curve match offset to fail, got %+v", result)
 			}
 
+			near := session.Answer.X + 14
+			if near > intParam(t, session.RenderPayload.Parameters, "max") {
+				near = session.Answer.X - 14
+			}
+			result = e.Verify(session, types.VerifyAnswer{X: &near}, trackFromSliderValue(near))
+			if !result.OK {
+				t.Fatalf("expected near-overlap curve match offset to pass, got %+v", result)
+			}
+
 			result = e.Verify(session, types.VerifyAnswer{X: &session.Answer.X}, trackFromSliderValue(session.Answer.X))
 			if !result.OK {
 				t.Fatalf("expected correct curve match offset to pass, got %+v", result)

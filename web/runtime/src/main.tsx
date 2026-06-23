@@ -293,7 +293,7 @@ function RuntimeChallenge() {
   const rangeTracking = useRef(false);
   const boardRangeTracking = useRef(false);
   const curveTracking = useRef(false);
-  const controlDragStart = useRef<{ x: number; value: number } | null>(null);
+  const controlDragStart = useRef<{ offset: number } | null>(null);
   const jigsawDragStart = useRef<ChallengePoint | null>(null);
   const suppressNextBoardClick = useRef(false);
   const verifyInFlight = useRef(false);
@@ -630,7 +630,7 @@ function RuntimeChallenge() {
     const bounds = rangeBounds(challenge);
     let raw: number;
     if (isCurveCaptcha(challenge) && controlDragStart.current) {
-      raw = controlDragStart.current.value + (event.clientX - controlDragStart.current.x);
+      raw = event.clientX - rect.left - controlDragStart.current.offset;
     } else {
       const ratio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
       raw = bounds.min + ratio * (bounds.max - bounds.min);
@@ -663,7 +663,7 @@ function RuntimeChallenge() {
     event.preventDefault();
     rangeTracking.current = true;
     if (challenge && isCurveCaptcha(challenge)) {
-      controlDragStart.current = { x: event.clientX, value: valueRef.current };
+      controlDragStart.current = curveDragStart(event, valueRef.current);
     }
     trySetPointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
     updateValueFromControl(event, "start");
@@ -1045,6 +1045,15 @@ function rangeBounds(challenge: Challenge) {
 function numberParam(challenge: Challenge, name: keyof ChallengeParameters, fallback: number) {
   const value = challenge.parameters?.[name];
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function curveDragStart(event: PointerEvent, currentValue: number) {
+  const control = event.currentTarget as HTMLDivElement;
+  const rect = control.getBoundingClientRect();
+  const relativeX = clamp(event.clientX - rect.left, 0, rect.width);
+  const thumbWidth = control.querySelector<HTMLElement>(".slider-move-btn")?.getBoundingClientRect().width || 63;
+  const nearThumb = relativeX >= currentValue - 8 && relativeX <= currentValue + thumbWidth + 8;
+  return { offset: nearThumb ? relativeX - currentValue : thumbWidth / 2 };
 }
 
 function drawCurveCanvases(bgCanvas: HTMLCanvasElement, moveCanvas: HTMLCanvasElement, challenge: Challenge, value: number) {

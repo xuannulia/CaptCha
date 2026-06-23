@@ -70,8 +70,8 @@ const (
 	gridImageTileSize  = 100
 	curveViewWidth     = 300
 	curveViewHeight    = 180
-	curveAnswerSlack   = 10
-	curveTrackSlack    = 13
+	curveAnswerSlack   = 18
+	curveTrackSlack    = 26
 	wordClickTolerance = 28
 	powMaxNonce        = 120000
 )
