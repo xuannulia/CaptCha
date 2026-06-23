@@ -768,26 +768,28 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 	base := drawSliderScene()
 	bg := copyRGBA(base)
 	piece := newCanvas(size, size, color.RGBA{A: 0})
+	maskFile := sliderMaskFile(mask)
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			maskAlpha := svgMaskAlpha(sliderMaskFile(mask), size, x, y)
-			if maskAlpha <= 35 {
+			maskAlpha := svgMaskAlpha(maskFile, size, x, y)
+			if maskAlpha <= 18 {
 				continue
 			}
 			gx, gy := targetX+x, targetY+y
 			source := rgbaAt(base, gx, gy)
-			if sliderMaskEdge(x, y, size, mask, 1) {
-				bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 112, G: 121, B: 135, A: 255}, 0.34))
-				piece.Set(x, y, withAlpha(mixRGBA(source, color.RGBA{R: 104, G: 113, B: 128, A: 255}, 0.42), maskAlpha))
-				continue
+			edgeSoft := sliderInnerEdgeStrength(x, y, size, mask, 6)
+			edgeCore := sliderInnerEdgeStrength(x, y, size, mask, 2)
+
+			gapPixel := mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, 0.20+edgeSoft*0.12)
+			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 121, G: 126, B: 134, A: 255}, edgeSoft*0.16+edgeCore*0.30)
+			bg.Set(gx, gy, gapPixel)
+
+			piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.055)
+			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 93, G: 96, B: 102, A: 255}, edgeSoft*0.18+edgeCore*0.55)
+			if edgeSoft > edgeCore {
+				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 246, G: 247, B: 249, A: 255}, (edgeSoft-edgeCore)*0.10)
 			}
-			if sliderMaskEdge(x, y, size, mask, 2) {
-				bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 244, G: 247, B: 251, A: 255}, 0.35))
-				piece.Set(x, y, withAlpha(mixRGBA(source, color.RGBA{R: 132, G: 140, B: 153, A: 255}, 0.18), maskAlpha))
-				continue
-			}
-			bg.Set(gx, gy, mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, 0.26))
-			piece.Set(x, y, withAlpha(mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.05), maskAlpha))
+			piece.Set(x, y, withAlpha(piecePixel, maskAlpha))
 		}
 	}
 	return bg, piece
@@ -813,10 +815,11 @@ func sliderDecoyPoints(size int) []image.Point {
 }
 
 func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind, opacity float64) {
+	maskFile := sliderMaskFile(mask)
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			maskAlpha := svgMaskAlpha(sliderMaskFile(mask), size, x, y)
-			if maskAlpha <= 35 {
+			maskAlpha := svgMaskAlpha(maskFile, size, x, y)
+			if maskAlpha <= 18 {
 				continue
 			}
 			gx, gy := ox+x, oy+y
@@ -825,11 +828,11 @@ func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind,
 			}
 			source := rgbaAt(img, gx, gy)
 			ratio := opacity * float64(maskAlpha) / 255
-			if sliderMaskEdge(x, y, size, mask, 1) {
-				img.Set(gx, gy, mixRGBA(source, color.RGBA{R: 116, G: 124, B: 138, A: 255}, ratio*0.55))
-				continue
-			}
-			img.Set(gx, gy, mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, ratio*0.45))
+			edgeSoft := sliderInnerEdgeStrength(x, y, size, mask, 6)
+			edgeCore := sliderInnerEdgeStrength(x, y, size, mask, 2)
+			ghost := mixRGBA(source, color.RGBA{R: 245, G: 247, B: 250, A: 255}, ratio*0.42)
+			ghost = mixRGBA(ghost, color.RGBA{R: 112, G: 118, B: 128, A: 255}, ratio*(edgeSoft*0.22+edgeCore*0.44))
+			img.Set(gx, gy, ghost)
 		}
 	}
 }
@@ -1418,18 +1421,26 @@ func insideSliderMask(x, y, size int, mask sliderMaskKind) bool {
 	return svgMaskAlpha(sliderMaskFile(mask), size, x, y) > 35
 }
 
-func sliderMaskEdge(x, y, size int, mask sliderMaskKind, radius int) bool {
-	if !insideSliderMask(x, y, size, mask) {
-		return false
+func sliderInnerEdgeStrength(x, y, size int, mask sliderMaskKind, radius int) float64 {
+	if radius <= 0 || !insideSliderMask(x, y, size, mask) {
+		return 0
 	}
+	best := float64(radius + 1)
 	for dy := -radius; dy <= radius; dy++ {
 		for dx := -radius; dx <= radius; dx++ {
+			distance := math.Hypot(float64(dx), float64(dy))
+			if distance > float64(radius) || distance >= best {
+				continue
+			}
 			if !insideSliderMask(x+dx, y+dy, size, mask) {
-				return true
+				best = distance
 			}
 		}
 	}
-	return false
+	if best > float64(radius) {
+		return 0
+	}
+	return math.Max(0, math.Min(1, (float64(radius)+0.5-best)/float64(radius)))
 }
 
 func sliderMaskFile(mask sliderMaskKind) string {
@@ -1712,13 +1723,15 @@ func renderSVGMask(filename string, size int) (*image.RGBA, error) {
 	if err != nil {
 		return nil, err
 	}
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	padding := math.Max(2, math.Round(float64(size)*0.06))
-	icon.SetTarget(padding, padding, float64(size)-padding*2, float64(size)-padding*2)
-	scanner := rasterx.NewScannerGV(size, size, img, img.Bounds())
-	raster := rasterx.NewDasher(size, size, scanner)
+	const scale = 3
+	renderSize := size * scale
+	img := image.NewRGBA(image.Rect(0, 0, renderSize, renderSize))
+	padding := math.Max(2, math.Round(float64(renderSize)*0.06))
+	icon.SetTarget(padding, padding, float64(renderSize)-padding*2, float64(renderSize)-padding*2)
+	scanner := rasterx.NewScannerGV(renderSize, renderSize, img, img.Bounds())
+	raster := rasterx.NewDasher(renderSize, renderSize, scanner)
 	icon.Draw(raster, 1)
-	return img, nil
+	return downsampleRGBA(img, size), nil
 }
 
 func blendPixel(img *image.RGBA, x, y int, c color.RGBA) {
@@ -1733,6 +1746,44 @@ func blendPixel(img *image.RGBA, x, y int, c color.RGBA) {
 		B: uint8(math.Round(float64(c.B)*alpha + float64(dst.B)*(1-alpha))),
 		A: 255,
 	})
+}
+
+func downsampleRGBA(src *image.RGBA, targetSize int) *image.RGBA {
+	dst := image.NewRGBA(image.Rect(0, 0, targetSize, targetSize))
+	if targetSize <= 0 {
+		return dst
+	}
+	scaleX := float64(src.Bounds().Dx()) / float64(targetSize)
+	scaleY := float64(src.Bounds().Dy()) / float64(targetSize)
+	for y := 0; y < targetSize; y++ {
+		for x := 0; x < targetSize; x++ {
+			minX := int(math.Floor(float64(x) * scaleX))
+			maxX := int(math.Ceil(float64(x+1) * scaleX))
+			minY := int(math.Floor(float64(y) * scaleY))
+			maxY := int(math.Ceil(float64(y+1) * scaleY))
+			var red, green, blue, alpha, count int
+			for sy := minY; sy < maxY; sy++ {
+				for sx := minX; sx < maxX; sx++ {
+					c := rgbaAt(src, sx, sy)
+					red += int(c.R)
+					green += int(c.G)
+					blue += int(c.B)
+					alpha += int(c.A)
+					count++
+				}
+			}
+			if count == 0 {
+				continue
+			}
+			dst.SetRGBA(x, y, color.RGBA{
+				R: uint8(red / count),
+				G: uint8(green / count),
+				B: uint8(blue / count),
+				A: uint8(alpha / count),
+			})
+		}
+	}
+	return dst
 }
 
 func drawJigsawImage(points []types.Point) image.Image {
