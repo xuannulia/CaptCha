@@ -1,0 +1,2 @@
+ALTER TABLE route_policies
+  ADD COLUMN IF NOT EXISTS rollout_percent INTEGER NOT NULL DEFAULT 100;

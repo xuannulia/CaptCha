@@ -1,0 +1,17 @@
+{
+  "name": "captcha-platform",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "web/runtime",
+    "web/admin",
+    "integrations/express-middleware"
+  ],
+  "scripts": {
+    "dev:runtime": "npm --workspace @captcha/runtime run dev",
+    "dev:admin": "npm --workspace @captcha/admin run dev",
+    "build": "npm --workspaces run build",
+    "build:runtime": "npm --workspace @captcha/runtime run build",
+    "build:admin": "npm --workspace @captcha/admin run build"
+  }
+}

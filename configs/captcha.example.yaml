@@ -1,0 +1,80 @@
+server:
+  http_addr: ":8080"
+  grpc_addr: ":9090"
+  # Set CAPTCHA_ENV=production or CAPTCHA_PRODUCTION=true to make startup
+  # fail unless production tokens, explicit origin allowlists, PostgreSQL,
+  # Redis, and CAPTCHA_SEED_DEMO=false are configured.
+  environment: "development"
+
+# Example configuration shape. The current server binary reads env vars:
+# CAPTCHA_POSTGRES_DSN, CAPTCHA_POSTGRES_MIGRATIONS, CAPTCHA_SEED_DEMO,
+# CAPTCHA_REDIS_ADDR, CAPTCHA_REDIS_PASSWORD, CAPTCHA_REDIS_PREFIX,
+# CAPTCHA_ALLOWED_ORIGINS, CAPTCHA_ALLOWED_RETURN_URL_ORIGINS,
+# CAPTCHA_RESOURCE_CLASSPATH_DIRS, CAPTCHA_METRICS_TOKEN,
+# CAPTCHA_CHALLENGE_ESCALATION_SEQUENCE,
+# CAPTCHA_GATEWAY_EVENT_BATCH_SIZE, CAPTCHA_GATEWAY_EVENT_FLUSH_INTERVAL,
+# CAPTCHA_GATEWAY_EVENT_QUEUE_SIZE.
+storage:
+  mode: hybrid # memory | postgres | redis | hybrid
+  postgres:
+    dsn: "postgres://captcha:captcha@localhost:5432/captcha?sslmode=disable"
+    migrations: "./migrations/postgres"
+    seed_demo: true
+  redis:
+    addr: "localhost:6379"
+    db: 0
+    key_prefix: "captcha:"
+
+security:
+  ticket_ttl_seconds: 120
+  session_ttl_seconds: 120
+  fail_policy_default: "fail_open"
+  admin_token: ""
+  metrics_token: ""
+
+challenge:
+  pre_generate_size: 8
+  escalation_sequence:
+    - "SLIDER"
+    - "ROTATE"
+    - "CONCAT"
+    - "WORD_IMAGE_CLICK"
+  classpath_resource_dirs:
+    - "./resources"
+    - "./configs/resources"
+
+runtime:
+  public_url: "http://localhost:5173"
+  allowed_origins:
+    - "*"
+  allowed_return_url_origins:
+    - "https://app.example.com"
+
+gateway:
+  addr: ":8081"
+  policy_transport: "http" # http | grpc
+  config_cache: true
+  platform_url: "http://localhost:8080"
+  platform_grpc_addr: "localhost:9090"
+  upstream_url: "http://localhost:3000"
+  client_id: "demo"
+  client_secret: "cap_secret_xxx"
+  ticket_header: "X-Captcha-Ticket"
+  request_nonce_header: "X-Captcha-Request-Nonce"
+  resource_tag_header: "X-Captcha-Resource-Tag"
+  account_id_hash_header: "X-Captcha-Account-ID-Hash"
+  device_id_hash_header: "X-Captcha-Device-ID-Hash"
+  header_allowlist:
+    - "x-request-id"
+    - "traceparent"
+  trusted_proxy_cidrs:
+    - "10.0.0.0/8"
+  fail_policy: "fail_open"
+  timeout: "1500ms"
+  circuit_breaker:
+    failure_threshold: 3
+    cooldown: "5s"
+  event_batch:
+    size: 20
+    flush_interval: "1s"
+    queue_size: 200

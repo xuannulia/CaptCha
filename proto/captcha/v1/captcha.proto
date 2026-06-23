@@ -1,0 +1,177 @@
+syntax = "proto3";
+
+package captcha.v1;
+
+option go_package = "captcha/gen/captcha/v1;captchav1";
+
+service PolicyService {
+  rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
+}
+
+service TicketService {
+  rpc VerifyTicket(VerifyTicketRequest) returns (VerifyTicketResponse);
+  rpc ConsumeTicket(VerifyTicketRequest) returns (VerifyTicketResponse);
+}
+
+service ConfigService {
+  rpc GetConfig(ConfigRequest) returns (ConfigSnapshot);
+  rpc WatchConfig(ConfigRequest) returns (stream ConfigSnapshot);
+}
+
+service EventService {
+  rpc Report(EventBatch) returns (ReportResult);
+}
+
+message EvaluateRequest {
+  string client_id = 1;
+  string scene = 2;
+  string path = 3;
+  string method = 4;
+  string ip = 5;
+  string user_agent = 6;
+  string account_id_hash = 7;
+  string device_id_hash = 8;
+  string ticket = 9;
+  string request_nonce = 10;
+  string resource_tag = 11;
+  map<string, string> headers = 12;
+  int32 risk_score = 13;
+  string risk_level = 14;
+  int32 model_score = 15;
+  string model_mode = 16;
+  string clearance = 17;
+}
+
+message EvaluateResponse {
+  DecisionAction action = 1;
+  string reason = 2;
+  string challenge_url = 3;
+  string session_id = 4;
+  string scene = 5;
+  string challenge_type = 6;
+  int32 ttl_seconds = 7;
+  string clearance_token = 8;
+  int32 clearance_ttl_seconds = 9;
+}
+
+enum DecisionAction {
+  DECISION_ACTION_UNSPECIFIED = 0;
+  ALLOW = 1;
+  CHALLENGE = 2;
+  BLOCK = 3;
+  OBSERVE = 4;
+}
+
+message VerifyTicketRequest {
+  string ticket = 1;
+  string client_id = 2;
+  string scene = 3;
+  string route = 4;
+  string request_nonce = 5;
+  string ip_hash = 6;
+  string user_agent_hash = 7;
+  string account_id_hash = 8;
+  string device_id_hash = 9;
+}
+
+message VerifyTicketResponse {
+  bool valid = 1;
+  string reason = 2;
+  string client_id = 3;
+  string scene = 4;
+  string route = 5;
+  int64 expire_unix = 6;
+  string request_nonce = 7;
+  string ip_hash = 8;
+  string user_agent_hash = 9;
+  string clearance_token = 10;
+  int64 clearance_expire_unix = 11;
+  int32 clearance_ttl_seconds = 12;
+}
+
+message ConfigRequest {
+  string client_id = 1;
+}
+
+message ConfigSnapshot {
+  string client_id = 1;
+  repeated RoutePolicy routes = 2;
+  repeated IpPolicy ip_policies = 3;
+  string application_status = 4;
+  repeated CaptchaResource resources = 5;
+  int64 version = 6;
+}
+
+message RoutePolicy {
+  string id = 1;
+  string name = 2;
+  string path_pattern = 3;
+  string method = 4;
+  string scene = 5;
+  string mode = 6;
+  string challenge_type = 7;
+  string risk_challenge_type = 8;
+  string fail_policy = 9;
+  int32 priority = 10;
+  bool enabled = 11;
+  int32 rollout_percent = 12;
+  int32 risk_challenge_score = 13;
+  int32 risk_block_score = 14;
+  int32 risk_observe_score = 15;
+  RateLimit rate_limit = 16;
+  repeated string challenge_escalation = 17;
+  int32 token_ttl_seconds = 18;
+  string client_id = 19;
+}
+
+message RateLimit {
+  int32 window_seconds = 1;
+  int32 max_requests = 2;
+  // fixed_window, sliding_window, or token_bucket.
+  string strategy = 3;
+}
+
+message IpPolicy {
+  string id = 1;
+  string cidr = 2;
+  string action = 3;
+  string reason = 4;
+  bool enabled = 5;
+  string type = 6;
+  string client_id = 7;
+}
+
+message CaptchaResource {
+  string id = 1;
+  string client_id = 2;
+  string scene = 3;
+  string captcha_type = 4;
+  string resource_type = 5;
+  string storage_type = 6;
+  string uri = 7;
+  string tag = 8;
+  string status = 9;
+  string checksum = 10;
+  map<string, string> metadata = 11;
+}
+
+message EventBatch {
+  repeated AuditEvent events = 1;
+}
+
+message AuditEvent {
+  string client_id = 1;
+  string scene = 2;
+  string route = 3;
+  string action = 4;
+  string decision_reason = 5;
+  string challenge_type = 6;
+  string result = 7;
+  string account_id_hash = 8;
+  string device_id_hash = 9;
+  string ip_hash = 10;
+}
+
+message ReportResult {
+  int32 accepted = 1;
+}

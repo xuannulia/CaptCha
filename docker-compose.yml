@@ -1,0 +1,97 @@
+name: captcha-platform
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: captcha
+      POSTGRES_USER: captcha
+      POSTGRES_PASSWORD: captcha
+    ports:
+      - "5432:5432"
+    volumes:
+      - captcha-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U captcha -d captcha"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - captcha-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  captcha-server:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      CAPTCHA_ADDR: ":8080"
+      CAPTCHA_GRPC_ADDR: ":9090"
+      CAPTCHA_POSTGRES_DSN: "postgres://captcha:captcha@postgres:5432/captcha?sslmode=disable"
+      CAPTCHA_REDIS_ADDR: "redis:6379"
+      CAPTCHA_RUNTIME_URL: "${CAPTCHA_RUNTIME_URL:-http://localhost:5173}"
+      CAPTCHA_ALLOWED_ORIGINS: "${CAPTCHA_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:5175,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175}"
+      CAPTCHA_ALLOWED_RETURN_URL_ORIGINS: "${CAPTCHA_ALLOWED_RETURN_URL_ORIGINS:-http://localhost:5173,http://localhost:5174,http://localhost:5175,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175}"
+      CAPTCHA_CHALLENGE_ESCALATION_SEQUENCE: "${CAPTCHA_CHALLENGE_ESCALATION_SEQUENCE:-SLIDER,ROTATE,CONCAT,WORD_IMAGE_CLICK}"
+      CAPTCHA_ADMIN_TOKEN: "${CAPTCHA_ADMIN_TOKEN:-}"
+      CAPTCHA_METRICS_TOKEN: "${CAPTCHA_METRICS_TOKEN:-}"
+      CAPTCHA_GRPC_TOKEN: "${CAPTCHA_GRPC_TOKEN:-}"
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  captcha-gateway:
+    profiles:
+      - gateway
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.gateway
+    restart: unless-stopped
+    depends_on:
+      captcha-server:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      CAPTCHA_GATEWAY_ADDR: ":8081"
+      CAPTCHA_UPSTREAM_URL: "${CAPTCHA_UPSTREAM_URL:-http://host.docker.internal:3000}"
+      CAPTCHA_PLATFORM_URL: "http://captcha-server:8080"
+      CAPTCHA_PLATFORM_GRPC_ADDR: "captcha-server:9090"
+      CAPTCHA_PLATFORM_GRPC_TOKEN: "${CAPTCHA_PLATFORM_GRPC_TOKEN:-${CAPTCHA_GRPC_TOKEN:-}}"
+      CAPTCHA_GATEWAY_POLICY_TRANSPORT: "${CAPTCHA_GATEWAY_POLICY_TRANSPORT:-grpc}"
+      CAPTCHA_GATEWAY_CONFIG_CACHE: "${CAPTCHA_GATEWAY_CONFIG_CACHE:-true}"
+      CAPTCHA_CLIENT_ID: "${CAPTCHA_CLIENT_ID:-demo}"
+      CAPTCHA_CLIENT_SECRET: "${CAPTCHA_CLIENT_SECRET:-}"
+      CAPTCHA_GATEWAY_HEADER_ALLOWLIST: "${CAPTCHA_GATEWAY_HEADER_ALLOWLIST:-x-request-id,traceparent}"
+      CAPTCHA_GATEWAY_EVENT_BATCH_SIZE: "${CAPTCHA_GATEWAY_EVENT_BATCH_SIZE:-20}"
+      CAPTCHA_GATEWAY_EVENT_FLUSH_INTERVAL: "${CAPTCHA_GATEWAY_EVENT_FLUSH_INTERVAL:-1s}"
+      CAPTCHA_GATEWAY_EVENT_QUEUE_SIZE: "${CAPTCHA_GATEWAY_EVENT_QUEUE_SIZE:-200}"
+    ports:
+      - "8081:8081"
+
+volumes:
+  captcha-postgres:
+  captcha-redis:
