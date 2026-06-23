@@ -122,7 +122,7 @@ session_id = decision["session_id"]
 status, session = request("GET", f"/api/v1/challenge/sessions/{session_id}")
 assert status == 200, (status, session)
 body = json.dumps(session, ensure_ascii=False).lower()
-forbidden = ["answer", "target", "tolerance", "verify_rule", "score_rule", "score_threshold", "answer_seed", "secret", "token"]
+forbidden = ["answer", "target", "tolerance", "verify_rule", "score_rule", "score_threshold", "answer_seed", "initial_angle", "secret", "token"]
 leaks = [word for word in forbidden if word in body]
 assert not leaks, leaks
 

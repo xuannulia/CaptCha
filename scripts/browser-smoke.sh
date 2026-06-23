@@ -1472,11 +1472,87 @@ open_demo_rotate_success_check() {
 		await control.waitFor();
 		await image.waitFor();
 		const beforeTransform = await image.evaluate((el) => el.style.transform || "");
-		const match = beforeTransform.match(/rotate\(([-\d.]+)deg\)/);
-		if (!match) throw new Error(`could not parse rotate transform: ${beforeTransform}`);
-		const initialAngle = ((Math.round(Number(match[1])) % 360) + 360) % 360;
-		const answer = (360 - initialAngle) % 360;
-		if (answer <= 0) throw new Error(`unexpected rotate answer ${answer} from ${beforeTransform}`);
+		const answer = await rotateFrame.evaluate(async () => {
+			const image = document.querySelector(".rotating-image");
+			if (!image) throw new Error("missing rotate image");
+			const img = new Image();
+			img.decoding = "async";
+			img.src = image.currentSrc || image.src;
+			await img.decode();
+			const canvas = document.createElement("canvas");
+			canvas.width = img.naturalWidth;
+			canvas.height = img.naturalHeight;
+			const context = canvas.getContext("2d", { willReadFrequently: true });
+			context.drawImage(img, 0, 0);
+			const data = context.getImageData(0, 0, canvas.width, canvas.height);
+			function isBlue(bytes, offset) {
+				const red = bytes[offset];
+				const green = bytes[offset + 1];
+				const blue = bytes[offset + 2];
+				const alpha = bytes[offset + 3];
+				return alpha > 180 && blue > 160 && green > 60 && green < 150 && red < 90 && blue - red > 100;
+			}
+			const observed = new Uint8Array(data.width * data.height);
+			let observedCount = 0;
+			for (let y = 0; y < data.height; y += 1) {
+				for (let x = 0; x < data.width; x += 1) {
+					const index = y * data.width + x;
+					if (isBlue(data.data, index * 4)) {
+						observed[index] = 1;
+						observedCount += 1;
+					}
+				}
+			}
+			if (observedCount < 400) throw new Error(`rotate image blue region is too small: ${observedCount}`);
+			const model = document.createElement("canvas");
+			model.width = data.width;
+			model.height = data.height;
+			const modelContext = model.getContext("2d", { willReadFrequently: true });
+			const cx = data.width / 2;
+			const cy = data.height / 2;
+			function rotatePoint(x, y, angle) {
+				const radians = angle * Math.PI / 180;
+				return {
+					x: cx + x * Math.cos(radians) - y * Math.sin(radians),
+					y: cy + x * Math.sin(radians) + y * Math.cos(radians)
+				};
+			}
+			function drawModel(start) {
+				modelContext.clearRect(0, 0, model.width, model.height);
+				const points = [
+					rotatePoint(0, -72, start),
+					rotatePoint(62, 42, start),
+					rotatePoint(0, 16, start),
+					rotatePoint(-62, 42, start)
+				];
+				modelContext.fillStyle = "rgb(37, 99, 235)";
+				modelContext.beginPath();
+				modelContext.moveTo(points[0].x, points[0].y);
+				for (const point of points.slice(1)) modelContext.lineTo(point.x, point.y);
+				modelContext.closePath();
+				modelContext.fill();
+				modelContext.fillStyle = "rgb(250, 204, 21)";
+				modelContext.beginPath();
+				modelContext.arc(cx, cy, 22, 0, Math.PI * 2);
+				modelContext.fill();
+				return modelContext.getImageData(0, 0, model.width, model.height).data;
+			}
+			let bestStart = 0;
+			let bestMismatch = Number.POSITIVE_INFINITY;
+			for (let candidate = 0; candidate < 360; candidate += 1) {
+				const modelData = drawModel(candidate);
+				let mismatch = 0;
+				for (let index = 0; index < observed.length; index += 1) {
+					if (observed[index] !== (isBlue(modelData, index * 4) ? 1 : 0)) mismatch += 1;
+				}
+				if (mismatch < bestMismatch) {
+					bestMismatch = mismatch;
+					bestStart = candidate;
+				}
+			}
+			return (360 - bestStart) % 360;
+		});
+		if (answer <= 0) throw new Error(`unexpected rotate answer ${answer}`);
 		async function eventInit(value, buttons) {
 			return await control.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();

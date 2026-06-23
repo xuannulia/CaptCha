@@ -527,17 +527,15 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 	case types.CaptchaRotate:
 		start := mustRandomInt(35, 325)
 		answer := (360 - start) % 360
-		image := pngDataURL(drawRotateImage(0))
 		return types.Answer{Angle: answer}, types.RenderPayload{
 			Type:   types.CaptchaRotate,
 			Prompt: "旋转图形至正向",
 			View:   types.View{Width: 220, Height: 220},
-			Image:  image,
+			Image:  pngDataURL(drawRotateImage(start)),
 			Parameters: map[string]any{
-				"min":           0,
-				"max":           359,
-				"step":          1,
-				"initial_angle": start,
+				"min":  0,
+				"max":  359,
+				"step": 1,
 			},
 		}, nil
 	case types.CaptchaConcat:

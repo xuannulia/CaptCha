@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"image/color"
 	"image/png"
 	"math"
 	"strings"
@@ -111,6 +112,23 @@ func TestGeneratedPayloadsUsePNGDataURLs(t *testing.T) {
 		if captchaType == types.CaptchaSlider || captchaType == types.CaptchaSlider2 || captchaType == types.CaptchaConcat {
 			assertPNGDataURL(t, session.RenderPayload.Piece)
 		}
+	}
+}
+
+func TestRotateChallengeDoesNotExposeAnswerEquivalentInitialAngle(t *testing.T) {
+	t.Parallel()
+
+	e := New(2 * time.Minute)
+	session, err := e.NewSession("app_test", "login", types.CaptchaRotate)
+	if err != nil {
+		t.Fatalf("new rotate session: %v", err)
+	}
+	if _, ok := session.RenderPayload.Parameters["initial_angle"]; ok {
+		t.Fatalf("rotate challenge must not expose answer-equivalent initial_angle: %+v", session.RenderPayload.Parameters)
+	}
+	visualAnswer := inferRotateAnswerFromImage(t, decodePNGDataURL(t, session.RenderPayload.Image))
+	if angleDiff(visualAnswer, session.Answer.Angle) > 4 {
+		t.Fatalf("rotate image should encode the server answer visually, visual=%d answer=%d", visualAnswer, session.Answer.Angle)
 	}
 }
 
@@ -880,6 +898,47 @@ func expectedCurveVisualStyle(captchaType types.CaptchaType) string {
 	default:
 		return "single-rope"
 	}
+}
+
+func inferRotateAnswerFromImage(t *testing.T, img image.Image) int {
+	t.Helper()
+	bounds := img.Bounds()
+	observed := make([]bool, bounds.Dx()*bounds.Dy())
+	observedCount := 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if rotateBluePixel(rgbaAt(img, x, y)) {
+				observed[(y-bounds.Min.Y)*bounds.Dx()+x-bounds.Min.X] = true
+				observedCount++
+			}
+		}
+	}
+	if observedCount < 400 {
+		t.Fatalf("expected enough blue rotate pixels, got %d", observedCount)
+	}
+	bestStart := 0
+	bestMismatch := int(^uint(0) >> 1)
+	for candidate := 0; candidate < 360; candidate++ {
+		model := drawRotateImage(candidate)
+		mismatch := 0
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				index := (y-bounds.Min.Y)*bounds.Dx() + x - bounds.Min.X
+				if observed[index] != rotateBluePixel(rgbaAt(model, x, y)) {
+					mismatch++
+				}
+			}
+		}
+		if mismatch < bestMismatch {
+			bestMismatch = mismatch
+			bestStart = candidate
+		}
+	}
+	return (360 - bestStart) % 360
+}
+
+func rotateBluePixel(c color.RGBA) bool {
+	return c.A > 180 && c.B > 160 && c.G > 60 && c.G < 150 && c.R < 90 && int(c.B)-int(c.R) > 100
 }
 
 func jigsawWrongTilePoints(answer []types.Point) []types.Point {

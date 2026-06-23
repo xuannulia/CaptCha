@@ -65,6 +65,9 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 			rotated = overlayTemplate(rotated, resizeNearest(rotateTemplate, payload.View.Width, payload.View.Height))
 		}
 		payload.Image = pngDataURL(rotated)
+		parameters := cloneParameters(payload.Parameters)
+		delete(parameters, "initial_angle")
+		payload.Parameters = parameters
 	case types.CaptchaConcat:
 		composed, piece, splitY := composeConcat(base, answer.Offset, loadConcatTemplate(resources))
 		payload.Image = pngDataURL(composed)

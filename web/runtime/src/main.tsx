@@ -54,7 +54,6 @@ type ChallengeParameters = {
   piece_size?: number;
   split_y?: number;
   piece_width?: number;
-  initial_angle?: number;
   pow_seed?: string;
   difficulty?: number;
   max_nonce?: number;
@@ -902,7 +901,7 @@ function RuntimeChallenge() {
                 src={challenge.image}
                 alt=""
                 draggable={false}
-                style={challenge.type === "ROTATE" ? { transform: `rotate(${numberParam(challenge, "initial_angle", 0) + value}deg)` } : undefined}
+                style={challenge.type === "ROTATE" ? { transform: `rotate(${value}deg)` } : undefined}
               />
             )}
             {isJigsawCaptcha(challenge) && challenge.image && jigsawTiles.length > 0 && (
