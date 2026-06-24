@@ -62,6 +62,7 @@ const (
 	imageViewHeight    = 180
 	sliderPieceSize    = 47
 	slider2PieceSize   = sliderPieceSize
+	sliderMaskOpacity  = 0.46
 	concatMaxMovement  = 160
 	concatPieceWidth   = imageViewWidth + concatMaxMovement
 	jigsawTileCols     = 2
@@ -783,12 +784,6 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 	bg := copyRGBA(base)
 	piece := newCanvas(size, size, color.RGBA{A: 0})
 	maskFile := sliderMaskFile(mask)
-	drawSliderGapAmbient(bg, targetX, targetY, size, func(x, y int) uint8 {
-		return svgMaskAlpha(maskFile, size, x, y)
-	})
-	drawSliderPieceShadow(piece, size, func(x, y int) uint8 {
-		return svgMaskAlpha(maskFile, size, x, y)
-	})
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			maskAlpha := svgMaskAlpha(maskFile, size, x, y)
@@ -797,39 +792,15 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 			}
 			gx, gy := targetX+x, targetY+y
 			source := rgbaAt(base, gx, gy)
-			sourceMono := grayscaleRGBA(source)
-			edgeSoft := sliderAlphaEdgeStrength(maskFile, size, x, y, 6)
-			edgeCore := sliderAlphaEdgeStrength(maskFile, size, x, y, 2)
-			edgeBand := sliderMaskEdgeBandStrength(maskFile, size, x, y, 4)
-			innerBand := sliderMaskEdgeBandStrength(maskFile, size, x, y, 2)
-			alphaRatio := float64(maskAlpha) / 255
-			fringe := math.Max(edgeSoft, (1-alphaRatio)*0.92)
-			light := clampFloat(1-float64(x+y)/(float64(size)*1.45), 0, 1)
-			shade := clampFloat(float64(x+y)/(float64(size)*1.45)-0.36, 0, 1)
-
-			gapPixel := mixRGBA(sourceMono, color.RGBA{R: 166, G: 166, B: 166, A: 255}, 0.82)
-			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 70, G: 70, B: 70, A: 255}, 0.05+edgeSoft*0.08+edgeCore*0.22+innerBand*0.20+shade*0.05)
-			if x+y < size {
-				gapPixel = mixRGBA(gapPixel, color.RGBA{R: 246, G: 246, B: 246, A: 255}, edgeSoft*0.045+light*0.025)
-			}
-			bg.Set(gx, gy, gapPixel)
-
-			detailWeight := clampFloat((alphaRatio-0.50)*2.35, 0, 1)
-			detailWeight *= clampFloat(1-edgeBand*0.45-innerBand*0.12, 0.34, 1)
-			pieceBase := mixRGBA(sourceMono, source, detailWeight)
-			piecePixel := mixRGBA(pieceBase, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.22+light*0.035)
-			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 232, G: 232, B: 232, A: 255}, math.Min(0.18, math.Pow(1-alphaRatio, 0.72)*0.06+edgeBand*0.04+shade*0.045))
-			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 72, G: 72, B: 72, A: 255}, math.Min(0.42, fringe*0.08+edgeCore*0.18+innerBand*0.24+shade*0.06))
-			if x+y < size {
-				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 255, G: 255, B: 255, A: 255}, edgeSoft*0.04+light*0.08)
-			}
-			if x+y > size {
-				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 38, G: 38, B: 38, A: 255}, edgeCore*0.075+shade*0.04)
-			}
-			piece.Set(x, y, withAlpha(piecePixel, maskAlpha))
+			bg.Set(gx, gy, sliderBlackMaskPixel(source, maskAlpha, sliderMaskOpacity))
+			piece.Set(x, y, withAlpha(source, maskAlpha))
 		}
 	}
 	return bg, piece
+}
+
+func sliderBlackMaskPixel(source color.RGBA, alpha uint8, opacity float64) color.RGBA {
+	return mixRGBA(source, color.RGBA{A: 255}, clampFloat(opacity*float64(alpha)/255, 0, 1))
 }
 
 func drawSliderGapAmbient(img *image.RGBA, ox, oy, size int, alphaAt func(int, int) uint8) {
@@ -917,7 +888,7 @@ func drawSlider2Challenge(targetX, targetY, size int, mask sliderMaskKind) (imag
 		if abs(decoy.X-targetX) < size && abs(decoy.Y-targetY) < size {
 			continue
 		}
-		drawSliderMaskGhost(bgRGBA, decoy.X, decoy.Y, size, mask, 0.82)
+		drawSliderMaskGhost(bgRGBA, decoy.X, decoy.Y, size, mask, sliderMaskOpacity)
 	}
 	return bgRGBA, piece
 }
@@ -931,14 +902,10 @@ func sliderDecoyPoints(size int) []image.Point {
 
 func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind, opacity float64) {
 	maskFile := sliderMaskFile(mask)
-	drawSliderGapAmbient(img, ox, oy, size, func(x, y int) uint8 {
-		return svgMaskAlpha(maskFile, size, x, y)
-	})
-	visibility := clampFloat(opacity/0.82, 0, 1)
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			maskAlpha := svgMaskAlpha(maskFile, size, x, y)
-			if maskAlpha <= 18 {
+			if maskAlpha <= 4 {
 				continue
 			}
 			gx, gy := ox+x, oy+y
@@ -946,22 +913,7 @@ func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind,
 				continue
 			}
 			source := rgbaAt(img, gx, gy)
-			sourceMono := grayscaleRGBA(source)
-			edgeSoft := sliderAlphaEdgeStrength(maskFile, size, x, y, 6)
-			edgeCore := sliderAlphaEdgeStrength(maskFile, size, x, y, 2)
-			innerBand := sliderMaskEdgeBandStrength(maskFile, size, x, y, 2)
-			light := clampFloat(1-float64(x+y)/(float64(size)*1.45), 0, 1)
-			shade := clampFloat(float64(x+y)/(float64(size)*1.45)-0.36, 0, 1)
-
-			ghost := mixRGBA(sourceMono, color.RGBA{R: 166, G: 166, B: 166, A: 255}, 0.82)
-			ghost = mixRGBA(ghost, color.RGBA{R: 70, G: 70, B: 70, A: 255}, 0.05+edgeSoft*0.08+edgeCore*0.22+innerBand*0.20+shade*0.05)
-			if x+y < size {
-				ghost = mixRGBA(ghost, color.RGBA{R: 246, G: 246, B: 246, A: 255}, edgeSoft*0.035+light*0.018)
-			}
-			if visibility < 1 {
-				ghost = mixRGBA(source, ghost, visibility)
-			}
-			img.Set(gx, gy, ghost)
+			img.Set(gx, gy, sliderBlackMaskPixel(source, maskAlpha, opacity))
 		}
 	}
 }

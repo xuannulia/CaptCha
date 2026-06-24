@@ -153,7 +153,7 @@ func TestSliderChallengesUseLargeSVGPiecesInBounds(t *testing.T) {
 	}
 }
 
-func TestSlider2DecoyUsesPuzzleStyleShadow(t *testing.T) {
+func TestSlider2DecoyUsesBlackTransparentMaskWithoutAmbientShadow(t *testing.T) {
 	t.Parallel()
 
 	size := slider2PieceSize
@@ -163,7 +163,7 @@ func TestSlider2DecoyUsesPuzzleStyleShadow(t *testing.T) {
 	img := drawSliderScene()
 	before := copyRGBA(img)
 
-	drawSliderMaskGhost(img, origin.X, origin.Y, size, mask, 0.82)
+	drawSliderMaskGhost(img, origin.X, origin.Y, size, mask, sliderMaskOpacity)
 
 	inside, ambient := sliderGhostChangeCounts(t, before, img, origin, size, func(x, y int) uint8 {
 		return svgMaskAlpha(maskFile, size, x, y)
@@ -171,8 +171,27 @@ func TestSlider2DecoyUsesPuzzleStyleShadow(t *testing.T) {
 	if inside < size*size/4 {
 		t.Fatalf("slider v2 decoy should render the puzzle body, changed inside pixels=%d", inside)
 	}
-	if ambient < size/2 {
-		t.Fatalf("slider v2 decoy should use puzzle-style ambient shadow, changed ambient pixels=%d", ambient)
+	if ambient != 0 {
+		t.Fatalf("slider v2 decoy should not render ambient shadow outside mask, changed ambient pixels=%d", ambient)
+	}
+}
+
+func TestSliderPieceHasNoOutsideShadow(t *testing.T) {
+	t.Parallel()
+
+	size := sliderPieceSize
+	mask := sliderMaskKind("dianzan.svg")
+	maskFile := sliderMaskFile(mask)
+	_, piece := drawSliderChallenge(120, 60, size, mask)
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			if svgMaskAlpha(maskFile, size, x, y) > 4 {
+				continue
+			}
+			if alphaAt(t, piece, x, y) != 0 {
+				t.Fatalf("slider piece should not contain outside shadow at %d,%d alpha=%d", x, y, alphaAt(t, piece, x, y))
+			}
+		}
 	}
 }
 

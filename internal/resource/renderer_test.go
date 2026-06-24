@@ -454,7 +454,7 @@ func TestApplyVisualsUsesOneDefaultSliderTemplateForSlider2(t *testing.T) {
 	}
 }
 
-func TestSlider2DecoyUsesPuzzleStyleShadow(t *testing.T) {
+func TestSlider2DecoyUsesBlackTransparentMaskWithoutAmbientShadow(t *testing.T) {
 	t.Parallel()
 
 	size := sliderPieceSizeFallback
@@ -467,7 +467,7 @@ func TestSlider2DecoyUsesPuzzleStyleShadow(t *testing.T) {
 	before := cloneRGBA(img)
 	origin := image.Point{X: 18, Y: 24}
 
-	drawSliderMaskGhost(img, mask, origin.X, origin.Y, size, 0.82)
+	drawSliderMaskGhost(img, mask, origin.X, origin.Y, size, sliderMaskOpacity)
 
 	inside, ambient := sliderGhostChangeCounts(t, before, img, origin, size, func(x, y int) uint8 {
 		if x < 0 || y < 0 || x >= size || y >= size {
@@ -478,8 +478,33 @@ func TestSlider2DecoyUsesPuzzleStyleShadow(t *testing.T) {
 	if inside < size*size/4 {
 		t.Fatalf("slider v2 decoy should render the puzzle body, changed inside pixels=%d", inside)
 	}
-	if ambient < size/2 {
-		t.Fatalf("slider v2 decoy should use puzzle-style ambient shadow, changed ambient pixels=%d", ambient)
+	if ambient != 0 {
+		t.Fatalf("slider v2 decoy should not render ambient shadow outside mask, changed ambient pixels=%d", ambient)
+	}
+}
+
+func TestComposedSliderPieceHasNoOutsideShadow(t *testing.T) {
+	t.Parallel()
+
+	size := sliderPieceSizeFallback
+	mask, ok := renderEmbeddedSliderMask("dianzan.svg", size)
+	if !ok {
+		t.Fatalf("expected embedded slider mask to render")
+	}
+	base := image.NewRGBA(image.Rect(0, 0, 160, 100))
+	fillRect(base, 0, 0, 160, 100, color.RGBA{R: 92, G: 132, B: 190, A: 255})
+	_, piece := composeSlider(base, types.Answer{X: 60, Y: 30}, mask, size)
+	actualMask := resizeAlphaMask(mask, size, size)
+
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			if colorAlpha(actualMask.At(x, y)) > 4 {
+				continue
+			}
+			if alphaAt(t, piece, x, y) != 0 {
+				t.Fatalf("slider piece should not contain outside shadow at %d,%d alpha=%d", x, y, alphaAt(t, piece, x, y))
+			}
+		}
 	}
 }
 
