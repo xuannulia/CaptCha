@@ -597,17 +597,32 @@ function RuntimeChallenge() {
     suppressNextBoardClick.current = true;
     const nextTrack = appendTrack("end", end.x, end.y);
     if (distanceBetweenPoints(start, end) >= Math.min(numberParam(challenge, "tile_width", 80), numberParam(challenge, "tile_height", 40)) * 0.45) {
-      swapJigsawTiles(start, end);
-      const nextPoints = [start, end].slice(0, clickTargetCount(challenge));
-      pointsRef.current = nextPoints;
-      setPoints(nextPoints);
-      return { points: nextPoints, track: nextTrack, value: valueRef.current, autoVerify: true };
+      const snapshot = applyJigsawPair(start, end, nextTrack);
+      return snapshot ? { ...snapshot, autoVerify: false } : snapshot;
     }
     const snapshot = toggleJigsawPoint(end, nextTrack);
     if (snapshot && snapshot.completed && snapshot.points.length >= clickTargetCount(challenge)) {
-      swapJigsawTiles(snapshot.points[0], snapshot.points[1]);
+      return { ...snapshot, autoVerify: false };
     }
     return snapshot ? { ...snapshot, autoVerify: false } : snapshot;
+  }
+
+  function applyJigsawPair(first: ChallengePoint, second: ChallengePoint, nextTrack = trackRef.current) {
+    if (!challenge || !isJigsawCaptcha(challenge)) return undefined;
+    const firstIndex = jigsawTileIndexFromPoint(challenge, first);
+    const secondIndex = jigsawTileIndexFromPoint(challenge, second);
+    if (firstIndex < 0 || secondIndex < 0 || firstIndex === secondIndex) {
+      return toggleJigsawPoint(second, nextTrack);
+    }
+    revertCurrentJigsawSwap();
+    const nextPoints = [
+      jigsawTileCenterPoint(challenge, firstIndex),
+      jigsawTileCenterPoint(challenge, secondIndex)
+    ].slice(0, clickTargetCount(challenge));
+    swapJigsawTiles(nextPoints[0], nextPoints[1]);
+    pointsRef.current = nextPoints;
+    setPoints(nextPoints);
+    return { points: nextPoints, value: valueRef.current, track: nextTrack, completed: true };
   }
 
   function swapJigsawTiles(first: ChallengePoint, second: ChallengePoint) {
@@ -621,6 +636,13 @@ function RuntimeChallenge() {
     [nextTiles[firstIndex], nextTiles[secondIndex]] = [nextTiles[secondIndex], nextTiles[firstIndex]];
     jigsawTilesRef.current = nextTiles;
     setJigsawTiles(nextTiles);
+  }
+
+  function revertCurrentJigsawSwap() {
+    if (!challenge || !isJigsawCaptcha(challenge)) return;
+    const base = pointsRef.current;
+    if (base.length < clickTargetCount(challenge) || base.length < 2) return;
+    swapJigsawTiles(base[0], base[1]);
   }
 
   function updateValueFromControl(event: PointerEvent, type: TrackPoint["type"]) {
@@ -758,17 +780,26 @@ function RuntimeChallenge() {
     if (!challenge || !isJigsawCaptcha(challenge)) return undefined;
     const targetCount = clickTargetCount(challenge);
     const base = pointsRef.current;
-    if (base.length >= targetCount) {
-      return { points: base, value: valueRef.current, track: nextTrack, completed: false };
-    }
     const tileIndex = jigsawTileIndexFromPoint(challenge, point);
+    if (tileIndex < 0) return undefined;
     const existingIndex = base.findIndex((selected) => jigsawTileIndexFromPoint(challenge, selected) === tileIndex);
+    if (base.length >= targetCount) {
+      revertCurrentJigsawSwap();
+      const nextPoints = existingIndex >= 0 ? [] : [jigsawTileCenterPoint(challenge, tileIndex)];
+      pointsRef.current = nextPoints;
+      setPoints(nextPoints);
+      return { points: nextPoints, value: valueRef.current, track: nextTrack, completed: false };
+    }
     const nextPoints = existingIndex >= 0
       ? base.filter((_, index) => index !== existingIndex)
       : [...base, jigsawTileCenterPoint(challenge, tileIndex)].slice(0, targetCount);
+    const completed = existingIndex < 0 && nextPoints.length >= targetCount;
+    if (completed && nextPoints.length >= 2) {
+      swapJigsawTiles(nextPoints[0], nextPoints[1]);
+    }
     pointsRef.current = nextPoints;
     setPoints(nextPoints);
-    return { points: nextPoints, value: valueRef.current, track: nextTrack, completed: existingIndex < 0 && nextPoints.length >= targetCount };
+    return { points: nextPoints, value: valueRef.current, track: nextTrack, completed };
   }
 
   function toggleClickPoint(point: ChallengePoint, nextTrack = trackRef.current) {
@@ -1296,7 +1327,6 @@ function jigsawTileCenterPoint(challenge: Challenge, tileIndex: number) {
 }
 
 function isJigsawTileSelected(challenge: Challenge, cellIndex: number, points: ChallengePoint[]) {
-  if (points.length >= clickTargetCount(challenge)) return false;
   return points.some((point) => jigsawTileIndexFromPoint(challenge, point) === cellIndex);
 }
 
