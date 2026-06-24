@@ -75,6 +75,9 @@ type Resource = {
 };
 
 type ResourceFormValues = {
+  client_id?: string;
+  scene?: string;
+  tag?: string;
   gallery_type?: "background" | "concatBackground" | "jigsawBackground" | "rotate" | "grid" | "icon";
   category?: string;
   label?: string;
@@ -628,6 +631,8 @@ function Applications() {
 
 function Routes() {
   const { data, isLoading } = useList<RoutePolicy>("routes", "/api/v1/admin/route-policies");
+  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
+  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
   const [open, setOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RoutePolicy | null>(null);
   const [pendingRouteID, setPendingRouteID] = useState("");
@@ -635,6 +640,7 @@ function Routes() {
   const mutation = usePost<RoutePolicy>("routes");
   const toggleMutation = usePost<RoutePolicy>("routes");
   const columns: ColumnsType<RoutePolicy> = [
+    { title: "应用", dataIndex: "client_id", width: 130 },
     { title: "名称", dataIndex: "name" },
     { title: "路径", dataIndex: "path_pattern" },
     { title: "方法", dataIndex: "method", width: 90 },
@@ -689,7 +695,7 @@ function Routes() {
     setEditingRoute(null);
     form.resetFields();
     form.setFieldsValue({
-      client_id: "demo",
+      client_id: firstApplicationClientID(applications),
       method: "POST",
       mode: "always",
       challenge_type: "SLIDER",
@@ -720,7 +726,7 @@ function Routes() {
           form={form}
           layout="vertical"
           initialValues={{
-            client_id: "demo",
+            client_id: firstApplicationClientID(applications),
             method: "POST",
             mode: "always",
             challenge_type: "SLIDER",
@@ -758,7 +764,9 @@ function Routes() {
             }
           }}
         >
-          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input disabled={Boolean(editingRoute)} /></Form.Item>
+          <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
+            <Select showSearch disabled={Boolean(editingRoute)} optionFilterProp="label" options={appOptions} />
+          </Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="path_pattern" label="路径" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
@@ -786,6 +794,8 @@ function Routes() {
 
 function IpPolicies() {
   const { data, isLoading } = useList<IpPolicy>("ip-policies", "/api/v1/admin/ip-policies");
+  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
+  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
   const [open, setOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<IpPolicy | null>(null);
   const [pendingPolicyID, setPendingPolicyID] = useState("");
@@ -793,6 +803,7 @@ function IpPolicies() {
   const mutation = usePost<IpPolicy>("ip-policies");
   const toggleMutation = usePost<IpPolicy>("ip-policies");
   const columns: ColumnsType<IpPolicy> = [
+    { title: "应用", dataIndex: "client_id", width: 130 },
     { title: "类型", render: (_, row) => ipPolicyTypeLabel(row.type) },
     { title: "CIDR", dataIndex: "cidr" },
     { title: "动作", render: (_, row) => actionLabel(row.action) },
@@ -835,7 +846,7 @@ function IpPolicies() {
   const openCreatePolicy = () => {
     setEditingPolicy(null);
     form.resetFields();
-    form.setFieldsValue({ client_id: "demo", type: "blocklist", action: "block", enabled: true });
+    form.setFieldsValue({ client_id: firstApplicationClientID(applications), type: "blocklist", action: "block", enabled: true });
     setOpen(true);
   };
   const closePolicyModal = () => {
@@ -850,7 +861,7 @@ function IpPolicies() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ client_id: "demo", type: "blocklist", action: "block", enabled: true }}
+          initialValues={{ client_id: firstApplicationClientID(applications), type: "blocklist", action: "block", enabled: true }}
           onFinish={async (values) => {
             try {
               await mutation.mutateAsync({
@@ -863,7 +874,9 @@ function IpPolicies() {
             }
           }}
         >
-          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input disabled={Boolean(editingPolicy)} /></Form.Item>
+          <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
+            <Select showSearch disabled={Boolean(editingPolicy)} optionFilterProp="label" options={appOptions} />
+          </Form.Item>
           <Form.Item name="type" label="类型"><Select options={selectOptions(["allowlist", "blocklist"])} /></Form.Item>
           <Form.Item name="cidr" label="CIDR" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="action" label="动作"><Select options={selectOptions(["allow", "block", "challenge"])} /></Form.Item>
@@ -876,6 +889,8 @@ function IpPolicies() {
 }
 
 function PolicySimulator() {
+  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
+  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
   const [form] = Form.useForm();
   const mutation = usePost<PolicySimulation>("policy-simulate");
   const simulation = mutation.data;
@@ -888,7 +903,9 @@ function PolicySimulator() {
         initialValues={{ client_id: "demo", method: "POST", path: "/api/login" }}
         onFinish={(values) => mutation.mutate({ path: "/api/v1/admin/policy/simulate", body: values })}
       >
-        <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input /></Form.Item>
+        <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
+          <Select showSearch style={{ width: 180 }} optionFilterProp="label" options={appOptions} />
+        </Form.Item>
         <Form.Item name="method" label="方法"><Select style={{ width: 110 }} options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
         <Form.Item name="path" label="路径" rules={[{ required: true }]}><Input style={{ width: 180 }} /></Form.Item>
         <Form.Item name="scene" label="场景"><Input style={{ width: 120 }} /></Form.Item>
@@ -1054,6 +1071,17 @@ function statusLabel(value: string) {
   return statusLabels[value] || value;
 }
 
+function applicationOptions(applications?: Application[]) {
+  return (applications || []).map((item) => ({
+    value: item.client_id,
+    label: `${item.name} (${item.client_id})`
+  }));
+}
+
+function firstApplicationClientID(applications?: Application[]) {
+  return applications?.[0]?.client_id || "demo";
+}
+
 function resourceCategory(row: Resource) {
   return metadataText(row, "label") || metadataText(row, "category");
 }
@@ -1156,6 +1184,8 @@ function ResourceFileItem({
 
 function Resources() {
   const { data, isLoading } = useList<Resource>("resources", "/api/v1/admin/resources");
+  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
+  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
   const [open, setOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [fileFilter, setFileFilter] = useState("all");
@@ -1213,6 +1243,9 @@ function Resources() {
     setSelectedFiles([]);
     setUploadError("");
     form.setFieldsValue({
+      client_id: firstApplicationClientID(applications),
+      scene: "",
+      tag: "default",
       gallery_type: "background",
       category: "",
       label: ""
@@ -1220,6 +1253,7 @@ function Resources() {
     setOpen(true);
   };
   const columns: ColumnsType<Resource> = [
+    { title: "应用", dataIndex: "client_id" },
     { title: "图库", render: (_, row) => resourceTypeLabel(row.resource_type) },
     { title: "验证码类别", render: (_, row) => captchaLabel(row.captcha_type || "AUTO") },
     { title: "来源", render: (_, row) => storageLabel(row.storage_type) },
@@ -1349,6 +1383,9 @@ function Resources() {
           form={form}
           layout="vertical"
           initialValues={{
+            client_id: firstApplicationClientID(applications),
+            scene: "",
+            tag: "default",
             gallery_type: "background",
             category: "",
             label: ""
@@ -1363,11 +1400,11 @@ function Resources() {
             for (const file of selectedFiles) {
               formData.append("files", file);
             }
-            formData.set("client_id", "demo");
-            formData.set("scene", "");
+            formData.set("client_id", values.client_id || firstApplicationClientID(applications));
+            formData.set("scene", values.scene || "");
             formData.set("captcha_type", defaults.captchaType);
             formData.set("resource_type", defaults.resourceType);
-            formData.set("tag", defaults.tag);
+            formData.set("tag", values.tag || defaults.tag);
             formData.set("status", "active");
             if (values.category) formData.set("category", values.category);
             if (values.label) formData.set("label", values.label);
@@ -1388,9 +1425,20 @@ function Resources() {
             setOpen(false);
           }}
         >
+          <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
+            <Select showSearch optionFilterProp="label" options={appOptions} />
+          </Form.Item>
           <Form.Item name="gallery_type" label="图库" rules={[{ required: true }]}>
             <Select options={galleryUploadTypes} />
           </Form.Item>
+          <Space.Compact block>
+            <Form.Item name="scene" label="场景" style={{ width: "50%" }}>
+              <Input placeholder="全场景" />
+            </Form.Item>
+            <Form.Item name="tag" label="标签" style={{ width: "50%" }}>
+              <Input placeholder="default" />
+            </Form.Item>
+          </Space.Compact>
           {uploadGalleryType === "grid" && (
             <Space.Compact block>
               <Form.Item name="category" label="分类" rules={[{ required: true, message: "请输入分类" }]} style={{ width: "50%" }}>
