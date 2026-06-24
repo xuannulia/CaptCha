@@ -514,6 +514,7 @@ function SummaryRow({ label, value, muted, danger }: { label: string; value: str
 function Applications() {
   const { data, isLoading } = useList<Application>("applications", "/api/v1/admin/applications");
   const [open, setOpen] = useState(false);
+  const [editingApplication, setEditingApplication] = useState<Application | null>(null);
   const [secret, setSecret] = useState("");
   const [pendingApplicationID, setPendingApplicationID] = useState("");
   const [form] = Form.useForm();
@@ -549,48 +550,73 @@ function Applications() {
     },
     { title: "失败策略", render: (_, row) => failPolicyLabel(row.default_fail_policy) },
     {
-      title: "密钥",
-      width: 120,
+      title: "操作",
+      width: 170,
       render: (_, row) => (
-        <Button
-          size="small"
-          onClick={async () => {
-            const result = await secretMutation.mutateAsync({
-              path: `/api/v1/admin/applications/${encodeURIComponent(row.client_id)}/secret`,
-              body: {}
-            });
-            setSecret(result.client_secret);
-          }}
-        >
-          轮换
-        </Button>
+        <Space>
+          <Button size="small" onClick={() => {
+            setEditingApplication(row);
+            form.setFieldsValue(row);
+            setOpen(true);
+          }}>编辑</Button>
+          <Button
+            size="small"
+            onClick={async () => {
+              const result = await secretMutation.mutateAsync({
+                path: `/api/v1/admin/applications/${encodeURIComponent(row.client_id)}/secret`,
+                body: {}
+              });
+              setSecret(result.client_secret);
+            }}
+          >
+            轮换
+          </Button>
+        </Space>
       )
     }
   ];
+  const openCreateApplication = () => {
+    setEditingApplication(null);
+    form.resetFields();
+    form.setFieldsValue({ status: "active", default_fail_policy: "fail_open" });
+    setOpen(true);
+  };
+  const closeApplicationModal = () => {
+    setOpen(false);
+    setEditingApplication(null);
+    form.resetFields();
+  };
   return (
-    <Card title="应用" extra={<Button type="primary" onClick={() => setOpen(true)}>新增</Button>}>
+    <Card title="应用" extra={<Button type="primary" onClick={openCreateApplication}>新增</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
       <Modal title="应用密钥" open={secret !== ""} onCancel={() => setSecret("")} onOk={() => setSecret("")} okText="关闭">
         <Input.TextArea readOnly value={secret} autoSize />
       </Modal>
       <Modal
-        title="新增应用"
+        title={editingApplication ? "编辑应用" : "新增应用"}
         open={open}
-        onCancel={() => setOpen(false)}
+        onCancel={closeApplicationModal}
         onOk={() => form.submit()}
         okText="保存"
+        confirmLoading={mutation.isPending}
       >
         <Form
           form={form}
           layout="vertical"
           initialValues={{ status: "active", default_fail_policy: "fail_open" }}
           onFinish={async (values) => {
-            await mutation.mutateAsync({ path: "/api/v1/admin/applications", body: values });
-            form.resetFields();
-            setOpen(false);
+            try {
+              await mutation.mutateAsync({
+                path: "/api/v1/admin/applications",
+                body: editingApplication ? { ...editingApplication, ...values } : values
+              });
+              closeApplicationModal();
+            } catch {
+              message.error("应用保存失败");
+            }
           }}
         >
-          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input disabled={Boolean(editingApplication)} /></Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="status" label="状态"><Select options={selectOptions(["active", "disabled"])} /></Form.Item>
           <Form.Item name="default_fail_policy" label="失败策略"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
@@ -603,6 +629,7 @@ function Applications() {
 function Routes() {
   const { data, isLoading } = useList<RoutePolicy>("routes", "/api/v1/admin/route-policies");
   const [open, setOpen] = useState(false);
+  const [editingRoute, setEditingRoute] = useState<RoutePolicy | null>(null);
   const [pendingRouteID, setPendingRouteID] = useState("");
   const [form] = Form.useForm();
   const mutation = usePost<RoutePolicy>("routes");
@@ -639,12 +666,56 @@ function Routes() {
           }}
         />
       )
+    },
+    {
+      title: "操作",
+      width: 90,
+      render: (_, row) => (
+        <Button size="small" onClick={() => {
+          setEditingRoute(row);
+          form.setFieldsValue({
+            ...row,
+            challenge_escalation: row.challenge_escalation || [],
+            rate_window_seconds: row.rate_limit?.window_seconds,
+            rate_max_requests: row.rate_limit?.max_requests,
+            rate_strategy: row.rate_limit?.strategy || "fixed_window"
+          });
+          setOpen(true);
+        }}>编辑</Button>
+      )
     }
   ];
+  const openCreateRoute = () => {
+    setEditingRoute(null);
+    form.resetFields();
+    form.setFieldsValue({
+      client_id: "demo",
+      method: "POST",
+      mode: "always",
+      challenge_type: "SLIDER",
+      risk_challenge_type: undefined,
+      challenge_escalation: [],
+      fail_policy: "fail_open",
+      priority: 10,
+      rollout_percent: 100,
+      risk_observe_score: 0,
+      risk_challenge_score: 0,
+      risk_block_score: 0,
+      enabled: true,
+      token_ttl_seconds: 120,
+      rate_strategy: "fixed_window"
+    });
+    setOpen(true);
+  };
+  const closeRouteModal = () => {
+    setOpen(false);
+    setEditingRoute(null);
+    form.resetFields();
+  };
   return (
-    <Card title="路由策略" extra={<Button type="primary" onClick={() => setOpen(true)}>新增</Button>}>
+    <Card title="路由策略" extra={<Button type="primary" onClick={openCreateRoute}>新增</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title="新增路由策略" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="保存">
+      <Modal title={editingRoute ? "编辑路由策略" : "新增路由策略"} open={open} onCancel={closeRouteModal} onOk={() => form.submit()} okText="保存" confirmLoading={mutation.isPending}>
         <Form
           form={form}
           layout="vertical"
@@ -667,6 +738,7 @@ function Routes() {
           }}
           onFinish={async (values) => {
             const body = {
+              ...(editingRoute || {}),
               ...values,
               rate_limit: values.rate_window_seconds && values.rate_max_requests
                 ? { window_seconds: values.rate_window_seconds, max_requests: values.rate_max_requests, strategy: values.rate_strategy || "fixed_window" }
@@ -678,12 +750,15 @@ function Routes() {
             delete body.rate_window_seconds;
             delete body.rate_max_requests;
             delete body.rate_strategy;
-            await mutation.mutateAsync({ path: "/api/v1/admin/route-policies", body });
-            form.resetFields();
-            setOpen(false);
+            try {
+              await mutation.mutateAsync({ path: "/api/v1/admin/route-policies", body });
+              closeRouteModal();
+            } catch {
+              message.error("路由策略保存失败");
+            }
           }}
         >
-          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input disabled={Boolean(editingRoute)} /></Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="path_pattern" label="路径" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
@@ -712,6 +787,7 @@ function Routes() {
 function IpPolicies() {
   const { data, isLoading } = useList<IpPolicy>("ip-policies", "/api/v1/admin/ip-policies");
   const [open, setOpen] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState<IpPolicy | null>(null);
   const [pendingPolicyID, setPendingPolicyID] = useState("");
   const [form] = Form.useForm();
   const mutation = usePost<IpPolicy>("ip-policies");
@@ -743,23 +819,51 @@ function IpPolicies() {
           }}
         />
       )
+    },
+    {
+      title: "操作",
+      width: 90,
+      render: (_, row) => (
+        <Button size="small" onClick={() => {
+          setEditingPolicy(row);
+          form.setFieldsValue(row);
+          setOpen(true);
+        }}>编辑</Button>
+      )
     }
   ];
+  const openCreatePolicy = () => {
+    setEditingPolicy(null);
+    form.resetFields();
+    form.setFieldsValue({ client_id: "demo", type: "blocklist", action: "block", enabled: true });
+    setOpen(true);
+  };
+  const closePolicyModal = () => {
+    setOpen(false);
+    setEditingPolicy(null);
+    form.resetFields();
+  };
   return (
-    <Card title="IP 策略" extra={<Button type="primary" onClick={() => setOpen(true)}>新增</Button>}>
+    <Card title="IP 策略" extra={<Button type="primary" onClick={openCreatePolicy}>新增</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title="新增 IP 策略" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="保存">
+      <Modal title={editingPolicy ? "编辑 IP 策略" : "新增 IP 策略"} open={open} onCancel={closePolicyModal} onOk={() => form.submit()} okText="保存" confirmLoading={mutation.isPending}>
         <Form
           form={form}
           layout="vertical"
           initialValues={{ client_id: "demo", type: "blocklist", action: "block", enabled: true }}
           onFinish={async (values) => {
-            await mutation.mutateAsync({ path: "/api/v1/admin/ip-policies", body: values });
-            form.resetFields();
-            setOpen(false);
+            try {
+              await mutation.mutateAsync({
+                path: "/api/v1/admin/ip-policies",
+                body: editingPolicy ? { ...editingPolicy, ...values } : values
+              });
+              closePolicyModal();
+            } catch {
+              message.error("IP 策略保存失败");
+            }
           }}
         >
-          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input disabled={Boolean(editingPolicy)} /></Form.Item>
           <Form.Item name="type" label="类型"><Select options={selectOptions(["allowlist", "blocklist"])} /></Form.Item>
           <Form.Item name="cidr" label="CIDR" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="action" label="动作"><Select options={selectOptions(["allow", "block", "challenge"])} /></Form.Item>
