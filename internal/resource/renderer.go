@@ -36,7 +36,7 @@ import (
 const maxResourceImageBytes = 20 * 1024 * 1024
 const (
 	sliderPieceSizeFallback  = 67
-	slider2PieceSizeFallback = 62
+	slider2PieceSizeFallback = sliderPieceSizeFallback
 	rotateRenderScale        = 2
 	concatMaxMovement        = 160
 )
@@ -1141,13 +1141,89 @@ func renderEmbeddedSliderMask(filename string, size int) (image.Image, bool) {
 	if err != nil {
 		return nil, false
 	}
-	mask := image.NewRGBA(image.Rect(0, 0, size, size))
-	padding := math.Max(2, math.Round(float64(size)*0.06))
-	icon.SetTarget(padding, padding, float64(size)-padding*2, float64(size)-padding*2)
-	scanner := rasterx.NewScannerGV(size, size, mask, mask.Bounds())
-	raster := rasterx.NewDasher(size, size, scanner)
+	const scale = 6
+	renderSize := size * scale
+	mask := image.NewRGBA(image.Rect(0, 0, renderSize, renderSize))
+	icon.SetTarget(0, 0, float64(renderSize), float64(renderSize))
+	scanner := rasterx.NewScannerGV(renderSize, renderSize, mask, mask.Bounds())
+	raster := rasterx.NewDasher(renderSize, renderSize, scanner)
 	icon.Draw(raster, 1)
-	return softenAlphaMask(mask), true
+	padding := int(math.Max(2, math.Round(float64(renderSize)*0.06)))
+	return resizeAlphaMask(normalizeSliderMaskAlpha(mask, padding), size, size), true
+}
+
+func normalizeSliderMaskAlpha(src *image.RGBA, padding int) *image.RGBA {
+	bounds := src.Bounds()
+	dst := image.NewRGBA(bounds)
+	minX, minY, maxX, maxY, ok := sliderMaskAlphaBounds(src, 8)
+	if !ok {
+		return src
+	}
+	targetMax := min(bounds.Dx(), bounds.Dy()) - padding*2
+	if targetMax <= 0 {
+		return src
+	}
+	sourceWidth := maxX - minX + 1
+	sourceHeight := maxY - minY + 1
+	scale := math.Min(float64(targetMax)/float64(sourceWidth), float64(targetMax)/float64(sourceHeight))
+	if scale <= 0 {
+		return src
+	}
+	targetWidth := max(1, int(math.Round(float64(sourceWidth)*scale)))
+	targetHeight := max(1, int(math.Round(float64(sourceHeight)*scale)))
+	offsetX := bounds.Min.X + (bounds.Dx()-targetWidth)/2
+	offsetY := bounds.Min.Y + (bounds.Dy()-targetHeight)/2
+	for y := 0; y < targetHeight; y++ {
+		sourceY := float64(minY) + (float64(y)+0.5)/scale - 0.5
+		for x := 0; x < targetWidth; x++ {
+			sourceX := float64(minX) + (float64(x)+0.5)/scale - 0.5
+			alpha := sampleMaskAlphaBilinear(src, sourceX, sourceY)
+			dst.SetRGBA(offsetX+x, offsetY+y, color.RGBA{R: alpha, G: alpha, B: alpha, A: alpha})
+		}
+	}
+	return dst
+}
+
+func sliderMaskAlphaBounds(src image.Image, threshold uint8) (minX, minY, maxX, maxY int, ok bool) {
+	bounds := src.Bounds()
+	minX, minY = bounds.Max.X, bounds.Max.Y
+	maxX, maxY = bounds.Min.X, bounds.Min.Y
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if colorAlpha(src.At(x, y)) <= threshold {
+				continue
+			}
+			if x < minX {
+				minX = x
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if y > maxY {
+				maxY = y
+			}
+			ok = true
+		}
+	}
+	return minX, minY, maxX, maxY, ok
+}
+
+func sampleMaskAlphaBilinear(src image.Image, x, y float64) uint8 {
+	bounds := src.Bounds()
+	x = clampFloat(x, float64(bounds.Min.X), float64(bounds.Max.X-1))
+	y = clampFloat(y, float64(bounds.Min.Y), float64(bounds.Max.Y-1))
+	xFloor := math.Floor(x)
+	yFloor := math.Floor(y)
+	x0 := clamp(int(xFloor), bounds.Min.X, bounds.Max.X-1)
+	y0 := clamp(int(yFloor), bounds.Min.Y, bounds.Max.Y-1)
+	x1 := clamp(x0+1, bounds.Min.X, bounds.Max.X-1)
+	y1 := clamp(y0+1, bounds.Min.Y, bounds.Max.Y-1)
+	wx := x - xFloor
+	wy := y - yFloor
+	return bilinearAlpha(src, x0, y0, x1, y1, wx, wy)
 }
 
 func roundedUnitRect(x, y, left, top, width, height, radius float64) bool {

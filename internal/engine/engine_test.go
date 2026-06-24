@@ -709,20 +709,36 @@ func TestCaptchaIconSVGAssetsAreEmbeddedAndFiltered(t *testing.T) {
 	}
 }
 
+func TestSliderSVGMaskVisibleSizeIsNormalized(t *testing.T) {
+	t.Parallel()
+
+	if slider2PieceSize != sliderPieceSize {
+		t.Fatalf("slider variants should share one visual piece size: slider=%d slider2=%d", sliderPieceSize, slider2PieceSize)
+	}
+	minVisible, maxVisible := sliderPieceSize, 0
+	for _, filename := range sliderMaskPool {
+		mask := svgIconMask(string(filename), sliderPieceSize)
+		visible, ok := testAlphaBounds(t, mask, 35)
+		if !ok {
+			t.Fatalf("slider mask %s should have visible pixels", filename)
+		}
+		visibleMaxSide := max(visible.Dx(), visible.Dy())
+		if visibleMaxSide < sliderPieceSize-12 || visibleMaxSide > sliderPieceSize-2 {
+			t.Fatalf("slider mask %s visible size should stay near %d, got bounds=%s", filename, sliderPieceSize, visible)
+		}
+		minVisible = min(minVisible, visibleMaxSide)
+		maxVisible = max(maxVisible, visibleMaxSide)
+	}
+	if maxVisible-minVisible > 4 {
+		t.Fatalf("slider masks should have consistent visible sizes, min=%d max=%d", minVisible, maxVisible)
+	}
+}
+
 func TestEmbeddedHeartSliderMaskKeepsHeartSilhouette(t *testing.T) {
 	t.Parallel()
 
 	mask := svgIconMask("heart-fill.svg", sliderPieceSize)
-	leftLobe := alphaAt(t, mask, 21, 22)
-	rightLobe := alphaAt(t, mask, 45, 22)
-	notch := alphaAt(t, mask, 33, 22)
-	bottom := alphaAt(t, mask, 33, 54)
-	if leftLobe < 35 || rightLobe < 35 || bottom < 35 {
-		t.Fatalf("heart mask should keep two lobes and a lower point: left=%d right=%d bottom=%d", leftLobe, rightLobe, bottom)
-	}
-	if notch >= min(leftLobe, rightLobe) {
-		t.Fatalf("heart mask should keep a top notch: notch=%d left=%d right=%d", notch, leftLobe, rightLobe)
-	}
+	assertHeartMaskSilhouette(t, mask)
 }
 
 func TestSyntheticConstantLineTrackIsRejected(t *testing.T) {
@@ -1209,6 +1225,68 @@ func alphaAt(t *testing.T, img image.Image, x, y int) uint8 {
 	t.Helper()
 	_, _, _, a := img.At(x, y).RGBA()
 	return uint8(a >> 8)
+}
+
+func testAlphaBounds(t *testing.T, img image.Image, threshold uint8) (image.Rectangle, bool) {
+	t.Helper()
+	bounds := img.Bounds()
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X, bounds.Min.Y
+	var ok bool
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if alphaAt(t, img, x, y) <= threshold {
+				continue
+			}
+			minX = min(minX, x)
+			minY = min(minY, y)
+			maxX = max(maxX, x)
+			maxY = max(maxY, y)
+			ok = true
+		}
+	}
+	if !ok {
+		return image.Rectangle{}, false
+	}
+	return image.Rect(minX, minY, maxX+1, maxY+1), true
+}
+
+func assertHeartMaskSilhouette(t *testing.T, img image.Image) {
+	t.Helper()
+	visible, ok := testAlphaBounds(t, img, 35)
+	if !ok {
+		t.Fatalf("heart mask should have visible pixels")
+	}
+	midX := visible.Min.X + visible.Dx()/2
+	foundNotch := false
+	for y := visible.Min.Y; y < visible.Min.Y+visible.Dy()/3; y++ {
+		left := maxAlphaInRect(t, img, image.Rect(visible.Min.X, y, midX-3, y+1))
+		center := maxAlphaInRect(t, img, image.Rect(midX-2, y, midX+3, y+1))
+		right := maxAlphaInRect(t, img, image.Rect(midX+3, y, visible.Max.X, y+1))
+		if left > 35 && right > 35 && center < min(left, right)/2 {
+			foundNotch = true
+			break
+		}
+	}
+	if !foundNotch {
+		t.Fatalf("heart mask should keep two upper lobes with a center notch, visible=%s", visible)
+	}
+	lowerPoint := maxAlphaInRect(t, img, image.Rect(midX-3, visible.Max.Y-visible.Dy()/5, midX+4, visible.Max.Y))
+	if lowerPoint <= 35 {
+		t.Fatalf("heart mask should keep a lower center point, visible=%s lower=%d", visible, lowerPoint)
+	}
+}
+
+func maxAlphaInRect(t *testing.T, img image.Image, rect image.Rectangle) uint8 {
+	t.Helper()
+	rect = rect.Intersect(img.Bounds())
+	var result uint8
+	for y := rect.Min.Y; y < rect.Max.Y; y++ {
+		for x := rect.Min.X; x < rect.Max.X; x++ {
+			result = max(result, alphaAt(t, img, x, y))
+		}
+	}
+	return result
 }
 
 func assertEmbeddedSVGMask(t *testing.T, filename string, size, minOpaque int) {

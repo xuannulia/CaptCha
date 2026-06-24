@@ -1100,7 +1100,7 @@ function numberParam(challenge: Challenge, name: keyof ChallengeParameters, fall
 }
 
 function sliderPieceSize(challenge: Challenge) {
-  return numberParam(challenge, "piece_size", challenge.type === "SLIDER_V2" ? 62 : 67);
+  return numberParam(challenge, "piece_size", 67);
 }
 
 function curveDragStart(event: PointerEvent, currentValue: number) {
