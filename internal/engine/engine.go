@@ -775,6 +775,9 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 	bg := copyRGBA(base)
 	piece := newCanvas(size, size, color.RGBA{A: 0})
 	maskFile := sliderMaskFile(mask)
+	drawSliderGapAmbient(bg, targetX, targetY, size, func(x, y int) uint8 {
+		return svgMaskAlpha(maskFile, size, x, y)
+	})
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			maskAlpha := svgMaskAlpha(maskFile, size, x, y)
@@ -790,22 +793,70 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 			alphaRatio := float64(maskAlpha) / 255
 			fringe := math.Max(edgeSoft, (1-alphaRatio)*0.92)
 
-			gapPixel := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, 0.18+edgeSoft*0.08)
-			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 71, G: 85, B: 105, A: 255}, 0.16+edgeSoft*0.18+edgeCore*0.24+innerBand*0.30)
+			gapPixel := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, 0.08+edgeSoft*0.04)
+			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 30, G: 41, B: 59, A: 255}, 0.18+edgeSoft*0.12+edgeCore*0.30+innerBand*0.28)
+			if x+y < size {
+				gapPixel = mixRGBA(gapPixel, color.RGBA{R: 255, G: 255, B: 255, A: 255}, edgeSoft*0.035)
+			}
 			bg.Set(gx, gy, gapPixel)
 
-			piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.07)
-			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 245, G: 247, B: 250, A: 255}, math.Min(0.98, math.Pow(1-alphaRatio, 0.45)*1.15+edgeBand*0.92+edgeSoft*0.18))
-			borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 51, G: 65, B: 85, A: 255}, math.Min(1, innerBand*0.92+edgeCore*0.58+edgeSoft*0.14))
-			piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.76, fringe*0.24+edgeCore*0.22+innerBand*0.54))
-			if edgeSoft > edgeCore {
-				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 250, G: 251, B: 252, A: 255}, (edgeSoft-edgeCore)*0.08)
+			piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.018)
+			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 248, G: 250, B: 252, A: 255}, math.Min(0.24, math.Pow(1-alphaRatio, 0.72)*0.10+edgeBand*0.10+edgeSoft*0.02))
+			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 30, G: 41, B: 59, A: 255}, math.Min(0.44, fringe*0.10+edgeCore*0.18+innerBand*0.30))
+			if x+y < size {
+				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 255, G: 255, B: 255, A: 255}, edgeSoft*0.025)
+			}
+			if x+y > size {
+				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 15, G: 23, B: 42, A: 255}, edgeCore*0.055)
 			}
 			piece.Set(x, y, withAlpha(piecePixel, maskAlpha))
 		}
 	}
 	bleedTransparentSliderPixels(piece, maskFile, size)
 	return bg, piece
+}
+
+func drawSliderGapAmbient(img *image.RGBA, ox, oy, size int, alphaAt func(int, int) uint8) {
+	radius := 5
+	bounds := img.Bounds()
+	for y := -radius; y < size+radius; y++ {
+		for x := -radius; x < size+radius; x++ {
+			if alphaAt(x, y) > 8 {
+				continue
+			}
+			gx, gy := ox+x, oy+y
+			if gx < bounds.Min.X || gx >= bounds.Max.X || gy < bounds.Min.Y || gy >= bounds.Max.Y {
+				continue
+			}
+			strength := 0.0
+			for dy := -radius; dy <= radius; dy++ {
+				for dx := -radius; dx <= radius; dx++ {
+					distance := math.Hypot(float64(dx), float64(dy))
+					if distance <= 0 || distance > float64(radius) {
+						continue
+					}
+					alpha := alphaAt(x+dx, y+dy)
+					if alpha <= 24 {
+						continue
+					}
+					candidate := float64(alpha) / 255 * (float64(radius) + 0.5 - distance) / float64(radius)
+					if candidate > strength {
+						strength = candidate
+					}
+				}
+			}
+			if strength <= 0 {
+				continue
+			}
+			source := rgbaAt(img, gx, gy)
+			lowerRight := clampFloat(0.68+float64(x+y)/(float64(size)*3), 0.52, 1.0)
+			pixel := mixRGBA(source, color.RGBA{R: 15, G: 23, B: 42, A: 255}, math.Min(0.22, strength*0.17*lowerRight))
+			if x+y < size/2 {
+				pixel = mixRGBA(pixel, color.RGBA{R: 255, G: 255, B: 255, A: 255}, strength*0.035)
+			}
+			img.Set(gx, gy, pixel)
+		}
+	}
 }
 
 func drawSlider2Challenge(targetX, targetY, size int, mask sliderMaskKind) (image.Image, image.Image) {
@@ -3030,6 +3081,10 @@ func abs(v int) int {
 
 func clampInt(value, lower, upper int) int {
 	return min(upper, max(lower, value))
+}
+
+func clampFloat(value, lower, upper float64) float64 {
+	return math.Min(upper, math.Max(lower, value))
 }
 
 func angleDiff(a, b int) int {

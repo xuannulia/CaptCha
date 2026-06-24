@@ -905,6 +905,12 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 	}
 	mask := resizeAlphaMask(template, size, size)
 	piece := image.NewRGBA(image.Rect(0, 0, size, size))
+	drawSliderGapAmbient(img, x, y, size, func(px, py int) uint8 {
+		if px < 0 || py < 0 || px >= size || py >= size {
+			return 0
+		}
+		return colorAlpha(mask.At(px, py))
+	})
 	for py := 0; py < size; py++ {
 		for px := 0; px < size; px++ {
 			alpha := colorAlpha(mask.At(px, py))
@@ -916,18 +922,69 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 			edgeBand := sliderTemplateEdgeBandStrength(mask, px, py, 4)
 			innerBand := sliderTemplateEdgeBandStrength(mask, px, py, 2)
 
-			gapPixel := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, 0.18+edgeBand*0.08)
-			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 71, G: 85, B: 105, A: 255}, 0.16+edgeBand*0.18+innerBand*0.34)
+			gapPixel := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, 0.08+edgeBand*0.04)
+			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 30, G: 41, B: 59, A: 255}, 0.18+edgeBand*0.14+innerBand*0.38)
+			if px+py < size {
+				gapPixel = mixRGBA(gapPixel, color.RGBA{R: 255, G: 255, B: 255, A: 255}, edgeBand*0.035)
+			}
 			img.Set(x+px, y+py, gapPixel)
 
-			piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.07)
-			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 245, G: 247, B: 250, A: 255}, math.Min(0.98, math.Pow(1-alphaRatio, 0.45)*1.15+edgeBand*0.92))
-			borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 51, G: 65, B: 85, A: 255}, innerBand*0.92)
-			piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.76, edgeBand*0.22+innerBand*0.58))
+			piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.018)
+			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 248, G: 250, B: 252, A: 255}, math.Min(0.24, math.Pow(1-alphaRatio, 0.72)*0.10+edgeBand*0.10))
+			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 30, G: 41, B: 59, A: 255}, math.Min(0.44, edgeBand*0.10+innerBand*0.30))
+			if px+py < size {
+				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 255, G: 255, B: 255, A: 255}, edgeBand*0.025)
+			}
+			if px+py > size {
+				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 15, G: 23, B: 42, A: 255}, innerBand*0.055)
+			}
 			piece.Set(px, py, color.NRGBA{R: piecePixel.R, G: piecePixel.G, B: piecePixel.B, A: alpha})
 		}
 	}
 	return img, piece
+}
+
+func drawSliderGapAmbient(img *image.RGBA, ox, oy, size int, alphaAt func(int, int) uint8) {
+	radius := 5
+	bounds := img.Bounds()
+	for y := -radius; y < size+radius; y++ {
+		for x := -radius; x < size+radius; x++ {
+			if alphaAt(x, y) > 8 {
+				continue
+			}
+			gx, gy := ox+x, oy+y
+			if gx < bounds.Min.X || gx >= bounds.Max.X || gy < bounds.Min.Y || gy >= bounds.Max.Y {
+				continue
+			}
+			strength := 0.0
+			for dy := -radius; dy <= radius; dy++ {
+				for dx := -radius; dx <= radius; dx++ {
+					distance := math.Hypot(float64(dx), float64(dy))
+					if distance <= 0 || distance > float64(radius) {
+						continue
+					}
+					alpha := alphaAt(x+dx, y+dy)
+					if alpha <= 24 {
+						continue
+					}
+					candidate := float64(alpha) / 255 * (float64(radius) + 0.5 - distance) / float64(radius)
+					if candidate > strength {
+						strength = candidate
+					}
+				}
+			}
+			if strength <= 0 {
+				continue
+			}
+			source := rgbaAt(img, gx, gy)
+			lowerRight := clampFloat(0.68+float64(x+y)/(float64(size)*3), 0.52, 1.0)
+			pixel := mixRGBA(source, color.RGBA{R: 15, G: 23, B: 42, A: 255}, math.Min(0.22, strength*0.17*lowerRight))
+			if x+y < size/2 {
+				pixel = mixRGBA(pixel, color.RGBA{R: 255, G: 255, B: 255, A: 255}, strength*0.035)
+			}
+			img.Set(gx, gy, pixel)
+		}
+	}
 }
 
 func composeSliderDecoys(img *image.RGBA, answer types.Answer, template image.Image, size int) *image.RGBA {
@@ -2252,6 +2309,19 @@ func absInt(value int) int {
 }
 
 func clamp(value, min, max int) int {
+	if max < min {
+		return min
+	}
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+func clampFloat(value, min, max float64) float64 {
 	if max < min {
 		return min
 	}
