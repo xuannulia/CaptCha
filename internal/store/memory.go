@@ -175,6 +175,7 @@ func (s *MemoryStore) ListApplications() []types.Application {
 	defer s.mu.Unlock()
 	out := make([]types.Application, 0, len(s.applications))
 	for _, app := range s.applications {
+		app.HasSecret = app.SecretHash != ""
 		out = append(out, app)
 	}
 	return out
@@ -218,6 +219,7 @@ func (s *MemoryStore) UpsertApplication(application types.Application) types.App
 		application.CreatedAt = now
 	}
 	application.UpdatedAt = now
+	application.HasSecret = application.SecretHash != ""
 	s.applications[application.ID] = application
 	return application
 }
@@ -230,6 +232,7 @@ func (s *MemoryStore) RotateApplicationSecret(clientID, secretHash string) (type
 			continue
 		}
 		application.SecretHash = secretHash
+		application.HasSecret = secretHash != ""
 		application.UpdatedAt = time.Now().UTC()
 		s.applications[id] = application
 		return application, nil

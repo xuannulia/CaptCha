@@ -198,6 +198,7 @@ type Application = {
   id: string;
   client_id: string;
   name: string;
+  has_secret: boolean;
   status: string;
   default_fail_policy: string;
   created_at?: string;
@@ -606,15 +607,17 @@ function Applications() {
   const statusMutation = usePost<Application>("applications");
   const secretMutation = usePost<{ client_secret: string; application: Application }>("applications");
   const rotateApplicationSecret = (row: Application) => {
+    const hasSecret = Boolean(row.has_secret);
     Modal.confirm({
-      title: "轮换应用密钥",
+      title: hasSecret ? "轮换应用密钥" : "生成应用密钥",
       content: (
         <div className="confirm-copy">
-          <p>轮换后旧密钥会立即失效，后端、Gateway 或中间件需要同步替换为新密钥。</p>
+          {hasSecret && <p>轮换后旧密钥会立即失效，后端、Gateway 或中间件需要同步替换为新密钥。</p>}
+          {!hasSecret && <p>生成后，后端、Gateway 或中间件调用集成接口时需要携带这个应用密钥。</p>}
           <p>新密钥只会显示一次。</p>
         </div>
       ),
-      okText: "确认轮换",
+      okText: hasSecret ? "确认轮换" : "确认生成",
       cancelText: "取消",
       okButtonProps: { danger: true },
       onOk: async () => {
@@ -636,6 +639,12 @@ function Applications() {
   const columns: ColumnsType<Application> = [
     { title: "Client ID", dataIndex: "client_id" },
     { title: "名称", dataIndex: "name" },
+    {
+      title: "密钥",
+      render: (_, row) => (
+        <Tag color={row.has_secret ? "green" : "default"}>{row.has_secret ? "已配置" : "未配置"}</Tag>
+      )
+    },
     {
       title: "状态",
       render: (_, row) => (
@@ -677,7 +686,7 @@ function Applications() {
             loading={secretMutation.isPending && pendingApplicationID === row.id}
             onClick={() => rotateApplicationSecret(row)}
           >
-            轮换
+            {row.has_secret ? "轮换" : "生成"}
           </Button>
         </Space>
       )

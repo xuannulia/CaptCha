@@ -156,6 +156,7 @@ type Application struct {
 	ClientID          string    `json:"client_id"`
 	Name              string    `json:"name"`
 	SecretHash        string    `json:"-"`
+	HasSecret         bool      `json:"has_secret"`
 	Status            string    `json:"status"`
 	DefaultFailPolicy string    `json:"default_fail_policy"`
 	CreatedAt         time.Time `json:"created_at"`

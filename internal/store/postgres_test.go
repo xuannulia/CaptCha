@@ -55,7 +55,7 @@ func TestPostgresControlStoreUpsertApplication(t *testing.T) {
 		Status:            "active",
 		DefaultFailPolicy: "fail_open",
 	})
-	if application.SecretHash != "hash" || application.ClientID != "new-client" {
+	if application.SecretHash != "hash" || application.ClientID != "new-client" || !application.HasSecret {
 		t.Fatalf("unexpected application: %+v", application)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -93,7 +93,7 @@ func TestPostgresControlStoreRotateApplicationSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rotate secret: %v", err)
 	}
-	if application.SecretHash != "hash" || application.ClientID != "demo" {
+	if application.SecretHash != "hash" || application.ClientID != "demo" || !application.HasSecret {
 		t.Fatalf("unexpected application: %+v", application)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

@@ -65,6 +65,9 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 		if application.ID == "" || application.ClientID != "new-client" || application.Name != "new app" {
 			t.Fatalf("unexpected application: %+v", application)
 		}
+		if application.HasSecret {
+			t.Fatalf("new application should report no secret, got %+v", application)
+		}
 
 		response = request(t, server, http.MethodGet, "/api/v1/admin/applications", nil)
 		var body struct {
@@ -93,6 +96,9 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 		if body.ClientSecret == "" || body.Application.ClientID != "demo" {
 			t.Fatalf("unexpected secret rotation response: %+v", body)
 		}
+		if !body.Application.HasSecret {
+			t.Fatalf("rotated application should report has_secret, got %+v", body.Application)
+		}
 		demoSecret = body.ClientSecret
 		if strings.Contains(response.Body.String(), "secret_hash") {
 			t.Fatalf("secret hash leaked in response: %s", response.Body.String())
@@ -109,6 +115,25 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 		}
 		if !found {
 			t.Fatal("demo application not found")
+		}
+
+		response = request(t, server, http.MethodGet, "/api/v1/admin/applications", nil)
+		var listBody struct {
+			Items []types.Application `json:"items"`
+		}
+		decode(t, response, &listBody)
+		found = false
+		for _, application := range listBody.Items {
+			if application.ClientID != "demo" {
+				continue
+			}
+			found = true
+			if !application.HasSecret {
+				t.Fatalf("listed application should expose has_secret only, got %+v", application)
+			}
+		}
+		if !found {
+			t.Fatal("demo application not listed")
 		}
 	})
 

@@ -1172,6 +1172,7 @@ func scanApplication(row scanner) (types.Application, error) {
 		return types.Application{}, err
 	}
 	application.SecretHash = secretHash.String
+	application.HasSecret = secretHash.Valid && secretHash.String != ""
 	return application, nil
 }
 

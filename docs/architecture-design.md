@@ -1708,13 +1708,14 @@ id
 client_id
 name
 secret_hash
+has_secret
 status
 default_fail_policy
 created_at
 updated_at
 ```
 
-`secret_hash` 不通过普通应用列表返回。轮换密钥时，平台生成明文 `client_secret` 并只返回一次，随后只保存 hash。
+`secret_hash` 不通过普通应用列表返回。管理 API 返回 `has_secret` 供后台展示应用是否已配置密钥；轮换密钥时，平台生成明文 `client_secret` 并只返回一次，随后只保存 hash。
 
 `status=disabled` 会立即影响运行主链路：公开 challenge session 接口和 verify/refresh 接口会拒绝该应用；HTTP/gRPC Policy 返回 `APPLICATION_DISABLED` 阻断决策；Ticket 返回 `valid=false`；Event 要求事件具备明确 `client_id`，并拒绝 disabled 应用写入。ConfigService 仍可在鉴权后返回包含 `application_status=disabled` 的快照，供 Gateway 本地缓存停止放行。
 
