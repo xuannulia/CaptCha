@@ -1361,16 +1361,6 @@ func drawCurveImageTexture(img *image.RGBA, variant int) {
 		}
 		drawCircle(img, x, y, mustRandomInt(1, 2), c)
 	}
-	if variant == 2 {
-		for x := 42; x < width; x += 82 {
-			drawPolyline(img, []image.Point{{X: x, Y: 0}, {X: x + mustRandomInt(-10, 10), Y: height}}, 2, color.RGBA{R: 255, G: 255, B: 255, A: 32})
-		}
-	}
-	if variant == 3 {
-		for y := 26; y < height; y += 36 {
-			drawPolyline(img, []image.Point{{X: 0, Y: y}, {X: width, Y: y + mustRandomInt(-14, 14)}}, 2, color.RGBA{R: 255, G: 255, B: 255, A: 36})
-		}
-	}
 }
 
 func drawCurveTarget(img *image.RGBA, variant int, points []image.Point) {

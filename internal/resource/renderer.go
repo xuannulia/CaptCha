@@ -1257,7 +1257,6 @@ func composeCurveImage(base *image.RGBA, payload types.RenderPayload, answer typ
 	if len(points) < 2 {
 		return img
 	}
-	drawCurveResourceTexture(img, curveVariant(payload.Type, profile))
 	drawCurveResourceTarget(img, curveVariant(payload.Type, profile), points)
 	return img
 }
@@ -1318,22 +1317,6 @@ func curveVariant(captchaType types.CaptchaType, profile any) int {
 		return 3
 	default:
 		return 1
-	}
-}
-
-func drawCurveResourceTexture(img *image.RGBA, variant int) {
-	width := img.Bounds().Dx()
-	height := img.Bounds().Dy()
-	if width <= 0 || height <= 0 {
-		return
-	}
-	for x := 0; x < width; x += 58 {
-		drawLineOver(img, image.Point{X: x, Y: 0}, image.Point{X: x + 18, Y: height}, 1, color.RGBA{R: 255, G: 255, B: 255, A: 28})
-	}
-	if variant == 3 {
-		for y := 22; y < height; y += 34 {
-			drawLineOver(img, image.Point{X: 0, Y: y}, image.Point{X: width, Y: y + 12}, 2, color.RGBA{R: 255, G: 255, B: 255, A: 30})
-		}
 	}
 }
 
