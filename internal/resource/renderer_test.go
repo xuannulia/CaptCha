@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -409,6 +410,35 @@ func TestApplyVisualsKeepsSliderFallbackSizeAlignedWithEngine(t *testing.T) {
 				t.Fatalf("expected %s payload piece_size %d, got %d", tt.captchaType, tt.wantSize, got)
 			}
 		})
+	}
+}
+
+func TestSlider2DecoyUsesPuzzleStyleShadow(t *testing.T) {
+	t.Parallel()
+
+	size := sliderPieceSizeFallback
+	mask, ok := renderEmbeddedSliderMask("dianzan.svg", size)
+	if !ok {
+		t.Fatalf("expected embedded slider mask to render")
+	}
+	img := image.NewRGBA(image.Rect(0, 0, 160, 100))
+	fillRect(img, 0, 0, 160, 100, color.RGBA{R: 92, G: 132, B: 190, A: 255})
+	before := cloneRGBA(img)
+	origin := image.Point{X: 18, Y: 24}
+
+	drawSliderMaskGhost(img, mask, origin.X, origin.Y, size, 0.82)
+
+	inside, ambient := sliderGhostChangeCounts(t, before, img, origin, size, func(x, y int) uint8 {
+		if x < 0 || y < 0 || x >= size || y >= size {
+			return 0
+		}
+		return colorAlpha(mask.At(x, y))
+	})
+	if inside < size*size/4 {
+		t.Fatalf("slider v2 decoy should render the puzzle body, changed inside pixels=%d", inside)
+	}
+	if ambient < size/2 {
+		t.Fatalf("slider v2 decoy should use puzzle-style ambient shadow, changed ambient pixels=%d", ambient)
 	}
 }
 
@@ -1257,6 +1287,50 @@ func alphaAt(t *testing.T, img image.Image, x, y int) uint8 {
 	t.Helper()
 	_, _, _, a := img.At(x, y).RGBA()
 	return uint8(a >> 8)
+}
+
+func sliderGhostChangeCounts(t *testing.T, before, after image.Image, origin image.Point, size int, maskAlphaAt func(int, int) uint8) (inside, ambient int) {
+	t.Helper()
+	for y := -6; y < size+6; y++ {
+		for x := -6; x < size+6; x++ {
+			gx, gy := origin.X+x, origin.Y+y
+			if !image.Pt(gx, gy).In(after.Bounds()) {
+				continue
+			}
+			if rgbaDelta(rgbaAt(before, gx, gy), rgbaAt(after, gx, gy)) <= 12 {
+				continue
+			}
+			alpha := maskAlphaAt(x, y)
+			switch {
+			case alpha > 35:
+				inside++
+			case alpha <= 8 && testNearMaskAlpha(maskAlphaAt, x, y, 5):
+				ambient++
+			}
+		}
+	}
+	return inside, ambient
+}
+
+func testNearMaskAlpha(maskAlphaAt func(int, int) uint8, x, y, radius int) bool {
+	for dy := -radius; dy <= radius; dy++ {
+		for dx := -radius; dx <= radius; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			if math.Hypot(float64(dx), float64(dy)) > float64(radius) {
+				continue
+			}
+			if maskAlphaAt(x+dx, y+dy) > 24 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func rgbaDelta(a, b color.RGBA) int {
+	return absInt(int(a.R)-int(b.R)) + absInt(int(a.G)-int(b.G)) + absInt(int(a.B)-int(b.B)) + absInt(int(a.A)-int(b.A))
 }
 
 func testAlphaBounds(t *testing.T, img image.Image, threshold uint8) (image.Rectangle, bool) {

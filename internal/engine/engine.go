@@ -931,6 +931,10 @@ func sliderDecoyPoints(size int) []image.Point {
 
 func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind, opacity float64) {
 	maskFile := sliderMaskFile(mask)
+	drawSliderGapAmbient(img, ox, oy, size, func(x, y int) uint8 {
+		return svgMaskAlpha(maskFile, size, x, y)
+	})
+	visibility := clampFloat(opacity/0.82, 0, 1)
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			maskAlpha := svgMaskAlpha(maskFile, size, x, y)
@@ -943,15 +947,19 @@ func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind,
 			}
 			source := rgbaAt(img, gx, gy)
 			sourceMono := grayscaleRGBA(source)
-			ratio := opacity * float64(maskAlpha) / 255
 			edgeSoft := sliderAlphaEdgeStrength(maskFile, size, x, y, 6)
 			edgeCore := sliderAlphaEdgeStrength(maskFile, size, x, y, 2)
+			innerBand := sliderMaskEdgeBandStrength(maskFile, size, x, y, 2)
 			light := clampFloat(1-float64(x+y)/(float64(size)*1.45), 0, 1)
 			shade := clampFloat(float64(x+y)/(float64(size)*1.45)-0.36, 0, 1)
-			ghost := mixRGBA(sourceMono, color.RGBA{R: 166, G: 166, B: 166, A: 255}, math.Min(0.86, 0.62*opacity+ratio*0.24))
-			ghost = mixRGBA(ghost, color.RGBA{R: 70, G: 70, B: 70, A: 255}, 0.03*opacity+ratio*(0.08+edgeSoft*0.16+edgeCore*0.26+shade*0.08))
+
+			ghost := mixRGBA(sourceMono, color.RGBA{R: 166, G: 166, B: 166, A: 255}, 0.82)
+			ghost = mixRGBA(ghost, color.RGBA{R: 70, G: 70, B: 70, A: 255}, 0.05+edgeSoft*0.08+edgeCore*0.22+innerBand*0.20+shade*0.05)
 			if x+y < size {
 				ghost = mixRGBA(ghost, color.RGBA{R: 246, G: 246, B: 246, A: 255}, edgeSoft*0.035+light*0.018)
+			}
+			if visibility < 1 {
+				ghost = mixRGBA(source, ghost, visibility)
 			}
 			img.Set(gx, gy, ghost)
 		}
