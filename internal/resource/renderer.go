@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"captcha/internal/types"
+
+	_ "golang.org/x/image/webp"
 )
 
 const maxResourceImageBytes = 20 * 1024 * 1024

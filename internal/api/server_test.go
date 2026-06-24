@@ -10,6 +10,7 @@ import (
 	"image/color"
 	"image/png"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1464,6 +1465,53 @@ func TestAdminConfigChangesAreAudited(t *testing.T) {
 	}
 }
 
+func TestAdminUploadsResourceImages(t *testing.T) {
+	t.Parallel()
+
+	handler, _, _ := testServerWithOptions(Options{ResourceUploadDir: t.TempDir()})
+	var pngBody bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 24, 18))
+	for y := 0; y < img.Bounds().Dy(); y++ {
+		for x := 0; x < img.Bounds().Dx(); x++ {
+			img.Set(x, y, color.RGBA{R: 30, G: 120, B: 200, A: 255})
+		}
+	}
+	if err := png.Encode(&pngBody, img); err != nil {
+		t.Fatalf("encode upload png: %v", err)
+	}
+
+	response := multipartResourceUpload(t, handler, map[string]string{
+		"client_id":     "demo",
+		"captcha_type":  string(types.CaptchaGridImageClick),
+		"resource_type": "grid_category_library",
+		"tag":           "traffic",
+		"category":      "car",
+		"label":         "汽车",
+	}, "car.png", pngBody.Bytes())
+
+	var body struct {
+		Items []types.CaptchaResource `json:"items"`
+	}
+	decode(t, response, &body)
+	if len(body.Items) != 1 {
+		t.Fatalf("expected one uploaded resource, got %+v", body.Items)
+	}
+	uploaded := body.Items[0]
+	if uploaded.StorageType != "file" || uploaded.ResourceType != "grid_category_library" || uploaded.CaptchaType != types.CaptchaGridImageClick {
+		t.Fatalf("unexpected uploaded resource: %+v", uploaded)
+	}
+	if uploaded.Metadata["category"] != "car" || uploaded.Metadata["label"] != "汽车" || uploaded.Metadata["thumbnail_data_url"] == "" {
+		t.Fatalf("expected category metadata and thumbnail, got %+v", uploaded.Metadata)
+	}
+	parsed, err := url.Parse(uploaded.URI)
+	if err != nil || parsed.Scheme != "file" {
+		t.Fatalf("expected file uri, got %q err=%v", uploaded.URI, err)
+	}
+	if _, err := os.Stat(parsed.Path); err != nil {
+		t.Fatalf("expected uploaded file to exist: %v", err)
+	}
+}
+
 func TestCORSAllowedOrigins(t *testing.T) {
 	t.Parallel()
 
@@ -2635,6 +2683,32 @@ func requestWithHeaders(t *testing.T, handler http.Handler, method, path string,
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func multipartResourceUpload(t *testing.T, handler http.Handler, fields map[string]string, filename string, data []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	var payload bytes.Buffer
+	writer := multipart.NewWriter(&payload)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("write multipart field: %v", err)
+		}
+	}
+	part, err := writer.CreateFormFile("files", filename)
+	if err != nil {
+		t.Fatalf("create multipart file: %v", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		t.Fatalf("write multipart file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/resources/upload", &payload)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	return rec

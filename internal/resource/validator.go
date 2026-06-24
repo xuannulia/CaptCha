@@ -67,6 +67,7 @@ var allowedStatuses = map[string]struct{}{
 }
 
 var imageMIMETypes = map[string]struct{}{
+	"image/gif":     {},
 	"image/jpeg":    {},
 	"image/png":     {},
 	"image/svg+xml": {},

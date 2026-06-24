@@ -731,7 +731,7 @@ function compactURI(uri: string) {
 }
 
 function resourcePreviewSrc(row: Resource) {
-  const dataURL = metadataText(row, "data_url", "data_uri");
+  const dataURL = metadataText(row, "thumbnail_data_url", "data_url", "data_uri");
   if (dataURL?.startsWith("data:image/")) return dataURL;
   if (/^https?:\/\//i.test(row.uri)) return row.uri;
   if (/^data:image\//i.test(row.uri)) return row.uri;
@@ -751,7 +751,10 @@ function Resources() {
   const { data, isLoading } = useList<Resource>("resources", "/api/v1/admin/resources");
   const [open, setOpen] = useState(false);
   const [activeLibrary, setActiveLibrary] = useState("all");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadError, setUploadError] = useState("");
   const [form] = Form.useForm();
+  const queryClient = useQueryClient();
   const mutation = usePost<Resource>("resources");
   const resources = data || [];
   const visibleResources = useMemo(
@@ -761,12 +764,15 @@ function Resources() {
   const groupedResources = useMemo(() => groupGalleryResources(visibleResources), [visibleResources]);
   const libraryCounts = useMemo(() => countResourceLibraries(resources), [resources]);
   const openCreate = (values: Partial<ResourceFormValues> = {}) => {
+    form.resetFields();
+    setSelectedFiles([]);
+    setUploadError("");
     form.setFieldsValue({
       client_id: "demo",
       scene: "",
       captcha_type: "AUTO",
       resource_type: "background_library",
-      storage_type: "url",
+      storage_type: "file",
       uri: "",
       tag: "default",
       status: "active",
@@ -871,7 +877,19 @@ function Resources() {
         <summary>明细列表</summary>
         <Table rowKey="id" loading={isLoading} columns={columns} dataSource={visibleResources} pagination={false} size="small" />
       </details>
-      <Modal title="新增图库资源" open={open} onCancel={() => { setOpen(false); form.resetFields(); }} onOk={() => form.submit()} okText="保存资源" cancelText="取消">
+      <Modal
+        title="新增图库资源"
+        open={open}
+        onCancel={() => {
+          setOpen(false);
+          form.resetFields();
+          setSelectedFiles([]);
+          setUploadError("");
+        }}
+        onOk={() => form.submit()}
+        okText="保存资源"
+        cancelText="取消"
+      >
         <Form
           form={form}
           layout="vertical"
@@ -880,7 +898,7 @@ function Resources() {
             scene: "",
             captcha_type: "AUTO",
             resource_type: "background_library",
-            storage_type: "url",
+            storage_type: "file",
             tag: "default",
             status: "active"
           }}
@@ -906,6 +924,41 @@ function Resources() {
             if (category) metadata.category = category;
             if (label) metadata.label = label;
             if (weight !== undefined) metadata.weight = weight;
+            if (selectedFiles.length > 0) {
+              const formData = new FormData();
+              for (const file of selectedFiles) {
+                formData.append("files", file);
+              }
+              formData.set("client_id", resourceValues.client_id || "demo");
+              formData.set("scene", resourceValues.scene || "");
+              formData.set("captcha_type", resourceValues.captcha_type || "AUTO");
+              formData.set("resource_type", resourceValues.resource_type || "background_library");
+              formData.set("tag", resourceValues.tag || "default");
+              formData.set("status", resourceValues.status || "active");
+              if (category) formData.set("category", category);
+              if (label) formData.set("label", label);
+              if (weight !== undefined) formData.set("weight", String(weight));
+              const response = await fetch(`${apiBase}/api/v1/admin/resources/upload`, {
+                method: "POST",
+                headers: adminHeaders(),
+                body: formData
+              });
+              if (!response.ok) {
+                setUploadError("上传失败");
+                return;
+              }
+              await queryClient.invalidateQueries({ queryKey: ["resources"] });
+              await queryClient.invalidateQueries({ queryKey: ["metrics"] });
+              form.resetFields();
+              setSelectedFiles([]);
+              setUploadError("");
+              setOpen(false);
+              return;
+            }
+            if (!resourceValues.uri) {
+              form.setFields([{ name: "uri", errors: ["请选择文件上传，或填写高级 URI"] }]);
+              return;
+            }
             const body = {
               ...resourceValues,
               metadata: Object.keys(metadata).length > 0 ? metadata : undefined
@@ -919,8 +972,33 @@ function Resources() {
           <Form.Item name="scene" label="场景"><Input /></Form.Item>
           <Form.Item name="captcha_type" label="验证码类别"><Select options={selectOptions(["AUTO", ...captchaTypes])} /></Form.Item>
           <Form.Item name="resource_type" label="图库类型" rules={[{ required: true }]}><Select options={selectOptions(resourceTypes)} /></Form.Item>
-          <Form.Item name="storage_type" label="存储"><Select options={selectOptions(["embedded", "classpath", "file", "url", "object_storage", "database"])} /></Form.Item>
-          <Form.Item name="uri" label="URI" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item label="上传图片或 ZIP" validateStatus={uploadError ? "error" : undefined} help={uploadError || undefined}>
+            <div className="upload-box">
+              <input
+                type="file"
+                multiple
+                accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,.zip"
+                onChange={(event) => {
+                  setUploadError("");
+                  setSelectedFiles(Array.from(event.currentTarget.files || []));
+                }}
+              />
+              <div className="upload-hint">
+                {selectedFiles.length > 0 ? `已选择 ${selectedFiles.length} 个文件` : "支持多张图片或一个 ZIP 包"}
+              </div>
+              {selectedFiles.length > 0 && (
+                <div className="upload-file-list">
+                  {selectedFiles.slice(0, 8).map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}
+                  {selectedFiles.length > 8 && <span>还有 {selectedFiles.length - 8} 个</span>}
+                </div>
+              )}
+            </div>
+          </Form.Item>
+          <details className="advanced-resource-fields">
+            <summary>高级来源</summary>
+            <Form.Item name="storage_type" label="存储"><Select options={selectOptions(["file", "classpath", "url", "object_storage", "database", "embedded"])} /></Form.Item>
+            <Form.Item name="uri" label="URI"><Input placeholder="不上传文件时才需要填写" /></Form.Item>
+          </details>
           <Form.Item name="tag" label="标签"><Input /></Form.Item>
           <Space.Compact block>
             <Form.Item name="category" label="分类" style={{ width: "50%" }}><Input placeholder="car" /></Form.Item>

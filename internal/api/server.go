@@ -40,6 +40,7 @@ type Options struct {
 	RuntimeBaseURL          string
 	AdminToken              string
 	MetricsToken            string
+	ResourceUploadDir       string
 	AllowedOrigins          []string
 	AllowedReturnURLOrigins []string
 	ChallengeEscalation     []types.CaptchaType
@@ -80,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/metrics", s.handleAdminMetrics)
 	mux.HandleFunc("GET /api/v1/admin/resources", s.handleListResources)
 	mux.HandleFunc("POST /api/v1/admin/resources", s.handleUpsertResource)
+	mux.HandleFunc("POST /api/v1/admin/resources/upload", s.handleUploadResources)
 	mux.HandleFunc("GET /api/v1/admin/audit-events", s.handleListAuditEvents)
 	mux.HandleFunc("GET /api/v1/admin/risk-feature-snapshots", s.handleListRiskFeatureSnapshots)
 	mux.HandleFunc("GET /api/v1/admin/risk-feature-snapshots/export", s.handleExportRiskFeatureSnapshots)

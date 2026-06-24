@@ -65,6 +65,7 @@ func main() {
 		RuntimeBaseURL:          os.Getenv("CAPTCHA_RUNTIME_URL"),
 		AdminToken:              os.Getenv("CAPTCHA_ADMIN_TOKEN"),
 		MetricsToken:            os.Getenv("CAPTCHA_METRICS_TOKEN"),
+		ResourceUploadDir:       env("CAPTCHA_RESOURCE_UPLOAD_DIR", "./data/resources"),
 		AllowedOrigins:          csvEnv("CAPTCHA_ALLOWED_ORIGINS"),
 		AllowedReturnURLOrigins: csvEnv("CAPTCHA_ALLOWED_RETURN_URL_ORIGINS"),
 		ChallengeEscalation:     captchaTypeCSVEnv("CAPTCHA_CHALLENGE_ESCALATION_SEQUENCE"),
