@@ -9,7 +9,7 @@ import {
   SafetyOutlined
 } from "@ant-design/icons";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Badge, Button, Card, Checkbox, ConfigProvider, Form, Input, InputNumber, Layout, Menu, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
+import { Button, Card, Checkbox, ConfigProvider, Form, Input, InputNumber, Layout, Menu, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -269,7 +269,70 @@ const statusLabels: Record<string, string> = {
   active: "启用",
   disabled: "停用"
 };
-const optionLabels = { ...captchaLabels, ...resourceTypeLabels, ...storageLabels, ...statusLabels };
+const policyModeLabels: Record<string, string> = {
+  always: "总是验证",
+  risk_based: "风险触发",
+  rate_limit: "频率触发",
+  observe: "观察",
+  silent: "静默",
+  manual_bypass: "人工放行"
+};
+const failPolicyLabels: Record<string, string> = {
+  fail_open: "失败放行",
+  fail_close: "失败拦截"
+};
+const ipPolicyTypeLabels: Record<string, string> = {
+  allowlist: "白名单",
+  blocklist: "黑名单"
+};
+const actionLabels: Record<string, string> = {
+  allow: "放行",
+  challenge: "验证",
+  block: "拦截",
+  observe: "观察"
+};
+const resultLabels: Record<string, string> = {
+  allow: "放行",
+  pass: "通过",
+  retry: "重试",
+  block: "拦截",
+  config_changed: "配置变更",
+  training_feedback: "训练反馈"
+};
+const riskLabelLabels: Record<string, string> = {
+  unknown: "未标注",
+  captcha_pass: "验证通过",
+  captcha_retry: "验证重试",
+  likely_human: "疑似真人",
+  likely_bot: "疑似机器",
+  confirmed_human: "真人样本",
+  confirmed_bot: "机器样本"
+};
+const modelModeLabels: Record<string, string> = {
+  shadow: "影子",
+  observe: "观察",
+  enforce: "生效"
+};
+const modelStatusLabels: Record<string, string> = {
+  candidate: "候选",
+  active: "启用",
+  retired: "退役",
+  rolled_back: "已回滚"
+};
+const optionLabels = {
+  ...captchaLabels,
+  ...resourceTypeLabels,
+  ...storageLabels,
+  ...statusLabels,
+  ...policyModeLabels,
+  ...failPolicyLabels,
+  ...ipPolicyTypeLabels,
+  ...actionLabels,
+  ...resultLabels,
+  ...riskLabelLabels,
+  ...modelModeLabels,
+  ...modelStatusLabels
+};
 const resourceLibraryTitles: Record<string, string> = {
   background: "背景图库",
   concatBackground: "滑动还原图库",
@@ -340,9 +403,7 @@ function AdminShell() {
           <Layout>
             <Layout.Header className="header">
               <strong>{titleFor(active)}</strong>
-              <Space>
-                <Badge status="success" text="运行中" />
-              </Space>
+              <span className="header-subtitle">管理控制台</span>
             </Layout.Header>
             <Layout.Content className="content">
               <RouterRoutes>
@@ -368,50 +429,78 @@ function Overview() {
   });
   const totals = data?.totals;
   const recent = data?.recent;
+  const topScenes = (data?.top_scenes || []).slice(0, 5);
+  const topReasons = (data?.top_reasons || []).slice(0, 5);
+  const topResources = (data?.top_resources || [])
+    .filter((item) => item.attempts > 0)
+    .slice(0, 5);
+  const riskLabels = data?.risk_labels || {};
 
   return (
-    <div className="grid">
-      <Card loading={isLoading}><Statistic title="验证通过率" value={recent?.pass_rate || 0} suffix="%" precision={1} /></Card>
-      <Card loading={isLoading}><Statistic title="近期策略事件" value={recent?.audit_events || 0} /></Card>
-      <Card loading={isLoading}><Statistic title="启用路由策略" value={totals?.enabled_route_policies || 0} /></Card>
-      <Card loading={isLoading}><Statistic title="阻断请求" value={recent?.block || 0} /></Card>
-      {error instanceof Error && <Card className="wide"><div className="error-line">{error.message}</div></Card>}
-      <Card className="wide" title="运行状态" loading={isLoading}>
-        <div className="kv-grid">
-          <span>应用</span><strong>{totals ? `${totals.active_applications}/${totals.applications}` : "0/0"}</strong>
-          <span>IP 策略</span><strong>{totals ? `${totals.enabled_ip_policies}/${totals.ip_policies}` : "0/0"}</strong>
-          <span>资源</span><strong>{totals ? `${totals.active_captcha_resources}/${totals.captcha_resources}` : "0/0"}</strong>
-          <span>训练</span><strong>{totals ? `${totals.trainable_risk_features}/${totals.risk_feature_snapshots}` : "0/0"}</strong>
-          <span>模型</span><strong>{totals ? `${totals.active_risk_model_versions}/${totals.risk_model_versions}` : "0/0"}</strong>
-          <span>配置</span><strong>{recent?.config_changes || 0}</strong>
-        </div>
-      </Card>
-      <Card className="wide" title="验证码类型">
-        <Space wrap>
-          {captchaTypes.map((type) => <Tag key={type} color="green">{type} {data?.by_challenge_type[type] || 0}</Tag>)}
-        </Space>
-      </Card>
-      <Card className="wide" title="高频场景" loading={isLoading}>
-        <Space wrap>
-          {(data?.top_scenes || []).map((item) => <Tag key={item.name} color="blue">{item.name} {item.count}</Tag>)}
-          {(data?.top_reasons || []).map((item) => <Tag key={item.name}>{item.name} {item.count}</Tag>)}
-        </Space>
-      </Card>
-      <Card className="wide" title="资源命中" loading={isLoading}>
-        <Space wrap>
-          {(data?.top_resources || []).map((item) => (
-            <Tag key={item.id} color={item.failure_rate > 50 ? "red" : "purple"}>
-              {item.id} {item.attempts}/{item.failure_rate.toFixed(1)}%
-            </Tag>
-          ))}
-        </Space>
-      </Card>
-      <Card className="wide" title="训练标签" loading={isLoading}>
-        <Space wrap>
-          {Object.entries(data?.risk_labels || {}).map(([label, count]) => <Tag key={label}>{label} {count}</Tag>)}
-          {Object.entries(data?.resource_statuses || {}).map(([status, count]) => <Tag key={status} color={status === "active" ? "green" : "default"}>{status} {count}</Tag>)}
-        </Space>
-      </Card>
+    <div className="overview-page">
+      <div className="metric-grid">
+        <Card loading={isLoading}><Statistic title="验证通过率" value={recent?.pass_rate ?? 0} suffix="%" precision={1} /></Card>
+        <Card loading={isLoading}><Statistic title="验证请求" value={recent?.challenge ?? 0} /></Card>
+        <Card loading={isLoading}><Statistic title="拦截请求" value={recent?.block ?? 0} /></Card>
+        <Card loading={isLoading}><Statistic title="活跃资源" value={totals?.active_captcha_resources ?? 0} suffix={`/ ${totals?.captcha_resources ?? 0}`} /></Card>
+      </div>
+      {error instanceof Error && <Card><div className="error-line">{error.message}</div></Card>}
+      <div className="overview-panels">
+        <Card title="防护策略" loading={isLoading}>
+          <div className="summary-list">
+            <SummaryRow label="应用" value={ratioText(totals?.active_applications, totals?.applications)} />
+            <SummaryRow label="路由策略" value={ratioText(totals?.enabled_route_policies, totals?.route_policies)} />
+            <SummaryRow label="IP 策略" value={ratioText(totals?.enabled_ip_policies, totals?.ip_policies)} />
+            <SummaryRow label="配置变更" value={String(recent?.config_changes ?? 0)} muted="近期" />
+          </div>
+        </Card>
+        <Card title="资源健康" loading={isLoading}>
+          <div className="summary-list">
+            <SummaryRow label="启用素材" value={ratioText(totals?.active_captcha_resources, totals?.captcha_resources)} />
+            {topResources.length === 0 ? (
+              <div className="empty-line">暂无资源失败样本</div>
+            ) : topResources.map((item) => (
+              <SummaryRow
+                key={item.id}
+                label={compactText(item.id, 28)}
+                value={`${item.failure_rate.toFixed(1)}%`}
+                muted={`${item.attempts} 次`}
+                danger={item.failure_rate >= 50}
+              />
+            ))}
+          </div>
+        </Card>
+        <Card title="风险训练" loading={isLoading}>
+          <div className="summary-list">
+            <SummaryRow label="可训练样本" value={ratioText(totals?.trainable_risk_features, totals?.risk_feature_snapshots)} />
+            <SummaryRow label="模型版本" value={ratioText(totals?.active_risk_model_versions, totals?.risk_model_versions)} />
+            <SummaryRow label="真人样本" value={String(riskLabels.confirmed_human || 0)} />
+            <SummaryRow label="机器样本" value={String(riskLabels.confirmed_bot || 0)} />
+          </div>
+        </Card>
+        <Card title="业务场景" loading={isLoading}>
+          <div className="summary-list">
+            {topScenes.length === 0 && topReasons.length === 0 ? (
+              <div className="empty-line">暂无近期流量</div>
+            ) : (
+              <>
+                {topScenes.map((item) => <SummaryRow key={`scene-${item.name}`} label={item.name || "-"} value={String(item.count)} muted="场景" />)}
+                {topReasons.map((item) => <SummaryRow key={`reason-${item.name}`} label={compactText(item.name, 24)} value={String(item.count)} muted="原因" />)}
+              </>
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value, muted, danger }: { label: string; value: string; muted?: string; danger?: boolean }) {
+  return (
+    <div className={danger ? "summary-row danger" : "summary-row"}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {muted && <em>{muted}</em>}
     </div>
   );
 }
@@ -426,8 +515,8 @@ function Applications() {
   const columns: ColumnsType<Application> = [
     { title: "Client ID", dataIndex: "client_id" },
     { title: "名称", dataIndex: "name" },
-    { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : "default"}>{row.status}</Tag> },
-    { title: "失败策略", dataIndex: "default_fail_policy" },
+    { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag> },
+    { title: "失败策略", render: (_, row) => failPolicyLabel(row.default_fail_policy) },
     {
       title: "密钥",
       width: 120,
@@ -450,7 +539,7 @@ function Applications() {
   return (
     <Card title="应用" extra={<Button type="primary" onClick={() => setOpen(true)}>新增</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title="Client Secret" open={secret !== ""} onCancel={() => setSecret("")} onOk={() => setSecret("")} okText="关闭">
+      <Modal title="应用密钥" open={secret !== ""} onCancel={() => setSecret("")} onOk={() => setSecret("")} okText="关闭">
         <Input.TextArea readOnly value={secret} autoSize />
       </Modal>
       <Modal
@@ -490,9 +579,9 @@ function Routes() {
     { title: "路径", dataIndex: "path_pattern" },
     { title: "方法", dataIndex: "method", width: 90 },
     { title: "场景", dataIndex: "scene" },
-    { title: "验证码", render: (_, row) => row.risk_challenge_type ? `${row.challenge_type}/${row.risk_challenge_type}` : row.challenge_type },
-    { title: "升级", render: (_, row) => row.challenge_escalation?.length ? row.challenge_escalation.join(" > ") : "-" },
-    { title: "模式", dataIndex: "mode" },
+    { title: "验证码", render: (_, row) => row.risk_challenge_type ? `${captchaLabel(row.challenge_type)} / ${captchaLabel(row.risk_challenge_type)}` : captchaLabel(row.challenge_type) },
+    { title: "升级", render: (_, row) => row.challenge_escalation?.length ? row.challenge_escalation.map(captchaLabel).join(" > ") : "-" },
+    { title: "模式", render: (_, row) => policyModeLabel(row.mode) },
     { title: "灰度", render: (_, row) => `${row.rollout_percent || 100}%` },
     { title: "风险", render: (_, row) => `${row.risk_observe_score || 0}/${row.risk_challenge_score || 0}/${row.risk_block_score || 0}` },
     { title: "启用", render: (_, row) => <Switch checked={row.enabled} size="small" /> }
@@ -571,8 +660,9 @@ function IpPolicies() {
   const [form] = Form.useForm();
   const mutation = usePost<IpPolicy>("ip-policies");
   const columns: ColumnsType<IpPolicy> = [
+    { title: "类型", render: (_, row) => ipPolicyTypeLabel(row.type) },
     { title: "CIDR", dataIndex: "cidr" },
-    { title: "动作", dataIndex: "action" },
+    { title: "动作", render: (_, row) => actionLabel(row.action) },
     { title: "原因", dataIndex: "reason" },
     { title: "启用", render: (_, row) => <Switch checked={row.enabled} size="small" /> }
   ];
@@ -630,17 +720,17 @@ function PolicySimulator() {
         <div className="simulation-result">
           <Space wrap>
             <Tag color={simulation.decision.action === "challenge" ? "orange" : simulation.decision.action === "block" ? "red" : simulation.decision.action === "observe" ? "blue" : "green"}>
-              {simulation.decision.action}
+              {actionLabel(simulation.decision.action)}
             </Tag>
             <Tag>{simulation.decision.reason}</Tag>
-            {simulation.decision.challenge_type && <Tag color="purple">{simulation.decision.challenge_type}</Tag>}
-            <Tag color={simulation.rate_limit_evaluated ? "green" : "default"}>{simulation.rate_limit_evaluated ? "rate checked" : "rate dry-run"}</Tag>
+            {simulation.decision.challenge_type && <Tag color="purple">{captchaLabel(simulation.decision.challenge_type)}</Tag>}
+            <Tag color={simulation.rate_limit_evaluated ? "green" : "default"}>{simulation.rate_limit_evaluated ? "限流已检查" : "限流未触发"}</Tag>
           </Space>
           <div className="kv-grid">
-            <span>Route</span><strong>{simulation.route?.name || simulation.route?.id || "-"}</strong>
-            <span>Scene</span><strong>{simulation.decision.scene || simulation.route?.scene || "-"}</strong>
-            <span>Mode</span><strong>{simulation.route?.mode || "-"}</strong>
-            <span>Rollout</span><strong>{simulation.route ? `${simulation.route.rollout_percent || 100}%` : "-"}</strong>
+            <span>路由</span><strong>{simulation.route?.name || simulation.route?.id || "-"}</strong>
+            <span>场景</span><strong>{simulation.decision.scene || simulation.route?.scene || "-"}</strong>
+            <span>模式</span><strong>{simulation.route?.mode ? policyModeLabel(simulation.route.mode) : "-"}</strong>
+            <span>灰度</span><strong>{simulation.route ? `${simulation.route.rollout_percent || 100}%` : "-"}</strong>
             <span>TTL</span><strong>{simulation.decision.ttl_seconds || "-"}</strong>
           </div>
           <Space wrap>
@@ -726,6 +816,47 @@ function galleryUploadDefaults(galleryType?: string) {
 
 function captchaLabel(value: string) {
   return captchaLabels[value] || value;
+}
+
+function policyModeLabel(value: string) {
+  return policyModeLabels[value] || value;
+}
+
+function failPolicyLabel(value: string) {
+  return failPolicyLabels[value] || value;
+}
+
+function ipPolicyTypeLabel(value: string) {
+  return ipPolicyTypeLabels[value] || value;
+}
+
+function actionLabel(value: string) {
+  return actionLabels[value] || value;
+}
+
+function resultLabel(value: string) {
+  return resultLabels[value] || value;
+}
+
+function riskLabel(value: string) {
+  return riskLabelLabels[value] || value;
+}
+
+function modelModeLabel(value: string) {
+  return modelModeLabels[value] || value;
+}
+
+function modelStatusLabel(value: string) {
+  return modelStatusLabels[value] || value;
+}
+
+function ratioText(active?: number, total?: number) {
+  return `${active ?? 0}/${total ?? 0}`;
+}
+
+function compactText(value: string, maxLength: number) {
+  if (!value || value.length <= maxLength) return value || "-";
+  return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
 function resourceTypeLabel(value: string) {
@@ -1138,9 +1269,9 @@ function Audit() {
     { title: "场景", dataIndex: "scene" },
     { title: "账号", dataIndex: "account_id_hash" },
     { title: "设备", dataIndex: "device_id_hash" },
-    { title: "动作", dataIndex: "action" },
-    { title: "验证码", dataIndex: "challenge_type" },
-    { title: "结果", dataIndex: "result" },
+    { title: "动作", render: (_, row) => actionLabel(row.action) },
+    { title: "验证码", render: (_, row) => row.challenge_type ? captchaLabel(row.challenge_type) : "-" },
+    { title: "结果", render: (_, row) => resultLabel(row.result) },
     { title: "原因", dataIndex: "decision_reason" }
   ];
   return (
@@ -1251,10 +1382,10 @@ function RiskFeatures() {
   const columns: ColumnsType<RiskFeatureSnapshot> = [
     { title: "会话", dataIndex: "attempt_id" },
     { title: "场景", dataIndex: "scene" },
-    { title: "验证码", dataIndex: "challenge_type" },
-    { title: "标签", dataIndex: "label" },
+    { title: "验证码", render: (_, row) => captchaLabel(row.challenge_type) },
+    { title: "标签", render: (_, row) => riskLabel(row.label) },
     { title: "版本", dataIndex: "feature_version" },
-    { title: "训练", render: (_, row) => <Tag color={row.model_trainable ? "green" : "default"}>{row.model_trainable ? "ready" : "candidate"}</Tag> },
+    { title: "训练", render: (_, row) => <Tag color={row.model_trainable ? "green" : "default"}>{row.model_trainable ? "可训练" : "候选"}</Tag> },
     {
       title: "操作",
       render: (_, row) => (
@@ -1290,7 +1421,7 @@ function RiskFeatures() {
         <Form.Item name="scene" label="场景"><Input placeholder="login" /></Form.Item>
         <Form.Item name="challenge_type" label="验证码"><Select allowClear style={{ width: 170 }} options={selectOptions(captchaTypes)} /></Form.Item>
         <Form.Item name="label" label="标签"><Select allowClear style={{ width: 170 }} options={selectOptions(["unknown", "captcha_pass", "captcha_retry", "likely_human", "likely_bot", "confirmed_human", "confirmed_bot"])} /></Form.Item>
-        <Form.Item name="model_trainable" label="训练"><Select allowClear style={{ width: 130 }} options={[{ value: "true", label: "ready" }, { value: "false", label: "candidate" }]} /></Form.Item>
+        <Form.Item name="model_trainable" label="训练"><Select allowClear style={{ width: 130 }} options={[{ value: "true", label: "可训练" }, { value: "false", label: "候选" }]} /></Form.Item>
         <Button htmlType="submit">查询</Button>
         <Button htmlType="reset">重置</Button>
       </Form>
@@ -1325,8 +1456,8 @@ function RiskModels() {
     { title: "版本", dataIndex: "version" },
     { title: "特征", dataIndex: "feature_version" },
     { title: "窗口", dataIndex: "training_window" },
-    { title: "模式", render: (_, row) => <Tag color={row.mode === "enforce" ? "red" : row.mode === "observe" ? "blue" : "default"}>{row.mode}</Tag> },
-    { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : row.status === "rolled_back" ? "orange" : "default"}>{row.status}</Tag> },
+    { title: "模式", render: (_, row) => <Tag color={row.mode === "enforce" ? "red" : row.mode === "observe" ? "blue" : "default"}>{modelModeLabel(row.mode)}</Tag> },
+    { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : row.status === "rolled_back" ? "orange" : "default"}>{modelStatusLabel(row.status)}</Tag> },
     {
       title: "操作",
       render: (_, row) => (
@@ -1367,7 +1498,7 @@ function RiskModels() {
           <Form.Item name="version" label="版本" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="feature_version" label="特征版本" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="training_window" label="训练窗口" rules={[{ required: true }]}><Input placeholder="2026-06-01/2026-06-20" /></Form.Item>
-          <Form.Item name="artifact_uri" label="Artifact URI" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="artifact_uri" label="模型地址" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="mode" label="模式"><Select options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
           <Form.Item name="status" label="状态"><Select options={selectOptions(["candidate", "retired", "rolled_back"])} /></Form.Item>
           <Space.Compact block>

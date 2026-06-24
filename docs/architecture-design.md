@@ -31,7 +31,7 @@
 - Runtime 已覆盖 `RANDOM` 请求入口，以及 `GESTURE`、`CURVE`、`CURVE_V2`、`CURVE_V3`、`SLIDER`、`SLIDER_V2`、`ROTATE`、`CONCAT`、`ROTATE_DEGREE`、`WORD_IMAGE_CLICK`、`IMAGE_CLICK`、`JIGSAW`、`GRID_IMAGE_CLICK` 的展示和提交；拖动和绘制类控件会采集真实 pointer 轨迹并在松手后自动提交验证，答案未形成前手动验证按钮保持禁用，避免空提交或误触直接失败；点选类验证码不在点击后自动验证，用户可再次点击已选点取消选择，再手动提交；`CURVE` 系列参考 Tianai 在线体验，使用后端 PNG 背景目标虚影叠加 canvas 曲线层，底部滑块推进移动曲线与目标曲线重合，不再复用 `GESTURE` 的自由描绘，也不使用竖向缺口片段或可移动图片 piece；`CONCAT` 使用静态下半片叠加单个透明移动上半片，背景不再挖出目标缺口或答案边界；点选类验证码独立校验点击坐标，避免滑动轨迹评分误伤。`WORD_ORDER_IMAGE_CLICK` 已降级为兼容别名，不再作为独立验证码类型维护；`PROOF_OF_WORK` 已移出验证码矩阵，不作为前台验证码类型提供。
 - Demo 宿主页会区分请求类型和实际类型：`RANDOM` 请求由服务端随机落到具体验证码后，Runtime 通过 `CAPTCHA_READY` 消息回传实际 `captchaType`，宿主侧展示“请求/实际”，避免把随机选择器误认为一个独立验证码。
 - 点选类验证码的默认生成器必须优先保证可读性和可点击性：目标采用稳定三列布局并保留安全间距，避免 Tianai 类体验中常见的字体堆叠、背景噪声压字、目标过近导致误点等问题；同时不能在目标背后绘制稳定圆形/靶心等可被脚本直接识别的泄露特征。
-- `JIGSAW` 属于拼图片还原而非点击精确圆心：内置生成器将完整图片切成 2x2 瓦片并随机交换两块，不再绘制红框或答案高亮；Runtime 会以瓦片层展示乱序图片，支持拖动一块到另一块后松手自动验证，也支持点击两块完成可见交换后手动验证，服务端按目标瓦片区域判定命中。
+- `JIGSAW` 属于拼图片还原而非点击精确圆心：内置生成器将完整图片随机切成 2x2 或 3x3 瓦片并随机交换两块，不再绘制红框或答案高亮；Runtime 会以瓦片层展示乱序图片，支持拖动一块到另一块后松手自动验证，也支持点击两块完成可见交换后手动验证，服务端按目标瓦片区域判定命中。
 - Runtime 支持 `session_id` 启动、按 `client_id/scene/captcha_type` 创建 session、真实刷新 challenge，并能从服务端 session 恢复 `route`、`request_nonce`、`resource_tag` 和 `return_url`。verify 时回传或使用 session 上下文，并在成功后通过 `postMessage` 返回 ticket、session、route、request nonce 和 return URL；失败时会清理本次交互轨迹/点击标记，拖动类控件会回到初始位置且验证按钮重新禁用，并通过 `postMessage` 同步失败状态，避免 Demo 或宿主页面仍显示“待验证”。当服务端返回 `challenge_harder` 且允许刷新时，Runtime 会刷新同一 session 并展示升级后的验证码，升级序列默认 `SLIDER -> ROTATE -> CONCAT -> WORD_IMAGE_CLICK`，也可由服务端配置覆盖。独立打开的 redirect 模式会在验证成功后跳转到通过 allowlist 校验的绝对 `http/https` `return_url`，并追加 ticket 与绑定上下文查询参数。由策略评估创建的 session 会保存 route、请求 IP/UA 摘要，并把它们绑定到签发 ticket。
 - Challenge session 已按一次性状态机处理：成功验证后的 session 不能再次换票；同一 session 连续失败达到上限后会被置为不可继续刷新或验证。
 - HTTP API 支持通过 `CAPTCHA_ALLOWED_ORIGINS` 配置浏览器 CORS 来源白名单；未配置时默认 `*` 便于本地开发。
@@ -203,7 +203,7 @@ operator configuration
 | `ROTATE_DEGREE` | 角度验证 | `ROTATE_DEGREE` | 已实现 | 与 `ROTATE` 不混同；按角度刻度或指针完成验证。 |
 | `WORD_IMAGE_CLICK` | 文字点选 | `WORD_IMAGE_CLICK` | 已实现 | 已具备生成、展示、校验、ticket 闭环。 |
 | `IMAGE_CLICK` | 图标点选 | `IMAGE_CLICK` | 已实现 | 用户按提示点击图标目标，校验顺序和坐标。 |
-| `JIGSAW` | 乱序拼图 | `JIGSAW` | 已实现 | 2x2 乱序拼图；用户拖动交换错位碎片后松手自动验证，点击交换模式需要手动验证。 |
+| `JIGSAW` | 乱序拼图 | `JIGSAW` | 已实现 | 2x2/3x3 随机乱序拼图；用户拖动交换错位碎片后松手自动验证，点击交换模式需要手动验证。 |
 | Google-like grid | 图片格子点选 | `GRID_IMAGE_CLICK` | 已实现 | 类 reCAPTCHA 的 3x3 图片格子二次挑战，用户选择所有包含目标物的格子后手动验证。 |
 
 `WORD_ORDER_IMAGE_CLICK` 曾作为独立类型存在，但与文字点选重复，已降级为兼容别名并映射到 `WORD_IMAGE_CLICK`；新接入不再使用该类型。
@@ -1219,7 +1219,7 @@ create session
 
 曲线 profile 的移动曲线使用浮点坐标，初始错位按像素级动态错位生成后再反推 drive，避免初始态过度重叠；服务端目标值必须与视觉最佳重合点一致，当前单元测试约束平均初始错位、最大错位、视觉目标反推一致性和三种曲线 `visual_style` 差异。当前 `CURVE_V2` 保留双轨噪声效果；Tianai V2 的“闭合圆环形变、无显式起点”效果迁入 `CURVE_V3`。
 | `SLIDER_V2` | 拖动增强滑块 | 目标 x/y、容差 | 背景图、增强 mask、滑块图 | 终点、轨迹、素材扰动 |
-| `JIGSAW` | 交换或拖拽拼图片 | 碎片排列、瓦片区域 | 背景图库、2x2 切片模板 | 排列正确性、瓦片区域命中、拖拽轨迹 |
+| `JIGSAW` | 交换或拖拽拼图片 | 碎片排列、瓦片区域 | 专用背景图库、2x2/3x3 切片模板 | 排列正确性、瓦片区域命中、拖拽轨迹 |
 | `GRID_IMAGE_CLICK` | 选择包含目标物的图片格 | 目标格子集合、瓦片区域 | 分类图片格图库、目标类别 | 多选集合、错选/漏选、点击节奏 |
 
 资源要求：
@@ -1229,7 +1229,13 @@ background image
   所有图片型类型都需要；单张图片只作为 fallback，不作为长期素材组织方式。
 
 background library
-  SLIDER / ROTATE / CONCAT / ROTATE_DEGREE / GESTURE / CURVE / CURVE_V2 / CURVE_V3 / JIGSAW 等需要按场景、难度、背景形态分组的图库。
+  SLIDER / SLIDER_V2 / ROTATE_DEGREE / GESTURE / CURVE / CURVE_V2 / CURVE_V3 等通用图片型验证码按场景、难度、背景形态分组的图库。
+
+concat background library
+  CONCAT 使用。素材必须适合上下半片错位还原，优先选择横向连续纹理、边缘可衔接、不过度留白的图片，避免用户只能靠猜测通过。
+
+jigsaw background library
+  JIGSAW 使用。素材必须适合 2x2/3x3 切片复原，优先选择局部特征清晰、不同区域可区分、切片后仍可辨认的图片，避免低对比、纯色、重复纹理或主体全部集中在单一瓦片的图片。
 
 cut / mask template
   SLIDER 使用。
