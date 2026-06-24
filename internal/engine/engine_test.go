@@ -182,7 +182,8 @@ func TestSliderPieceHasNoOutsideShadow(t *testing.T) {
 	size := sliderPieceSize
 	mask := sliderMaskKind("dianzan.svg")
 	maskFile := sliderMaskFile(mask)
-	_, piece := drawSliderChallenge(120, 60, size, mask)
+	target := image.Point{X: 120, Y: 60}
+	_, piece := drawSliderChallenge(target.X, target.Y, size, mask)
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			if svgMaskAlpha(maskFile, size, x, y) > 4 {
@@ -193,6 +194,13 @@ func TestSliderPieceHasNoOutsideShadow(t *testing.T) {
 			}
 		}
 	}
+
+	base := drawSliderScene()
+	assertSliderPieceHasInnerBorder(t, piece, base, target, size, func(x, y int) uint8 {
+		return svgMaskAlpha(maskFile, size, x, y)
+	}, func(x, y int) float64 {
+		return sliderMaskEdgeBandStrength(maskFile, size, x, y, 2)
+	})
 }
 
 func TestRotateChallengeDoesNotExposeAnswerEquivalentInitialAngle(t *testing.T) {
@@ -1311,6 +1319,30 @@ func testNearMaskAlpha(maskAlphaAt func(int, int) uint8, x, y, radius int) bool 
 
 func rgbaDelta(a, b color.RGBA) int {
 	return abs(int(a.R)-int(b.R)) + abs(int(a.G)-int(b.G)) + abs(int(a.B)-int(b.B)) + abs(int(a.A)-int(b.A))
+}
+
+func assertSliderPieceHasInnerBorder(t *testing.T, piece, source image.Image, sourceOrigin image.Point, size int, maskAlphaAt func(int, int) uint8, edgeAt func(int, int) float64) {
+	t.Helper()
+	borderPixels := 0
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			if maskAlphaAt(x, y) < 140 || edgeAt(x, y) < 0.15 {
+				continue
+			}
+			sourcePixel := rgbaAt(source, sourceOrigin.X+x, sourceOrigin.Y+y)
+			piecePixel := rgbaAt(piece, x, y)
+			if luminance(sourcePixel)-luminance(piecePixel) > 8 {
+				borderPixels++
+			}
+		}
+	}
+	if borderPixels < size/2 {
+		t.Fatalf("slider piece should have a semi-transparent inner border, darkened edge pixels=%d", borderPixels)
+	}
+}
+
+func luminance(c color.RGBA) float64 {
+	return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
 }
 
 func testAlphaBounds(t *testing.T, img image.Image, threshold uint8) (image.Rectangle, bool) {

@@ -63,6 +63,7 @@ const (
 	sliderPieceSize    = 47
 	slider2PieceSize   = sliderPieceSize
 	sliderMaskOpacity  = 0.46
+	sliderPieceBorder  = 0.42
 	concatMaxMovement  = 160
 	concatPieceWidth   = imageViewWidth + concatMaxMovement
 	jigsawTileCols     = 2
@@ -793,7 +794,8 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 			gx, gy := targetX+x, targetY+y
 			source := rgbaAt(base, gx, gy)
 			bg.Set(gx, gy, sliderBlackMaskPixel(source, maskAlpha, sliderMaskOpacity))
-			piece.Set(x, y, withAlpha(source, maskAlpha))
+			border := sliderMaskEdgeBandStrength(maskFile, size, x, y, 2)
+			piece.Set(x, y, withAlpha(sliderPieceBorderPixel(source, border), maskAlpha))
 		}
 	}
 	return bg, piece
@@ -801,6 +803,10 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 
 func sliderBlackMaskPixel(source color.RGBA, alpha uint8, opacity float64) color.RGBA {
 	return mixRGBA(source, color.RGBA{A: 255}, clampFloat(opacity*float64(alpha)/255, 0, 1))
+}
+
+func sliderPieceBorderPixel(source color.RGBA, border float64) color.RGBA {
+	return mixRGBA(source, color.RGBA{A: 255}, clampFloat(border*sliderPieceBorder, 0, sliderPieceBorder))
 }
 
 func drawSliderGapAmbient(img *image.RGBA, ox, oy, size int, alphaAt func(int, int) uint8) {

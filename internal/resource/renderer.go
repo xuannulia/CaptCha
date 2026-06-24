@@ -38,6 +38,7 @@ const (
 	sliderPieceSizeFallback  = 47
 	slider2PieceSizeFallback = sliderPieceSizeFallback
 	sliderMaskOpacity        = 0.46
+	sliderPieceBorder        = 0.42
 	rotateRenderScale        = 2
 	concatMaxMovement        = 160
 )
@@ -937,7 +938,9 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 			}
 			source := rgbaAt(base, x+px, y+py)
 			img.Set(x+px, y+py, sliderBlackMaskPixel(source, alpha, sliderMaskOpacity))
-			piece.Set(px, py, color.NRGBA{R: source.R, G: source.G, B: source.B, A: alpha})
+			border := sliderTemplateEdgeBandStrength(mask, px, py, 2)
+			piecePixel := sliderPieceBorderPixel(source, border)
+			piece.Set(px, py, color.NRGBA{R: piecePixel.R, G: piecePixel.G, B: piecePixel.B, A: alpha})
 		}
 	}
 	return img, piece
@@ -945,6 +948,10 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 
 func sliderBlackMaskPixel(source color.RGBA, alpha uint8, opacity float64) color.RGBA {
 	return mixRGBA(source, color.RGBA{A: 255}, clampFloat(opacity*float64(alpha)/255, 0, 1))
+}
+
+func sliderPieceBorderPixel(source color.RGBA, border float64) color.RGBA {
+	return mixRGBA(source, color.RGBA{A: 255}, clampFloat(border*sliderPieceBorder, 0, sliderPieceBorder))
 }
 
 func drawSliderGapAmbient(img *image.RGBA, ox, oy, size int, alphaAt func(int, int) uint8) {

@@ -493,7 +493,8 @@ func TestComposedSliderPieceHasNoOutsideShadow(t *testing.T) {
 	}
 	base := image.NewRGBA(image.Rect(0, 0, 160, 100))
 	fillRect(base, 0, 0, 160, 100, color.RGBA{R: 92, G: 132, B: 190, A: 255})
-	_, piece := composeSlider(base, types.Answer{X: 60, Y: 30}, mask, size)
+	target := image.Point{X: 60, Y: 30}
+	_, piece := composeSlider(base, types.Answer{X: target.X, Y: target.Y}, mask, size)
 	actualMask := resizeAlphaMask(mask, size, size)
 
 	for y := 0; y < size; y++ {
@@ -506,6 +507,15 @@ func TestComposedSliderPieceHasNoOutsideShadow(t *testing.T) {
 			}
 		}
 	}
+
+	assertSliderPieceHasInnerBorder(t, piece, base, target, size, func(x, y int) uint8 {
+		if x < 0 || y < 0 || x >= size || y >= size {
+			return 0
+		}
+		return colorAlpha(actualMask.At(x, y))
+	}, func(x, y int) float64 {
+		return sliderTemplateEdgeBandStrength(actualMask, x, y, 2)
+	})
 }
 
 func TestDefaultSliderTemplatesHaveConsistentVisibleSize(t *testing.T) {
@@ -1397,6 +1407,30 @@ func testNearMaskAlpha(maskAlphaAt func(int, int) uint8, x, y, radius int) bool 
 
 func rgbaDelta(a, b color.RGBA) int {
 	return absInt(int(a.R)-int(b.R)) + absInt(int(a.G)-int(b.G)) + absInt(int(a.B)-int(b.B)) + absInt(int(a.A)-int(b.A))
+}
+
+func assertSliderPieceHasInnerBorder(t *testing.T, piece, source image.Image, sourceOrigin image.Point, size int, maskAlphaAt func(int, int) uint8, edgeAt func(int, int) float64) {
+	t.Helper()
+	borderPixels := 0
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			if maskAlphaAt(x, y) < 140 || edgeAt(x, y) < 0.15 {
+				continue
+			}
+			sourcePixel := rgbaAt(source, sourceOrigin.X+x, sourceOrigin.Y+y)
+			piecePixel := rgbaAt(piece, x, y)
+			if luminance(sourcePixel)-luminance(piecePixel) > 8 {
+				borderPixels++
+			}
+		}
+	}
+	if borderPixels < size/2 {
+		t.Fatalf("slider piece should have a semi-transparent inner border, darkened edge pixels=%d", borderPixels)
+	}
+}
+
+func luminance(c color.RGBA) float64 {
+	return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
 }
 
 func testAlphaBounds(t *testing.T, img image.Image, threshold uint8) (image.Rectangle, bool) {
