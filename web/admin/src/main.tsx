@@ -599,12 +599,40 @@ function Applications() {
   const { data, isLoading } = useList<Application>("applications", "/api/v1/admin/applications");
   const [open, setOpen] = useState(false);
   const [editingApplication, setEditingApplication] = useState<Application | null>(null);
-  const [secret, setSecret] = useState("");
+  const [secret, setSecret] = useState<{ clientID: string; value: string } | null>(null);
   const [pendingApplicationID, setPendingApplicationID] = useState("");
   const [form] = Form.useForm();
   const mutation = usePost<Application>("applications");
   const statusMutation = usePost<Application>("applications");
   const secretMutation = usePost<{ client_secret: string; application: Application }>("applications");
+  const rotateApplicationSecret = (row: Application) => {
+    Modal.confirm({
+      title: "轮换应用密钥",
+      content: (
+        <div className="confirm-copy">
+          <p>轮换后旧密钥会立即失效，后端、Gateway 或中间件需要同步替换为新密钥。</p>
+          <p>新密钥只会显示一次。</p>
+        </div>
+      ),
+      okText: "确认轮换",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setPendingApplicationID(row.id);
+        try {
+          const result = await secretMutation.mutateAsync({
+            path: `/api/v1/admin/applications/${encodeURIComponent(row.client_id)}/secret`,
+            body: {}
+          });
+          setSecret({ clientID: result.application.client_id, value: result.client_secret });
+        } catch {
+          message.error("密钥轮换失败");
+        } finally {
+          setPendingApplicationID("");
+        }
+      }
+    });
+  };
   const columns: ColumnsType<Application> = [
     { title: "Client ID", dataIndex: "client_id" },
     { title: "名称", dataIndex: "name" },
@@ -645,13 +673,9 @@ function Applications() {
           }}>编辑</Button>
           <Button
             size="small"
-            onClick={async () => {
-              const result = await secretMutation.mutateAsync({
-                path: `/api/v1/admin/applications/${encodeURIComponent(row.client_id)}/secret`,
-                body: {}
-              });
-              setSecret(result.client_secret);
-            }}
+            danger
+            loading={secretMutation.isPending && pendingApplicationID === row.id}
+            onClick={() => rotateApplicationSecret(row)}
           >
             轮换
           </Button>
@@ -673,8 +697,25 @@ function Applications() {
   return (
     <Card title="应用" extra={<Button type="primary" onClick={openCreateApplication}>新增</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title="应用密钥" open={secret !== ""} onCancel={() => setSecret("")} onOk={() => setSecret("")} okText="关闭">
-        <Input.TextArea readOnly value={secret} autoSize />
+      <Modal
+        title="应用密钥"
+        open={Boolean(secret)}
+        onCancel={() => setSecret(null)}
+        footer={(
+          <Space>
+            <Button onClick={() => setSecret(null)}>关闭</Button>
+            <Button type="primary" onClick={() => secret && copyText(secret.value)}>复制密钥</Button>
+          </Space>
+        )}
+      >
+        <div className="secret-result">
+          <div className="secret-meta">
+            <span>应用</span>
+            <strong>{secret?.clientID}</strong>
+          </div>
+          <Input.TextArea readOnly value={secret?.value || ""} autoSize />
+          <div className="secret-warning">关闭窗口后无法再次查看这段明文密钥。</div>
+        </div>
       </Modal>
       <Modal
         title={editingApplication ? "编辑应用" : "新增应用"}
@@ -1980,6 +2021,15 @@ function usePost<T>(invalidateKey: string) {
 
 function selectOptions(values: string[]) {
   return values.map((value) => ({ value, label: optionLabels[value] || value }));
+}
+
+async function copyText(value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    message.success("已复制");
+  } catch {
+    message.error("复制失败");
+  }
 }
 
 function adminHeaders(): Record<string, string> {

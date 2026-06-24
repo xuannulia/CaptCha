@@ -138,6 +138,39 @@ body {
   color: #b91c1c;
 }
 
+.confirm-copy {
+  color: #475569;
+  line-height: 1.7;
+}
+
+.confirm-copy p {
+  margin: 0 0 6px;
+}
+
+.secret-result {
+  display: grid;
+  gap: 12px;
+}
+
+.secret-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #64748b;
+  padding: 10px 12px;
+}
+
+.secret-meta strong {
+  color: #111827;
+}
+
+.secret-warning {
+  color: #b91c1c;
+  font-size: 13px;
+}
+
 .empty-line {
   min-height: 36px;
   display: grid;
