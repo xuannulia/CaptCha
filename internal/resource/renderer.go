@@ -1031,7 +1031,6 @@ func cropCircularRotateImage(src image.Image, width, height int) *image.RGBA {
 		return image.NewRGBA(image.Rect(0, 0, max(1, width), max(1, height)))
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-	fillRect(dst, 0, 0, width, height, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	diameter := min(width, height)
 	bounds := src.Bounds()
 	srcSize := min(bounds.Dx(), bounds.Dy())
@@ -1087,7 +1086,6 @@ func rotateImage(src *image.RGBA, angle int) *image.RGBA {
 	width := bounds.Dx()
 	height := bounds.Dy()
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-	fillRect(dst, 0, 0, width, height, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	cx := float64(width-1) / 2
 	cy := float64(height-1) / 2
 	radians := -float64(angle) * math.Pi / 180

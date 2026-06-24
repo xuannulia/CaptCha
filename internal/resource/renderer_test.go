@@ -467,7 +467,9 @@ func TestApplyVisualsUsesRotateLibraryCircularCrop(t *testing.T) {
 
 	image := decodePNGDataURL(t, composed.Image)
 	assertPixel(t, image, 45, 45, color.RGBA{R: 38, G: 100, B: 210, A: 255})
-	assertPixel(t, image, 0, 0, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	if alphaAt(t, image, 0, 0) != 0 {
+		t.Fatalf("expected rotate crop outside the circle to stay transparent")
+	}
 	if _, ok := composed.Parameters["initial_angle"]; ok {
 		t.Fatalf("rotate payload must not expose initial_angle")
 	}

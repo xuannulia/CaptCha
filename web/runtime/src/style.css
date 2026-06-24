@@ -322,6 +322,10 @@ button:disabled {
 .rotate-board {
   width: min(100%, 180px);
   margin: 0 auto;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
 }
 
 .jigsaw-board {

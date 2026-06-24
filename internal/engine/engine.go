@@ -1502,7 +1502,7 @@ func drawRotateImage(start int, canvasSize ...int) image.Image {
 	shapeSideY := int(math.Round(float64(size) * 0.191))
 	shapeCenterY := int(math.Round(float64(size) * 0.073))
 	hub := int(math.Round(float64(size) * 0.100))
-	img := newCanvas(size, size, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	img := newCanvas(size, size, color.RGBA{A: 0})
 	drawCircle(img, center, center, outer, color.RGBA{R: 203, G: 213, B: 225, A: 255})
 	drawCircle(img, center, center, inner, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	shape := []image.Point{

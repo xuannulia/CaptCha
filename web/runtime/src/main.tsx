@@ -915,7 +915,7 @@ function RuntimeChallenge() {
         )}
 
         {challenge && !isCurveCaptcha(challenge) && (
-            <div
+          <div
             ref={boardRef}
             class={`board ${isPathCaptcha(challenge) ? "path-board" : ""} ${isCurveCaptcha(challenge) ? "curve-board" : ""} ${isJigsawCaptcha(challenge) ? "jigsaw-board" : ""} ${challenge.type === "ROTATE" ? "rotate-board" : ""} ${usesBoardDragControl(challenge) ? "drag-board" : ""}`}
             style={{ aspectRatio: `${challenge.view.width} / ${challenge.view.height}` }}
