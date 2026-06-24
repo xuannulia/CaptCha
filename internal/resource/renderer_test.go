@@ -413,6 +413,47 @@ func TestApplyVisualsKeepsSliderFallbackSizeAlignedWithEngine(t *testing.T) {
 	}
 }
 
+func TestApplyVisualsUsesOneDefaultSliderTemplateForSlider2(t *testing.T) {
+	backgroundPath, _ := writeTestPNG(t, 320, 180, color.RGBA{R: 92, G: 132, B: 190, A: 255})
+	resources := []types.CaptchaResource{
+		{
+			ID:           "res_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          backgroundPath,
+			Status:       "active",
+		},
+	}
+	previousFactory := defaultSliderTemplateFactory
+	calls := 0
+	defaultSliderTemplateFactory = func(size int) image.Image {
+		calls++
+		mask, ok := renderEmbeddedSliderMask("dianzan.svg", size)
+		if !ok {
+			t.Fatalf("expected embedded slider mask to render")
+		}
+		return mask
+	}
+	t.Cleanup(func() {
+		defaultSliderTemplateFactory = previousFactory
+	})
+
+	payload := types.RenderPayload{
+		Type:  types.CaptchaSlider2,
+		View:  types.View{Width: 320, Height: 180},
+		Image: "fallback-image",
+		Piece: "fallback-piece",
+	}
+	composed := ApplyVisuals(payload, types.Answer{X: 140, Y: 70}, resources)
+
+	if composed.Image == payload.Image || composed.Piece == payload.Piece {
+		t.Fatalf("expected slider v2 to compose image and piece")
+	}
+	if calls != 1 {
+		t.Fatalf("slider v2 should select one default template shared by piece and decoys, got %d calls", calls)
+	}
+}
+
 func TestSlider2DecoyUsesPuzzleStyleShadow(t *testing.T) {
 	t.Parallel()
 

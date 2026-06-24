@@ -68,6 +68,8 @@ var defaultSliderMaskFiles = []string{
 	"yuanjiao-rect.svg",
 }
 
+var defaultSliderTemplateFactory = defaultSliderTemplate
+
 // ApplyVisuals composes server-side challenge images from selected local resources.
 // It deliberately falls back to the engine generated payload when a resource cannot
 // be decoded, so resource rollout cannot break the verification path.
@@ -94,6 +96,9 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		base := resizeNearest(background, payload.View.Width, payload.View.Height)
 		sliderTemplate, _ := loadResourceImageByType(resources, "slider_template")
 		size := sliderPieceSize(payload.Parameters, sliderPieceSizeFallbackFor(payload.Type))
+		if sliderTemplate == nil {
+			sliderTemplate = defaultSliderTemplateFactory(size)
+		}
 		composed, piece := composeSlider(base, answer, sliderTemplate, size)
 		if payload.Type == types.CaptchaSlider2 {
 			composed = composeSliderDecoys(composed, answer, sliderTemplate, size)
@@ -919,7 +924,7 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 	x := clamp(answer.X, 0, img.Bounds().Dx()-size)
 	y := clamp(answer.Y, 0, img.Bounds().Dy()-size)
 	if template == nil {
-		template = defaultSliderTemplate(size)
+		template = defaultSliderTemplateFactory(size)
 	}
 	mask := resizeAlphaMask(template, size, size)
 	piece := image.NewRGBA(image.Rect(0, 0, size, size))
@@ -1055,7 +1060,7 @@ func drawSliderPieceShadow(img *image.RGBA, size int, alphaAt func(int, int) uin
 func composeSliderDecoys(img *image.RGBA, answer types.Answer, template image.Image, size int) *image.RGBA {
 	size = clamp(size, 16, min(img.Bounds().Dx(), img.Bounds().Dy()))
 	if template == nil {
-		template = defaultSliderTemplate(size)
+		template = defaultSliderTemplateFactory(size)
 	}
 	mask := resizeAlphaMask(template, size, size)
 	for _, decoy := range sliderDecoyPointsForImage(img, size) {
