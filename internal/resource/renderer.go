@@ -38,7 +38,7 @@ const (
 	sliderPieceSizeFallback  = 47
 	slider2PieceSizeFallback = sliderPieceSizeFallback
 	sliderMaskOpacity        = 0.46
-	sliderPieceBorder        = 0.58
+	sliderPieceBorder        = 0.72
 	sliderBorderRadius       = 4
 	sliderBorderFalloff      = 1.65
 	sliderBorderOutsideAlpha = 8
