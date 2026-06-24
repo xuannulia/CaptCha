@@ -971,7 +971,6 @@ function RuntimeChallenge() {
             >
               <div class="slider-move-track">
                 <div id="tianai-captcha-slider-move-track-mask" style={{ width: sliderFillWidth }} />
-                <span class="drag-track-text">请向右滑动滑块</span>
                 <div class="slider-move-shadow" />
               </div>
               <div
@@ -1084,7 +1083,6 @@ function RuntimeChallenge() {
             onKeyDown={onControlKeyDown}
           >
             <span class="drag-fill" style={{ width: sliderFillWidth }} />
-            <span class="drag-track-text">请向右滑动滑块</span>
             <span class="drag-thumb" style={{ left: sliderThumbLeft }} />
           </div>
         )}
