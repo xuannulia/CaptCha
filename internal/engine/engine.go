@@ -750,16 +750,22 @@ func pngDataURL(img image.Image) string {
 
 type sliderMaskKind string
 
-const (
-	sliderMaskPuzzle sliderMaskKind = "pintu9.svg"
-	sliderMaskPlane  sliderMaskKind = "huiliuqujinkoushipin.svg"
-)
+var sliderMaskPool = []sliderMaskKind{
+	"dianzan.svg",
+	"pintu.svg",
+	"shoucang.svg",
+	"logobg.svg",
+	"huiliuqujinkoushipin.svg",
+	"yazi_duck.svg",
+	"heart-fill.svg",
+	"babianxing.svg",
+	"fangzi222.svg",
+	"jidan1.svg",
+	"yuanjiao-rect.svg",
+}
 
 func randomSliderMask() sliderMaskKind {
-	if mustRandomInt(0, 1) == 0 {
-		return sliderMaskPlane
-	}
-	return sliderMaskPuzzle
+	return sliderMaskPool[mustRandomInt(0, len(sliderMaskPool)-1)]
 }
 
 func sliderTargetX(size int) int {
@@ -1589,10 +1595,7 @@ func sliderMaskEdgeBandStrength(maskFile string, size, x, y, radius int) float64
 }
 
 func sliderMaskFile(mask sliderMaskKind) string {
-	if mask == sliderMaskPlane {
-		return string(sliderMaskPlane)
-	}
-	return string(sliderMaskPuzzle)
+	return string(mask)
 }
 
 func drawRotateImage(start int, canvasSize ...int) image.Image {

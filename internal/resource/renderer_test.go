@@ -412,6 +412,32 @@ func TestApplyVisualsKeepsSliderFallbackSizeAlignedWithEngine(t *testing.T) {
 	}
 }
 
+func TestDefaultSliderTemplatesUseEmbeddedSVGShapePool(t *testing.T) {
+	t.Parallel()
+
+	if len(defaultSliderMaskFiles) != 11 {
+		t.Fatalf("expected 11 embedded default slider masks, got %d", len(defaultSliderMaskFiles))
+	}
+	for _, filename := range defaultSliderMaskFiles {
+		mask, ok := renderEmbeddedSliderMask(filename, 48)
+		if !ok {
+			t.Fatalf("expected embedded slider mask %s to render", filename)
+		}
+		opaque := 0
+		bounds := mask.Bounds()
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				if alphaAt(t, mask, x, y) > 35 {
+					opaque++
+				}
+			}
+		}
+		if opaque < 90 {
+			t.Fatalf("embedded slider mask %s rendered too few opaque pixels: %d", filename, opaque)
+		}
+	}
+}
+
 func TestApplyVisualsUsesRotateTemplateOverlay(t *testing.T) {
 	t.Parallel()
 

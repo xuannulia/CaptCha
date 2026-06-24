@@ -701,8 +701,12 @@ func TestCaptchaIconSVGAssetsAreEmbeddedAndFiltered(t *testing.T) {
 		}
 		assertEmbeddedSVGMask(t, icon.SVGFile(), 42, 90)
 	}
-	assertEmbeddedSVGMask(t, string(sliderMaskPuzzle), sliderPieceSize, 360)
-	assertEmbeddedSVGMask(t, string(sliderMaskPlane), sliderPieceSize, 140)
+	if len(sliderMaskPool) != 11 {
+		t.Fatalf("expected 11 embedded slider mask shapes, got %d", len(sliderMaskPool))
+	}
+	for _, mask := range sliderMaskPool {
+		assertEmbeddedSVGMask(t, string(mask), sliderPieceSize, 90)
+	}
 }
 
 func TestSyntheticConstantLineTrackIsRejected(t *testing.T) {

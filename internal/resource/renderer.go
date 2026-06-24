@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
+	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -48,6 +49,23 @@ var resourceHTTPClient = &http.Client{
 		}
 		return nil
 	},
+}
+
+//go:embed assets/slider/*.svg
+var sliderMaskAssets embed.FS
+
+var defaultSliderMaskFiles = []string{
+	"dianzan.svg",
+	"pintu.svg",
+	"shoucang.svg",
+	"logobg.svg",
+	"huiliuqujinkoushipin.svg",
+	"yazi_duck.svg",
+	"heart-fill.svg",
+	"babianxing.svg",
+	"fangzi222.svg",
+	"jidan1.svg",
+	"yuanjiao-rect.svg",
 }
 
 // ApplyVisuals composes server-side challenge images from selected local resources.
@@ -1089,6 +1107,12 @@ func drawSliderMaskGhost(img *image.RGBA, mask image.Image, ox, oy, size int, op
 
 func defaultSliderTemplate(size int) image.Image {
 	size = clamp(size, 16, 256)
+	if len(defaultSliderMaskFiles) > 0 {
+		filename := defaultSliderMaskFiles[randomIndex(len(defaultSliderMaskFiles))]
+		if mask, ok := renderEmbeddedSliderMask(filename, size); ok {
+			return mask
+		}
+	}
 	mask := image.NewRGBA(image.Rect(0, 0, size, size))
 	scale := float64(size)
 	for y := 0; y < size; y++ {
@@ -1105,6 +1129,25 @@ func defaultSliderTemplate(size int) image.Image {
 		}
 	}
 	return softenAlphaMask(mask)
+}
+
+func renderEmbeddedSliderMask(filename string, size int) (image.Image, bool) {
+	file, err := sliderMaskAssets.Open("assets/slider/" + filename)
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
+	icon, err := oksvg.ReadIconStream(file, oksvg.StrictErrorMode)
+	if err != nil {
+		return nil, false
+	}
+	mask := image.NewRGBA(image.Rect(0, 0, size, size))
+	padding := math.Max(2, math.Round(float64(size)*0.06))
+	icon.SetTarget(padding, padding, float64(size)-padding*2, float64(size)-padding*2)
+	scanner := rasterx.NewScannerGV(size, size, mask, mask.Bounds())
+	raster := rasterx.NewDasher(size, size, scanner)
+	icon.Draw(raster, 1)
+	return softenAlphaMask(mask), true
 }
 
 func roundedUnitRect(x, y, left, top, width, height, radius float64) bool {
