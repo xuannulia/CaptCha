@@ -190,15 +190,6 @@ open_runtime_challenge() {
 	snapshot_contains "$TMP_DIR/runtime-${name}-after-click.yml" "验证失败，请重试"
 }
 
-open_runtime_pow_challenge() {
-	local runtime_url="http://127.0.0.1:$RUNTIME_PORT/?client_id=demo&scene=login&captcha_type=PROOF_OF_WORK"
-	pw_goto "$runtime_url" "$TMP_DIR/runtime-proof-of-work-open.log"
-	sleep 2
-	bash "$PWCLI" snapshot >"$TMP_DIR/runtime-proof-of-work.yml"
-	snapshot_contains "$TMP_DIR/runtime-proof-of-work.yml" "正在进行安全计算"
-	snapshot_contains "$TMP_DIR/runtime-proof-of-work.yml" "ticket 已签发"
-}
-
 open_runtime_random_challenge() {
 	local runtime_url="http://127.0.0.1:$RUNTIME_PORT/?client_id=demo&scene=verify&captcha_type=RANDOM"
 	pw_goto "$runtime_url" "$TMP_DIR/runtime-random-open.log"
@@ -231,7 +222,7 @@ open_demo_random_selector() {
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
 		const concrete = new Set([
-			"PROOF_OF_WORK", "GESTURE", "CURVE", "CURVE_V2", "CURVE_V3",
+			"GESTURE", "CURVE", "CURVE_V2", "CURVE_V3",
 			"SLIDER", "SLIDER_V2", "ROTATE", "CONCAT", "ROTATE_DEGREE",
 			"WORD_IMAGE_CLICK", "IMAGE_CLICK", "JIGSAW", "GRID_IMAGE_CLICK"
 		]);
@@ -2023,7 +2014,6 @@ run_smoke_step "demo slider success" open_demo_slider_success_check
 run_smoke_step "demo rotate success" open_demo_rotate_success_check
 run_smoke_step "demo rotate degree success" open_demo_rotate_degree_success_check
 run_smoke_step "demo concat success" open_demo_concat_success_check
-run_smoke_step "runtime proof-of-work challenge" open_runtime_pow_challenge
 run_smoke_step "runtime gesture render" open_runtime_challenge "GESTURE" "按提示描绘图形" "disabled"
 run_smoke_step "runtime curve v3 render" open_runtime_challenge "CURVE_V3" "拖动滑块使圆环曲线匹配" "disabled"
 run_smoke_step "runtime curve v2 render" open_runtime_challenge "CURVE_V2" "拖动滑块使增强曲线匹配" "disabled"

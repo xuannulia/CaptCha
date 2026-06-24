@@ -183,7 +183,7 @@ Run the iframe runtime:
 npm run dev:runtime
 ```
 
-Open `http://localhost:5173/demo` for a local captcha demo with `RANDOM` plus `PROOF_OF_WORK`, `GESTURE`, `CURVE`, `CURVE_V2`, `CURVE_V3`, `SLIDER`, `SLIDER_V2`, `ROTATE`, `CONCAT`, `ROTATE_DEGREE`, `WORD_IMAGE_CLICK`, `IMAGE_CLICK`, `JIGSAW`, and `GRID_IMAGE_CLICK`.
+Open `http://localhost:5173/demo` for a local captcha demo with `RANDOM` plus `GESTURE`, `CURVE`, `CURVE_V2`, `CURVE_V3`, `SLIDER`, `SLIDER_V2`, `ROTATE`, `CONCAT`, `ROTATE_DEGREE`, `WORD_IMAGE_CLICK`, `IMAGE_CLICK`, `JIGSAW`, and `GRID_IMAGE_CLICK`.
 
 The runtime accepts `session_id`, `client_id`, `scene`, `captcha_type`, `route`, `return_url`, `request_nonce`, and `resource_tag` query parameters. When `route`, `request_nonce`, IP hash, or user-agent hash is present on the server-side session, the issued ticket is bound to that context and the success `postMessage` includes the same route and nonce. A runtime opened with only `session_id` recovers route, nonce, resource tag, and return URL from the server-side session before verify. In top-level redirect mode, a successful verification redirects to an allowlisted absolute `http` or `https` `return_url` with `captcha_ticket`, `captcha_session_id`, and bound context query parameters. Ticket verification or consumption must pass the same bound context.
 

@@ -20,7 +20,6 @@ func TestGenerateAndVerifyAllCaptchaTypes(t *testing.T) {
 
 	e := New(2 * time.Minute)
 	cases := []types.CaptchaType{
-		types.CaptchaProofOfWork,
 		types.CaptchaGesture,
 		types.CaptchaCurve,
 		types.CaptchaCurve2,
@@ -86,7 +85,6 @@ func TestGeneratedPayloadsUsePNGDataURLs(t *testing.T) {
 
 	e := New(2 * time.Minute)
 	for _, captchaType := range []types.CaptchaType{
-		types.CaptchaProofOfWork,
 		types.CaptchaGesture,
 		types.CaptchaCurve,
 		types.CaptchaCurve2,
@@ -913,9 +911,6 @@ func TestPreGeneratedChallengePool(t *testing.T) {
 
 func answerFor(session types.ChallengeSession) types.VerifyAnswer {
 	switch session.Type {
-	case types.CaptchaProofOfWork:
-		nonce := solveProofOfWorkForTest(session.Answer.Token, session.Answer.Offset, session.Answer.Y)
-		return types.VerifyAnswer{X: &nonce}
 	case types.CaptchaGesture:
 		return types.VerifyAnswer{Points: session.Answer.Points}
 	case types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3:
@@ -1256,15 +1251,6 @@ func gridWrongTilePoints(answer []types.Point) []types.Point {
 		}
 	}
 	return points
-}
-
-func solveProofOfWorkForTest(seed string, difficulty, maxNonce int) int {
-	for nonce := 0; nonce <= maxNonce; nonce++ {
-		if verifyProofOfWork(seed, nonce, difficulty, maxNonce) {
-			return nonce
-		}
-	}
-	return -1
 }
 
 func normalTrack() []types.TrackPoint {

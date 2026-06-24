@@ -340,7 +340,6 @@ func applicationsForMetrics(applications []types.Application, clientID string) [
 
 func initialCaptchaTypeMetrics() map[string]int {
 	return map[string]int{
-		string(types.CaptchaProofOfWork):    0,
 		string(types.CaptchaGesture):        0,
 		string(types.CaptchaCurve):          0,
 		string(types.CaptchaCurve2):         0,

@@ -28,7 +28,7 @@
 - 启动时可自动执行 `migrations/postgres` 下的 PostgreSQL schema。
 - 启动时默认写入 demo 数据，可用 `CAPTCHA_SEED_DEMO=false` 关闭。
 - 已补充后端和 Gateway 容器镜像、默认 `docker-compose.yml`、开发依赖 `docker-compose.dev.yml` 与 GitHub Actions CI；CI 通过 `make verify` 覆盖 Go/CI/Docker/前端契约检查、HTTP/gRPC API 文档契约检查、验证码类型契约检查、Browser smoke 路由覆盖契约检查、文档命令契约检查、Go 测试、protobuf drift 检查、生产安全闸门 smoke、HTTP/gRPC smoke、workspace 测试、前端/中间件构建、Runtime gzip 预算检查和 Docker Compose 配置校验，并通过 `make docker-build` 构建后端/Gateway Docker 镜像。仓库还提供可选的 `make browser-smoke`，用真实浏览器验证 Runtime 和管理台主页面渲染与交互。
-- Runtime 已覆盖 `RANDOM` 请求入口，以及 `PROOF_OF_WORK`、`GESTURE`、`CURVE`、`CURVE_V2`、`CURVE_V3`、`SLIDER`、`SLIDER_V2`、`ROTATE`、`CONCAT`、`ROTATE_DEGREE`、`WORD_IMAGE_CLICK`、`IMAGE_CLICK`、`JIGSAW`、`GRID_IMAGE_CLICK` 的展示和提交；拖动和绘制类控件会采集真实 pointer 轨迹并在松手后自动提交验证，答案未形成前手动验证按钮保持禁用，避免空提交或误触直接失败；点选类验证码不在点击后自动验证，用户可再次点击已选点取消选择，再手动提交；`CURVE` 系列参考 Tianai 在线体验，使用后端 PNG 背景目标虚影叠加 canvas 曲线层，底部滑块推进移动曲线与目标曲线重合，不再复用 `GESTURE` 的自由描绘，也不使用竖向缺口片段或可移动图片 piece；`CONCAT` 使用静态下半片叠加单个透明移动上半片，背景不再挖出目标缺口或答案边界；点选类验证码独立校验点击坐标，避免滑动轨迹评分误伤。`WORD_ORDER_IMAGE_CLICK` 已降级为兼容别名，不再作为独立验证码类型维护。
+- Runtime 已覆盖 `RANDOM` 请求入口，以及 `GESTURE`、`CURVE`、`CURVE_V2`、`CURVE_V3`、`SLIDER`、`SLIDER_V2`、`ROTATE`、`CONCAT`、`ROTATE_DEGREE`、`WORD_IMAGE_CLICK`、`IMAGE_CLICK`、`JIGSAW`、`GRID_IMAGE_CLICK` 的展示和提交；拖动和绘制类控件会采集真实 pointer 轨迹并在松手后自动提交验证，答案未形成前手动验证按钮保持禁用，避免空提交或误触直接失败；点选类验证码不在点击后自动验证，用户可再次点击已选点取消选择，再手动提交；`CURVE` 系列参考 Tianai 在线体验，使用后端 PNG 背景目标虚影叠加 canvas 曲线层，底部滑块推进移动曲线与目标曲线重合，不再复用 `GESTURE` 的自由描绘，也不使用竖向缺口片段或可移动图片 piece；`CONCAT` 使用静态下半片叠加单个透明移动上半片，背景不再挖出目标缺口或答案边界；点选类验证码独立校验点击坐标，避免滑动轨迹评分误伤。`WORD_ORDER_IMAGE_CLICK` 已降级为兼容别名，不再作为独立验证码类型维护；`PROOF_OF_WORK` 已移出验证码矩阵，不作为前台验证码类型提供。
 - Demo 宿主页会区分请求类型和实际类型：`RANDOM` 请求由服务端随机落到具体验证码后，Runtime 通过 `CAPTCHA_READY` 消息回传实际 `captchaType`，宿主侧展示“请求/实际”，避免把随机选择器误认为一个独立验证码。
 - 点选类验证码的默认生成器必须优先保证可读性和可点击性：目标采用稳定三列布局并保留安全间距，避免 Tianai 类体验中常见的字体堆叠、背景噪声压字、目标过近导致误点等问题；同时不能在目标背后绘制稳定圆形/靶心等可被脚本直接识别的泄露特征。
 - `JIGSAW` 属于拼图片还原而非点击精确圆心：内置生成器将完整图片切成 2x2 瓦片并随机交换两块，不再绘制红框或答案高亮；Runtime 会以瓦片层展示乱序图片，支持拖动一块到另一块后松手自动验证，也支持点击两块完成可见交换后手动验证，服务端按目标瓦片区域判定命中。
@@ -191,7 +191,7 @@ operator configuration
 | Tianai 类型 | 站点文案 | 平台目标类型 | 当前状态 | 说明 |
 |---|---|---|---|---|
 | `RANDOM` | 随机 | `AUTO` / `RANDOM` | 已实现 | `AUTO` 按策略选择类型；`RANDOM` 请求会随机选择一个具体验证码。 |
-| `POW` | 工作量证明 | `PROOF_OF_WORK` | 已实现 | 前端执行轻量 hash puzzle，服务端校验 nonce/difficulty。 |
+| `POW` | 工作量证明 | 不接入 | 已移除 | 不能证明真人，容易误导平台定位；不再作为验证码类型或资源能力提供。 |
 | `GESTURE` | 曲线绘制 | `GESTURE` | 已实现 | 用户按指定曲线绘制，校验轨迹贴合度、方向和耗时。 |
 | `CURVE3` | 滑动曲线 V3 | `CURVE_V3` | 已实现，待人工验收 | 已按 Tianai 观察基线重做为后端 PNG 目标虚影 + 双 canvas + 固定/隐藏端点 + slider 按钮和轨道 mask；滑块驱动曲线形变匹配，不做整条 `translateX`，也不使用图片 piece。 |
 | `CURVE2` | 滑动曲线 V2 | `CURVE_V2` | 已实现，待人工验收 | 与 `CURVE_V3` 共享滑动曲线体验，端点策略和曲线复杂度不同；browser smoke 覆盖正确匹配通过和错误偏移失败。 |
@@ -213,9 +213,6 @@ operator configuration
 当前代码已接入的具体验证码类型包括；其中 `CURVE` / `CURVE_V2` / `CURVE_V3` 已按 Tianai 观察基线完成代码重做和浏览器烟测，仍待人工体验验收：
 
 ```text
-PROOF_OF_WORK
-  工作量证明
-
 GESTURE
   手势/曲线描绘验证码
 
@@ -850,7 +847,6 @@ risk-model-versions
 `captcha_type` 当前已接入支持值：
 
 ```text
-PROOF_OF_WORK
 GESTURE
 CURVE
 CURVE_V2
@@ -871,7 +867,6 @@ AUTO
 
 ```text
 RANDOM
-POW
 CURVE2
 CURVE3
 SLIDER2
@@ -881,7 +876,6 @@ Tianai 站点兼容映射：
 
 ```text
 RANDOM -> RANDOM / AUTO
-POW -> PROOF_OF_WORK
 GESTURE -> GESTURE
 CURVE -> CURVE
 CURVE2 -> CURVE_V2
@@ -1218,7 +1212,6 @@ create session
 
 | 类型 | 用户动作 | 服务端答案 | 关键资源 | 校验重点 |
 |---|---|---|---|---|
-| `PROOF_OF_WORK` | 等待或点击后完成计算 | nonce、difficulty、hash 前缀 | 无图形资源，可配置难度 | hash 正确性、耗时、重放保护 |
 | `GESTURE` | 按提示绘制曲线 | 曲线路径、方向、容差带 | 背景图、曲线模板 | 轨迹贴合度、方向、速度、断点 |
 | `CURVE` | 滑动匹配曲线 | 目标 x、容差 | 后端 PNG 目标虚影、canvas 曲线 profile、drive 向量 | `single-rope` 基础单绳；固定端点、曲线形变匹配、错误偏移失败、轨迹末端一致 |
 | `CURVE_V2` | 滑动匹配增强曲线 | 目标 x、容差 | 后端主题背景目标虚影、canvas 曲线 profile、drive 向量 | `dual-noise` 颗粒双轨；隐藏端点、曲线形变匹配、错误偏移失败、轨迹末端一致 |
@@ -1298,7 +1291,7 @@ database metadata
 - 创建或刷新 challenge 时会从 active 资源中选择与场景、验证码类型和可选 tag 匹配的资源；精确 `captcha_type` 优先于 `AUTO` 兜底，精确 `scene` 优先于全局资源，请求 tag 优先于 default/空 tag，同一 `resource_type` 只选择一个资源。
 - `AUTO` 类型在生成 challenge 前会被解析为具体类型，资源选择阶段只处理已确定的具体验证码类型。
 - 选中的资源以 `challenge.parameters.resources` 返回给 Runtime，字段包含 `id`、`scene`、`captcha_type`、`resource_type`、`storage_type`、`uri`、`tag`、`checksum`、脱敏后的 `metadata` 和 `status`；Runtime metadata 会递归过滤答案、目标点、容差、校验/评分规则、密钥和 token 类字段，控制面存储与配置快照仍保留原始 metadata 供管理使用。
-- 当前使用内置 PNG 生成器作为默认兜底，避免 fallback 图像把精确答案作为可解析 SVG 属性暴露；`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图已经可以由服务端合成为 `SLIDER`、`ROTATE`、`CONCAT` 和 `WORD_IMAGE_CLICK` 的 PNG challenge，完整类型矩阵均已支持资源登记、选择和内置 PNG 兜底生成，资源合成会继续细化。URL 与对象存储 endpoint 拉取会限制状态码、MIME、大小、checksum 和不安全主机，渲染前还会核对实际图片格式与 metadata 声明的 `mime_type`、`width`、`height`。对象存储支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，或通过 `endpoint` / `endpoint_url` / `base_url` / `public_endpoint` 拼接 `s3`、`oss`、`cos`、`obs`、`minio` URI，默认 path-style，`addressing_style=virtual_hosted` 时使用 bucket 子域名。模板和字体资源已进入服务端合成链路：`slider_template` 作为滑块 mask，`rotate_template` 作为覆盖层，`concat_template` 支持 JSON/metadata 配置 `split_y`、`split_ratio`、`gap_color` 和 `border_color`，并会输出透明下半区的移动上半片还原 piece；`font` 支持 `glyph_scale`、`palette` 和自定义点阵 `glyphs` metadata；`icon`、`background_library`、`rotate_library`、`grid_category_library`、`icon_library`、`degree_template`、`curve_template`、`gesture_template`、`jigsaw_template`、`pow_challenge` 已作为资源类型开放登记。
+- 当前使用内置 PNG 生成器作为默认兜底，避免 fallback 图像把精确答案作为可解析 SVG 属性暴露；`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图已经可以由服务端合成为 `SLIDER`、`ROTATE`、`CONCAT` 和 `WORD_IMAGE_CLICK` 的 PNG challenge，完整类型矩阵均已支持资源登记、选择和内置 PNG 兜底生成，资源合成会继续细化。URL 与对象存储 endpoint 拉取会限制状态码、MIME、大小、checksum 和不安全主机，渲染前还会核对实际图片格式与 metadata 声明的 `mime_type`、`width`、`height`。对象存储支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，或通过 `endpoint` / `endpoint_url` / `base_url` / `public_endpoint` 拼接 `s3`、`oss`、`cos`、`obs`、`minio` URI，默认 path-style，`addressing_style=virtual_hosted` 时使用 bucket 子域名。模板和字体资源已进入服务端合成链路：`slider_template` 作为滑块 mask，`rotate_template` 作为覆盖层，`concat_template` 支持 JSON/metadata 配置 `split_y`、`split_ratio`、`gap_color` 和 `border_color`，并会输出透明下半区的移动上半片还原 piece；`font` 支持 `glyph_scale`、`palette` 和自定义点阵 `glyphs` metadata；`icon`、`background_library`、`rotate_library`、`grid_category_library`、`icon_library`、`degree_template`、`curve_template`、`gesture_template`、`jigsaw_template` 已作为资源类型开放登记。
 
 ## 13. 滑动轨迹人机校验
 
@@ -1818,7 +1811,6 @@ degree_template
 curve_template
 gesture_template
 jigsaw_template
-pow_challenge
 ```
 
 `storage_type`:
@@ -2024,7 +2016,7 @@ created_at
 - Runtime + Engine + Ticket。
 - Iframe 接入。
 - HTTP JSON API。
-- `PROOF_OF_WORK` / `GESTURE` / `CURVE` / `CURVE_V2` / `CURVE_V3` / `SLIDER` / `SLIDER_V2` / `ROTATE` / `CONCAT` / `ROTATE_DEGREE` / `WORD_IMAGE_CLICK` / `IMAGE_CLICK` / `JIGSAW` / `GRID_IMAGE_CLICK` 具体验证码。
+- `GESTURE` / `CURVE` / `CURVE_V2` / `CURVE_V3` / `SLIDER` / `SLIDER_V2` / `ROTATE` / `CONCAT` / `ROTATE_DEGREE` / `WORD_IMAGE_CLICK` / `IMAGE_CLICK` / `JIGSAW` / `GRID_IMAGE_CLICK` 具体验证码。
 - 资源管理。
 - 预生成缓存。
 - PostgreSQL 控制面存储。
@@ -2034,9 +2026,9 @@ created_at
 
 ### Phase 1.5: Tianai 在线体验类型对齐
 
-- 已引入外部兼容类型映射：`POW`、`RANDOM`、`GESTURE`、`CURVE`、`CURVE2`、`CURVE3`、`SLIDER2`、`JIGSAW`。
+- 已引入外部兼容类型映射：`RANDOM`、`GESTURE`、`CURVE`、`CURVE2`、`CURVE3`、`SLIDER2`、`JIGSAW`；`POW` / `PROOF_OF_WORK` 已移除，不再作为兼容输入。
 - 已扩展 `CaptchaType` 枚举、管理台选择项、资源类型和 Browser smoke 覆盖。
-- Runtime 已抽象统一交互事件：拖动、点选、绘制、刮擦、拼图交换和计算型 challenge。
+- Runtime 已抽象统一交互事件：拖动、点选、绘制、刮擦和拼图交换。
 - Engine 已增加每类验证码的服务端生成、答案保存、容差配置、校验和审计摘要。
 - Demo 页面按 Tianai 在线体验站点排列验证码类型，未支持类型不能静默降级为已有类型。
 - 下一步对增强版类型继续增加资源扰动、素材库和更细粒度行为评分。

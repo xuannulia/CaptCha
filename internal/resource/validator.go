@@ -32,7 +32,6 @@ var allowedResourceTypes = map[string]struct{}{
 	"curve_template":        {},
 	"gesture_template":      {},
 	"jigsaw_template":       {},
-	"pow_challenge":         {},
 }
 
 var allowedStorageTypes = map[string]struct{}{
@@ -46,7 +45,6 @@ var allowedStorageTypes = map[string]struct{}{
 
 var allowedCaptchaTypes = map[types.CaptchaType]struct{}{
 	types.CaptchaAuto:           {},
-	types.CaptchaProofOfWork:    {},
 	types.CaptchaGesture:        {},
 	types.CaptchaCurve:          {},
 	types.CaptchaCurve2:         {},

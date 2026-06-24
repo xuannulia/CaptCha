@@ -369,7 +369,6 @@ var captchaTypePreference = []types.CaptchaType{
 }
 
 var randomCaptchaTypePreference = []types.CaptchaType{
-	types.CaptchaProofOfWork,
 	types.CaptchaGesture,
 	types.CaptchaCurve,
 	types.CaptchaCurve2,
@@ -409,7 +408,7 @@ func normalizeCaptchaPreferences(preferences []types.CaptchaType) []types.Captch
 
 func isConcreteCaptchaType(captchaType types.CaptchaType) bool {
 	switch normalizeRequestedCaptchaType(captchaType) {
-	case types.CaptchaProofOfWork, types.CaptchaGesture, types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3, types.CaptchaSlider, types.CaptchaSlider2, types.CaptchaRotate, types.CaptchaConcat, types.CaptchaRotateDegree, types.CaptchaWordImageClick, types.CaptchaImageClick, types.CaptchaJigsaw, types.CaptchaGridImageClick:
+	case types.CaptchaGesture, types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3, types.CaptchaSlider, types.CaptchaSlider2, types.CaptchaRotate, types.CaptchaConcat, types.CaptchaRotateDegree, types.CaptchaWordImageClick, types.CaptchaImageClick, types.CaptchaJigsaw, types.CaptchaGridImageClick:
 		return true
 	default:
 		return false
@@ -429,8 +428,6 @@ func requiredResourceTypes(captchaType types.CaptchaType) []string {
 
 func requiredResourceTypeGroups(captchaType types.CaptchaType) [][]string {
 	switch normalizeRequestedCaptchaType(captchaType) {
-	case types.CaptchaProofOfWork:
-		return [][]string{{"pow_challenge"}}
 	case types.CaptchaGesture:
 		return [][]string{{"background_image", "background_library"}, {"gesture_template"}}
 	case types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3:
@@ -458,8 +455,6 @@ func requiredResourceTypeGroups(captchaType types.CaptchaType) [][]string {
 
 func normalizeRequestedCaptchaType(captchaType types.CaptchaType) types.CaptchaType {
 	switch types.CaptchaType(strings.ToUpper(strings.TrimSpace(string(captchaType)))) {
-	case "POW":
-		return types.CaptchaProofOfWork
 	case "SLIDER2":
 		return types.CaptchaSlider2
 	case "CURVE2":

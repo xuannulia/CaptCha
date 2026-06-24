@@ -2,10 +2,8 @@ package api
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -542,14 +540,14 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 			URI:          "https://cdn.example.test/direct-background.png",
 			Status:       "active",
 		})
-	memoryStore.UpsertResource(types.CaptchaResource{
-		ID:           "res_direct_auto_rotate",
-		ClientID:     "direct-auto",
-		CaptchaType:  types.CaptchaRotate,
-		ResourceType: "rotate_library",
-		StorageType:  "url",
-		URI:          "https://cdn.example.test/direct-rotate.png",
-		Status:       "active",
+		memoryStore.UpsertResource(types.CaptchaResource{
+			ID:           "res_direct_auto_rotate",
+			ClientID:     "direct-auto",
+			CaptchaType:  types.CaptchaRotate,
+			ResourceType: "rotate_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/direct-rotate.png",
+			Status:       "active",
 		})
 
 		response := request(t, server, http.MethodPost, "/api/v1/challenge/sessions", map[string]any{
@@ -2810,9 +2808,6 @@ func syntheticTrackForSession(session types.ChallengeSession) []types.TrackPoint
 
 func answerForSession(session types.ChallengeSession) types.VerifyAnswer {
 	switch session.Type {
-	case types.CaptchaProofOfWork:
-		x := solveProofOfWorkForTest(session.Answer.Token, session.Answer.Offset, session.Answer.Y)
-		return types.VerifyAnswer{X: &x}
 	case types.CaptchaGesture, types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3:
 		return types.VerifyAnswer{Points: session.Answer.Points}
 	case types.CaptchaRotate, types.CaptchaRotateDegree:
@@ -2827,17 +2822,6 @@ func answerForSession(session types.ChallengeSession) types.VerifyAnswer {
 		x := session.Answer.X
 		return types.VerifyAnswer{X: &x}
 	}
-}
-
-func solveProofOfWorkForTest(seed string, difficulty, maxNonce int) int {
-	prefix := strings.Repeat("0", difficulty)
-	for nonce := 0; nonce <= maxNonce; nonce++ {
-		sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", seed, nonce)))
-		if strings.HasPrefix(fmt.Sprintf("%x", sum[:]), prefix) {
-			return nonce
-		}
-	}
-	return -1
 }
 
 func writeAPITestPNG(t *testing.T, c color.RGBA) string {

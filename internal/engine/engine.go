@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"embed"
 	"encoding/base64"
 	"fmt"
@@ -87,7 +86,6 @@ const (
 	curveAnswerSlack         = 18
 	curveTrackSlack          = 26
 	wordClickTolerance       = 28
-	powMaxNonce              = 120000
 )
 
 type trackAnalysis struct {
@@ -287,7 +285,7 @@ func isCurveCaptchaType(captchaType types.CaptchaType) bool {
 }
 
 func isTrackOptionalCaptcha(captchaType types.CaptchaType) bool {
-	return captchaType == types.CaptchaProofOfWork || isPointClickCaptcha(captchaType)
+	return isPointClickCaptcha(captchaType)
 }
 
 func ScoreTrack(track []types.TrackPoint) types.TrackScore {
@@ -381,14 +379,6 @@ func ExtractTrackFeatures(track []types.TrackPoint) map[string]any {
 
 func verifyAnswer(session types.ChallengeSession, answer types.VerifyAnswer) (bool, string) {
 	switch session.Type {
-	case types.CaptchaProofOfWork:
-		if answer.X == nil {
-			return false, "ANSWER_MISSING"
-		}
-		if verifyProofOfWork(session.Answer.Token, *answer.X, session.Answer.Offset, session.Answer.Y) {
-			return true, "OK"
-		}
-		return false, "ANSWER_MISMATCH"
 	case types.CaptchaGesture:
 		return verifyGesturePathSequence(session.Answer.Points, answer.Points, 14)
 	case types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3:
@@ -446,23 +436,6 @@ func verifyAnswer(session types.ChallengeSession, answer types.VerifyAnswer) (bo
 
 func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.RenderPayload, error) {
 	switch captchaType {
-	case types.CaptchaProofOfWork:
-		seed, err := randomID("pow_", 12)
-		if err != nil {
-			return types.Answer{}, types.RenderPayload{}, err
-		}
-		difficulty := 2
-		return types.Answer{Token: seed, Offset: difficulty, Y: powMaxNonce}, types.RenderPayload{
-			Type:   types.CaptchaProofOfWork,
-			Prompt: "正在进行安全计算",
-			View:   types.View{Width: 320, Height: 120},
-			Image:  pngDataURL(drawProofOfWorkImage()),
-			Parameters: map[string]any{
-				"pow_seed":   seed,
-				"difficulty": difficulty,
-				"max_nonce":  powMaxNonce,
-			},
-		}, nil
 	case types.CaptchaGesture:
 		family, points := gesturePath()
 		return types.Answer{Points: points, Token: family}, types.RenderPayload{
@@ -696,7 +669,6 @@ func (e *Engine) generateChallenge(captchaType types.CaptchaType) (generatedChal
 }
 
 var supportedTypes = []types.CaptchaType{
-	types.CaptchaProofOfWork,
 	types.CaptchaGesture,
 	types.CaptchaCurve,
 	types.CaptchaCurve2,
@@ -715,8 +687,6 @@ var supportedTypes = []types.CaptchaType{
 func normalizeType(t types.CaptchaType) types.CaptchaType {
 	normalized := types.CaptchaType(strings.ToUpper(strings.TrimSpace(string(t))))
 	switch normalized {
-	case "POW":
-		return types.CaptchaProofOfWork
 	case "SLIDER2":
 		return types.CaptchaSlider2
 	case "CURVE2":
@@ -725,7 +695,7 @@ func normalizeType(t types.CaptchaType) types.CaptchaType {
 		return types.CaptchaCurve3
 	case types.CaptchaWordOrderClick:
 		return types.CaptchaWordImageClick
-	case types.CaptchaProofOfWork, types.CaptchaGesture, types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3, types.CaptchaSlider, types.CaptchaSlider2, types.CaptchaRotate, types.CaptchaConcat, types.CaptchaRotateDegree, types.CaptchaWordImageClick, types.CaptchaImageClick, types.CaptchaJigsaw, types.CaptchaGridImageClick:
+	case types.CaptchaGesture, types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3, types.CaptchaSlider, types.CaptchaSlider2, types.CaptchaRotate, types.CaptchaConcat, types.CaptchaRotateDegree, types.CaptchaWordImageClick, types.CaptchaImageClick, types.CaptchaJigsaw, types.CaptchaGridImageClick:
 		return normalized
 	default:
 		return types.CaptchaSlider
@@ -952,19 +922,6 @@ func bleedTransparentSliderPixels(img *image.RGBA, maskFile string, size int) {
 			}
 		}
 	}
-}
-
-func drawProofOfWorkImage() image.Image {
-	img := newCanvas(320, 120, color.RGBA{R: 248, G: 250, B: 252, A: 255})
-	for i := 0; i < 9; i++ {
-		x := 34 + i*30
-		h := 24 + (i%4)*10
-		fillRect(img, x, 72-h, 18, h, color.RGBA{R: 37, G: 99, B: 235, A: 210})
-		drawCircle(img, x+9, 84, 8, color.RGBA{R: 14, G: 165, B: 233, A: 180})
-	}
-	drawPolyline(img, []image.Point{{30, 92}, {290, 92}}, 3, color.RGBA{R: 203, G: 213, B: 225, A: 255})
-	drawCircle(img, 274, 36, 18, color.RGBA{R: 250, G: 204, B: 21, A: 255})
-	return img
 }
 
 func gesturePath() (string, []types.Point) {
@@ -2869,15 +2826,6 @@ func pointSegmentDistance(point, a, b types.Point) float64 {
 	x := ax + t*dx
 	y := ay + t*dy
 	return math.Hypot(px-x, py-y)
-}
-
-func verifyProofOfWork(seed string, nonce, difficulty, maxNonce int) bool {
-	if seed == "" || nonce < 0 || nonce > maxNonce || difficulty <= 0 || difficulty > 6 {
-		return false
-	}
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", seed, nonce)))
-	encoded := fmt.Sprintf("%x", sum[:])
-	return strings.HasPrefix(encoded, strings.Repeat("0", difficulty))
 }
 
 func newCanvas(width, height int, bg color.RGBA) *image.RGBA {

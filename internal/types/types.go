@@ -6,7 +6,6 @@ type CaptchaType string
 
 const (
 	CaptchaAuto           CaptchaType = "AUTO"
-	CaptchaProofOfWork    CaptchaType = "PROOF_OF_WORK"
 	CaptchaGesture        CaptchaType = "GESTURE"
 	CaptchaCurve          CaptchaType = "CURVE"
 	CaptchaCurve2         CaptchaType = "CURVE_V2"

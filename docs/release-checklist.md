@@ -54,7 +54,7 @@ Before a UI-facing release, run a real browser check:
 make browser-smoke
 ```
 
-- Runtime loads with `client_id=demo`, creates `RANDOM` requests and `PROOF_OF_WORK`, `GESTURE`, `CURVE`, `CURVE_V2`, `CURVE_V3`, `SLIDER`, `SLIDER_V2`, `ROTATE`, `CONCAT`, `ROTATE_DEGREE`, `WORD_IMAGE_CLICK`, `IMAGE_CLICK`, `JIGSAW`, and `GRID_IMAGE_CLICK` concrete challenges, and renders the expected controls.
+- Runtime loads with `client_id=demo`, creates `RANDOM` requests and `GESTURE`, `CURVE`, `CURVE_V2`, `CURVE_V3`, `SLIDER`, `SLIDER_V2`, `ROTATE`, `CONCAT`, `ROTATE_DEGREE`, `WORD_IMAGE_CLICK`, `IMAGE_CLICK`, `JIGSAW`, and `GRID_IMAGE_CLICK` concrete challenges, and renders the expected controls.
 - Runtime verification failure for each captcha type shows a retry state without crashing; drag, path, point-click, and proof-of-work challenges keep manual verification disabled until a valid answer shape exists.
 - Browser smoke includes successful iframe flows for representative drag, path, and click captchas, including `SLIDER` / `SLIDER_V2` gap alignment, `ROTATE` image rotation, `ROTATE_DEGREE` red-tick angle alignment, `CONCAT` piece alignment, `GESTURE` timed drawing and straight-line failure, `CURVE` / `CURVE_V2` / `CURVE_V3` canvas curve matching and wrong-offset failure, `WORD_IMAGE_CLICK` / `IMAGE_CLICK` ordered clicks, `JIGSAW` tile-layer drag swap, and `GRID_IMAGE_CLICK` grid selection plus wrong-selection failure, so the release check covers more than static rendering.
 - Admin console loads metrics and shows applications, route policies, IP policies, resources, audit, training features, and model versions.

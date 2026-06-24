@@ -93,8 +93,6 @@ func DefaultEscalation() []types.CaptchaType {
 func normalizeType(captchaType types.CaptchaType) types.CaptchaType {
 	normalized := types.CaptchaType(strings.ToUpper(strings.TrimSpace(string(captchaType))))
 	switch normalized {
-	case "POW":
-		return types.CaptchaProofOfWork
 	case "SLIDER2":
 		return types.CaptchaSlider2
 	case "CURVE2":
@@ -108,8 +106,6 @@ func normalizeType(captchaType types.CaptchaType) types.CaptchaType {
 
 func captchaTypeRank(captchaType types.CaptchaType) (int, bool) {
 	switch captchaType {
-	case types.CaptchaProofOfWork:
-		return 0, true
 	case types.CaptchaSlider:
 		return 1, true
 	case types.CaptchaSlider2:

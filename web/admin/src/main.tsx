@@ -207,7 +207,6 @@ type PagedList<T> = {
 };
 
 const captchaTypes = [
-  "PROOF_OF_WORK",
   "GESTURE",
   "CURVE",
   "CURVE_V2",
@@ -224,7 +223,6 @@ const captchaTypes = [
 ];
 const captchaLabels: Record<string, string> = {
   AUTO: "自动",
-  PROOF_OF_WORK: "工作量验证",
   GESTURE: "手势描绘",
   CURVE: "滑动曲线 V1",
   CURVE_V2: "滑动曲线 V2",
@@ -253,8 +251,7 @@ const resourceTypeLabels: Record<string, string> = {
   degree_template: "角度模板",
   curve_template: "曲线模板",
   gesture_template: "手势模板",
-  jigsaw_template: "拼图模板",
-  pow_challenge: "工作量素材"
+  jigsaw_template: "拼图模板"
 };
 const storageLabels: Record<string, string> = {
   embedded: "内置",
@@ -651,7 +648,7 @@ function resourceLibraryKey(row: Resource) {
   if (row.resource_type === "rotate_library") return "rotate";
   if (row.resource_type === "grid_category_library") return "grid";
   if (row.resource_type === "icon_library") return "icon";
-  if (row.resource_type.endsWith("_template") || row.resource_type === "font" || row.resource_type === "pow_challenge") return "template";
+  if (row.resource_type.endsWith("_template") || row.resource_type === "font") return "template";
   if (row.resource_type === "background_image" || row.resource_type === "icon") return "single";
   return "single";
 }

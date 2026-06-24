@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import "./style.css";
 
 type CaptchaType =
-  | "PROOF_OF_WORK"
   | "GESTURE"
   | "CURVE"
   | "CURVE_V2"
@@ -70,9 +69,6 @@ type ChallengeParameters = {
   piece_size?: number;
   split_y?: number;
   piece_width?: number;
-  pow_seed?: string;
-  difficulty?: number;
-  max_nonce?: number;
   tile_cols?: number;
   tile_rows?: number;
   tile_width?: number;
@@ -156,7 +152,6 @@ function App() {
 function DemoPage() {
   const captchaTypes: Array<{ type: CaptchaRequestType; label: string; scene: string }> = [
     { type: "RANDOM", label: "随机验证", scene: "verify" },
-    { type: "PROOF_OF_WORK", label: "工作量证明", scene: "login" },
     { type: "GESTURE", label: "手势描绘", scene: "verify" },
     { type: "CURVE_V3", label: "滑动曲线 V3", scene: "verify" },
     { type: "CURVE_V2", label: "滑动曲线 V2", scene: "verify" },
@@ -328,30 +323,6 @@ function RuntimeChallenge() {
   useEffect(() => {
     void bootstrap();
   }, []);
-
-  useEffect(() => {
-    if (!challenge || challenge.type !== "PROOF_OF_WORK") return;
-    let cancelled = false;
-    setStatus("计算中");
-    void solveProofOfWork(challenge)
-      .then((nonce) => {
-        if (cancelled || nonce < 0) return;
-        void verify({
-          value: nonce,
-          track: [
-            { x: 0, y: 0, t: 0, type: "start" },
-            { x: 1, y: 0, t: 80, type: "move" },
-            { x: 2, y: 0, t: 160, type: "end" }
-          ]
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("验证失败，请重试");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [challenge]);
 
   useEffect(() => {
     if (!challenge || !isCurveCaptcha(challenge) || !curveBgCanvasRef.current || !curveMoveCanvasRef.current) return;
@@ -1394,7 +1365,6 @@ function challengePointFromEvent(event: MouseEvent | PointerEvent, challenge: Ch
 }
 
 function buildAnswer(challenge: Challenge, value: number, points: ChallengePoint[], jigsawTiles: number[] = []): VerifyAnswerPayload {
-  if (challenge.type === "PROOF_OF_WORK") return { x: value };
   if (challenge.type === "ROTATE" || challenge.type === "ROTATE_DEGREE") return { angle: value };
   if (isCurveCaptcha(challenge)) return { x: value };
   if (challenge.type === "CONCAT") return { offset: value };
@@ -1423,7 +1393,6 @@ function clickCancelRadius(challenge: Challenge) {
 
 function manualVerifyDisabled(challenge: Challenge, status: string, ticket: string, pointCount: number, value: number, jigsawTiles: number[] = []) {
   if (status === "验证中" || Boolean(ticket)) return true;
-  if (challenge.type === "PROOF_OF_WORK") return true;
   if (isJigsawCaptcha(challenge)) return !jigsawTilesChanged(challenge, jigsawTiles);
   if (usesDragControl(challenge)) return value <= rangeBounds(challenge).min;
   if (isClickCaptcha(challenge)) return pointCount < clickTargetCount(challenge);
@@ -1491,32 +1460,6 @@ function appendPathPointTo(points: ChallengePoint[], point: ChallengePoint) {
 
 function distanceBetweenPoints(a: ChallengePoint, b: ChallengePoint) {
   return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-async function solveProofOfWork(challenge: Challenge) {
-  const seed = stringParam(challenge, "pow_seed", "");
-  const difficulty = numberParam(challenge, "difficulty", 2);
-  const maxNonce = numberParam(challenge, "max_nonce", 120000);
-  const prefix = "0".repeat(Math.max(1, difficulty));
-  if (!seed || !globalThis.crypto?.subtle) return -1;
-  for (let nonce = 0; nonce <= maxNonce; nonce++) {
-    const hash = await sha256Hex(`${seed}:${nonce}`);
-    if (hash.startsWith(prefix)) return nonce;
-    if (nonce > 0 && nonce % 500 === 0) {
-      await nextFrame();
-    }
-  }
-  return -1;
-}
-
-async function sha256Hex(value: string) {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function nextFrame() {
-  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 async function get<T>(path: string): Promise<T> {

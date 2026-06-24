@@ -9,8 +9,8 @@ fail() {
 	exit 1
 }
 
-concrete_types=(PROOF_OF_WORK GESTURE CURVE CURVE_V2 CURVE_V3 SLIDER SLIDER_V2 ROTATE CONCAT ROTATE_DEGREE WORD_IMAGE_CLICK IMAGE_CLICK JIGSAW GRID_IMAGE_CLICK)
-go_constants=(CaptchaProofOfWork CaptchaGesture CaptchaCurve CaptchaCurve2 CaptchaCurve3 CaptchaSlider CaptchaSlider2 CaptchaRotate CaptchaConcat CaptchaRotateDegree CaptchaWordImageClick CaptchaImageClick CaptchaJigsaw CaptchaGridImageClick)
+concrete_types=(GESTURE CURVE CURVE_V2 CURVE_V3 SLIDER SLIDER_V2 ROTATE CONCAT ROTATE_DEGREE WORD_IMAGE_CLICK IMAGE_CLICK JIGSAW GRID_IMAGE_CLICK)
+go_constants=(CaptchaGesture CaptchaCurve CaptchaCurve2 CaptchaCurve3 CaptchaSlider CaptchaSlider2 CaptchaRotate CaptchaConcat CaptchaRotateDegree CaptchaWordImageClick CaptchaImageClick CaptchaJigsaw CaptchaGridImageClick)
 
 grep -Eq 'CaptchaAuto[[:space:]]+CaptchaType[[:space:]]*=[[:space:]]*"AUTO"' internal/types/types.go ||
 	fail "Go captcha type constants must include AUTO"
@@ -50,12 +50,14 @@ grep -Fq 'captcha_type: CaptchaType | "AUTO"' web/runtime/src/main.tsx ||
 	fail "runtime session creation request must allow AUTO"
 grep -Fq 'const captchaTypes = [' web/admin/src/main.tsx ||
 	fail "admin must centralize concrete captcha type options"
-grep -Fq 'selectOptions(["AUTO", ...captchaTypes])' web/admin/src/main.tsx ||
-	fail "admin resource captcha type selector must include AUTO plus concrete captcha types"
-for resource_type in background_library grid_category_library icon icon_library degree_template curve_template gesture_template jigsaw_template pow_challenge; do
-	grep -Fq "\"${resource_type}\"" internal/resource/validator.go ||
+grep -Fq 'function galleryUploadDefaults' web/admin/src/main.tsx ||
+	fail "admin resource upload must derive captcha/resource defaults from gallery type"
+grep -Fq 'captchaType: "AUTO", resourceType: "background_library"' web/admin/src/main.tsx ||
+	fail "admin background gallery upload must default captcha type to AUTO"
+for resource_type in background_library grid_category_library icon icon_library degree_template curve_template gesture_template jigsaw_template; do
+	grep -Eq "(\"${resource_type}\"|${resource_type}:)" internal/resource/validator.go ||
 		fail "resource validator must allow $resource_type"
-	grep -Fq "\"${resource_type}\"" web/admin/src/main.tsx ||
+	grep -Eq "(\"${resource_type}\"|${resource_type}:)" web/admin/src/main.tsx ||
 		fail "admin resource type selector must expose $resource_type"
 done
 
