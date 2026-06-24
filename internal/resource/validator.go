@@ -69,6 +69,12 @@ var allowedStatuses = map[string]struct{}{
 	"disabled": {},
 }
 
+var allowedDifficulties = map[string]struct{}{
+	"easy":   {},
+	"medium": {},
+	"hard":   {},
+}
+
 var imageMIMETypes = map[string]struct{}{
 	"image/gif":     {},
 	"image/jpeg":    {},
@@ -142,6 +148,7 @@ func ValidateAndNormalize(input types.CaptchaResource) (types.CaptchaResource, e
 	if metadata == nil {
 		metadata = make(map[string]any, 2)
 	}
+	applyDedicatedBackgroundDefaults(resource.ResourceType, metadata)
 	metadata["resource_family"] = resourceFamily(resource.ResourceType)
 	metadata["uri_scheme"] = scheme
 	resource.Metadata = metadata
@@ -243,7 +250,36 @@ func normalizeMetadata(resourceType string, input map[string]any) (map[string]an
 		metadata["mime_type"] = mimeType
 		delete(metadata, "content_type")
 	}
+	if value, ok := metadataString(metadata, "difficulty"); ok {
+		difficulty := strings.ToLower(strings.TrimSpace(value))
+		if _, ok := allowedDifficulties[difficulty]; !ok {
+			return nil, fmt.Errorf("unsupported resource difficulty")
+		}
+		metadata["difficulty"] = difficulty
+	}
 	return metadata, nil
+}
+
+func applyDedicatedBackgroundDefaults(resourceType string, metadata map[string]any) {
+	if metadata == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(resourceType)) {
+	case "concat_background_image", "concat_background_library":
+		setDefaultMetadata(metadata, "usage_profile", "concat_restore")
+		setDefaultMetadata(metadata, "suitability", "horizontal_continuity")
+		setDefaultMetadata(metadata, "difficulty", "medium")
+	case "jigsaw_background_image", "jigsaw_background_library":
+		setDefaultMetadata(metadata, "usage_profile", "jigsaw_shuffle")
+		setDefaultMetadata(metadata, "suitability", "tile_distinctiveness")
+		setDefaultMetadata(metadata, "difficulty", "medium")
+	}
+}
+
+func setDefaultMetadata(metadata map[string]any, key, value string) {
+	if _, ok := metadata[key]; !ok {
+		metadata[key] = value
+	}
 }
 
 func cloneMetadata(input map[string]any) map[string]any {

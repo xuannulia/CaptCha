@@ -37,7 +37,7 @@
 - HTTP API 支持通过 `CAPTCHA_ALLOWED_ORIGINS` 配置浏览器 CORS 来源白名单；未配置时默认 `*` 便于本地开发。
 - Engine 支持按验证码类型预生成 challenge，启动时通过 `CAPTCHA_PREGENERATE_SIZE` 控制每类预生成池大小。
 - Challenge payload 会按 `client_id`、`scene`、`captcha_type` 和可选 `resource_tag` 选择 active 资源，并在 `parameters.resources` 下发资源引用；资源登记会校验类型、来源、URI、MIME、尺寸、大小和 checksum 声明。`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图资源可进入服务端 PNG 合成，读取、下载、响应 MIME、实际解码 MIME、声明尺寸、大小或 checksum 校验失败时自动回退内置生成器；`background_library` 会在同一作用域保留多张候选背景并在服务端合成时抽样，避免长期固定单图；`concat_background_library` / `jigsaw_background_library` 分别是滑动还原和乱序拼图的独立背景图库，不复用通用背景，便于按图像连续性、切片可辨识度和通过难度筛选素材；`rotate_library` 是 ROTATE 独立图库，服务端会从图片中心裁切圆形旋转图后按随机初始角度生成 PNG；`grid_category_library` 用 metadata 的 `category`/`label` 建立图片格子分类图库，服务端按 session 答案格抽目标分类图片、非目标格抽干扰分类图片，目标格索引仍只保存在服务端。`classpath` 只允许从 `CAPTCHA_RESOURCE_CLASSPATH_DIRS` 指定目录或默认 `resources`、`configs/resources` 中读取，禁止绝对路径和 `..` 穿越，远程 URL 与对象存储 endpoint 会拒绝 localhost、私网和链路本地地址。`object_storage` 支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，也支持 `endpoint` / `base_url` + `bucket/key` 拼接，默认 path-style，可用 `addressing_style=virtual_hosted` 切换。`slider_template` 可作为滑块 mask，`rotate_template` 可作为旋转图覆盖层，`concat_template` 支持 JSON/metadata 配置移动上半片与静态下半片的分割线位置和边缘颜色；`font` 支持服务端文字渲染 metadata；`icon_library` 已开放登记，外部 SVG 图标库渲染链路后续补齐。
-- 管理台已接入后端管理 API，覆盖应用、路由策略、IP 策略、策略模拟、资源、审计、指标、训练特征和模型版本；应用、路由策略、IP 策略、资源、模型版本和训练标签支持操作，策略模拟支持 dry-run 查看命中路由和决策。管理台顶部提供当前应用范围选择，概览、路由、IP 策略、资源、审计和训练特征会按所选应用过滤，新增策略和上传资源默认落到当前应用，避免多租户数据混杂。`GET /api/v1/admin/metrics` 会聚合应用、策略、资源、资源命中/失败分析、近期审计事件、训练样本和模型版本，概览页直接使用该指标摘要；`GET /metrics` 输出 Prometheus 文本指标，可通过 `CAPTCHA_METRICS_TOKEN` 单独启用抓取鉴权。
+- 管理台已接入后端管理 API，覆盖应用、路由策略、IP 策略、策略模拟、资源、审计、指标、训练特征和模型版本；应用、路由策略、IP 策略、资源、模型版本和训练标签支持操作，策略模拟支持 dry-run 查看命中路由和决策。管理台顶部提供当前应用范围选择，概览、路由、IP 策略、资源、审计和训练特征会按所选应用过滤，新增策略和上传资源默认落到当前应用，避免多租户数据混杂。资源图库支持批量启用、停用和删除，删除操作必须能确定单一应用范围以保持审计归属清晰。`GET /api/v1/admin/metrics` 会聚合应用、策略、资源、资源命中/失败分析、近期审计事件、训练样本和模型版本，概览页直接使用该指标摘要；`GET /metrics` 输出 Prometheus 文本指标，可通过 `CAPTCHA_METRICS_TOKEN` 单独启用抓取鉴权。
 - 管理 API 的应用、密钥轮换、路由策略、IP 策略、资源、模型版本和训练标签变更会写入审计事件，记录变更类型、目标上下文和脱敏后的管理端 IP。外部 Event 上报不能控制审计事件 ID 或创建时间，平台会在写入时生成服务端身份字段。
 - 应用状态已进入主链路治理：不存在的应用不能创建 challenge；`disabled` 应用不能创建/获取/刷新/验证 challenge。HTTP/gRPC 策略评估会对 disabled/unknown 应用返回 `block` 决策，ticket 校验返回 `valid=false`，事件上报要求明确 `client_id` 并拒绝 disabled 应用写入。
 - 应用密钥支持后端生成和轮换；明文 client secret 只在轮换响应中返回一次，服务端仅保存 PBKDF2-SHA256 hash。应用一旦配置 secret，HTTP 后端接入 API 和 gRPC Policy/Ticket/Config/Event 服务都会校验 `X-Captcha-Client-Secret` 或 Bearer token。
@@ -1288,7 +1288,7 @@ database metadata
 - 后端只返回渲染所需素材，不返回标准答案。
 - 图片格子必须使用分类图库：metadata 记录 `category`、`labels`、素材清单和目标/非目标标注，服务端抽样生成本次格子集合，只保存目标格集合在 session 内。
 - 图标点选使用图标库：内置 SVG 由项目维护或用户提供，Runtime 只看到渲染后的题面与提示序列，不通过 DOM 暴露标准坐标。
-- 其它图片型验证码按背景形态建立图库；通用视觉背景使用 `background_library`，滑动还原使用 `concat_background_library`，乱序拼图使用 `jigsaw_background_library`，两者不得从通用背景兜底，以免不适合切分/还原的图片影响用户通过体验。图库可继续用 `difficulty`、`variant`、`scene` 和 `tag` 区分素材难度和场景。
+- 其它图片型验证码按背景形态建立图库；通用视觉背景使用 `background_library`，滑动还原使用 `concat_background_library`，乱序拼图使用 `jigsaw_background_library`，两者不得从通用背景兜底，以免不适合切分/还原的图片影响用户通过体验。滑动还原素材要优先筛选横向连续纹理、上下分片后仍可自然对齐的图片；乱序拼图素材要优先筛选 2x2/3x3 切片后每块仍有局部识别特征的图片。图库可继续用 `difficulty`、`variant`、`scene` 和 `tag` 区分素材难度和场景。
 
 当前实现：
 
@@ -1850,6 +1850,9 @@ endpoint / endpoint_url / base_url / public_endpoint
 addressing_style
 split_y / split_ratio / gap_color / border_color
 glyph_scale / palette / glyphs
+difficulty
+usage_profile
+suitability
 ```
 
 `checksum` 使用 `sha256:<64 hex>` 规范格式；管理 API 可接收裸 64 位 sha256 hex 并自动补齐前缀。

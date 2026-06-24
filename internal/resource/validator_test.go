@@ -68,7 +68,32 @@ func TestValidateAndNormalizeDedicatedBackgroundResourceTypes(t *testing.T) {
 			if resource.ResourceType != resourceType || resource.Metadata["resource_family"] != "image" {
 				t.Fatalf("unexpected normalized resource: %+v", resource)
 			}
+			if resource.Metadata["difficulty"] != "medium" {
+				t.Fatalf("expected default material difficulty, got %+v", resource.Metadata)
+			}
 		})
+	}
+}
+
+func TestValidateAndNormalizeResourceNormalizesDifficulty(t *testing.T) {
+	t.Parallel()
+
+	resource, err := ValidateAndNormalize(types.CaptchaResource{
+		CaptchaType:  types.CaptchaJigsaw,
+		ResourceType: "jigsaw_background_library",
+		StorageType:  "url",
+		URI:          "https://cdn.example.test/jigsaw.png",
+		Metadata: map[string]any{
+			"difficulty": "HARD",
+		},
+	})
+	if err != nil {
+		t.Fatalf("validate difficulty: %v", err)
+	}
+	if resource.Metadata["difficulty"] != "hard" ||
+		resource.Metadata["usage_profile"] != "jigsaw_shuffle" ||
+		resource.Metadata["suitability"] != "tile_distinctiveness" {
+		t.Fatalf("unexpected dedicated background metadata: %+v", resource.Metadata)
 	}
 }
 
@@ -114,6 +139,17 @@ func TestValidateAndNormalizeResourceRejectsUnsafeValues(t *testing.T) {
 				URI:          "https://cdn.example.test/font.exe",
 				Metadata: map[string]any{
 					"mime_type": "application/x-msdownload",
+				},
+			},
+		},
+		{
+			name: "invalid difficulty",
+			resource: types.CaptchaResource{
+				ResourceType: "jigsaw_background_library",
+				StorageType:  "url",
+				URI:          "https://cdn.example.test/jigsaw.png",
+				Metadata: map[string]any{
+					"difficulty": "impossible",
 				},
 			},
 		},

@@ -81,6 +81,7 @@ type ResourceFormValues = {
   gallery_type?: "background" | "concatBackground" | "jigsawBackground" | "rotate" | "grid" | "icon";
   category?: string;
   label?: string;
+  difficulty?: string;
 };
 
 type AuditEvent = {
@@ -393,6 +394,19 @@ const galleryUploadTypes = [
   { value: "grid", label: "图片格子图库" },
   { value: "icon", label: "图标图库" }
 ];
+const resourceDifficultyOptions = [
+  { value: "easy", label: "简单" },
+  { value: "medium", label: "中等" },
+  { value: "hard", label: "较难" }
+];
+const galleryUploadNotes: Record<string, string> = {
+  background: "通用背景会用于滑块、点选、手势和曲线类验证码，避免主体过暗、过花或文字密集。",
+  concatBackground: "滑动还原需要横向连续结构，上下分片后仍能靠纹理自然对齐；避免纯色、重复条纹、文字密集和主体只在一侧的图片。",
+  jigsawBackground: "乱序拼图需要每个 2x2 / 3x3 切片都有局部特征；避免大面积纯色、重复格纹和主体集中在单个角落的图片。",
+  rotate: "旋转校准适合中心主体明显、圆形裁切后仍容易辨认方向的图片。",
+  grid: "图片格子图库需要按分类上传，同一分类应保持目标对象清晰且背景差异足够。",
+  icon: "图标图库适合轮廓清晰、尺寸接近、含义明确的 SVG 或透明图片。"
+};
 const adminRoutes = [
   { key: "overview", path: "/overview", icon: <BarChartOutlined />, label: "概览", element: <Overview /> },
   { key: "applications", path: "/applications", icon: <ProjectOutlined />, label: "应用", element: <Applications /> },
@@ -1083,6 +1097,14 @@ function galleryUploadDefaults(galleryType?: string) {
   return { captchaType: "AUTO", resourceType: "background_library", tag: "default" };
 }
 
+function usesMaterialDifficulty(galleryType?: string) {
+  return galleryType === "concatBackground" || galleryType === "jigsawBackground";
+}
+
+function difficultyLabel(value: string) {
+  return resourceDifficultyOptions.find((item) => item.value === value)?.label || value;
+}
+
 function captchaLabel(value: string) {
   return captchaLabels[value] || value;
 }
@@ -1174,6 +1196,11 @@ function resourceDimensions(row: Resource) {
   return width && height ? `${width}x${height}` : "未声明尺寸";
 }
 
+function resourceDifficulty(row: Resource) {
+  const value = metadataText(row, "difficulty");
+  return value ? difficultyLabel(value) : "-";
+}
+
 function resourcePlaceholder(row: Resource) {
   const title = resourceCategory(row) || resourceTypeLabel(row.resource_type);
   return title.slice(0, 4);
@@ -1227,6 +1254,7 @@ function ResourceTile({ row }: { row: Resource }) {
           <span>{captchaLabel(row.captcha_type || "AUTO")}</span>
           <span>{storageLabel(row.storage_type)}</span>
           <span>{resourceDimensions(row)}</span>
+          {metadataText(row, "difficulty") && <span>{resourceDifficulty(row)}</span>}
         </div>
         <div className="resource-tile-meta">
           <span>{row.scene || "全场景"}</span>
@@ -1256,6 +1284,7 @@ function ResourceFileItem({
         {preview ? <img alt="" src={preview} /> : <span>{resourcePlaceholder(row)}</span>}
       </div>
       <div className="resource-file-name" title={name}>{name}</div>
+      <span className={row.status === "active" ? "resource-file-status active" : "resource-file-status"}>{statusLabel(row.status)}</span>
     </article>
   );
 }
@@ -1276,7 +1305,7 @@ function Resources() {
       const response = await fetch(`${apiBase}/api/v1/admin/resources/delete`, {
         method: "POST",
         headers: { ...adminHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ ids })
+        body: JSON.stringify({ client_id: deleteClientID, ids })
       });
       if (!response.ok) throw new Error(response.statusText);
       return await response.json() as { deleted: number };
@@ -1288,6 +1317,26 @@ function Resources() {
       await queryClient.invalidateQueries({ queryKey: ["metrics"] });
     }
   });
+  const statusMutation = useMutation({
+    mutationFn: async ({ items, status }: { items: Resource[]; status: string }) => {
+      await Promise.all(items.map(async (item) => {
+        const response = await fetch(`${apiBase}/api/v1/admin/resources`, {
+          method: "POST",
+          headers: { ...adminHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ ...item, status })
+        });
+        if (!response.ok) throw new Error(response.statusText);
+      }));
+    },
+    onSuccess: async () => {
+      setSelectedResourceIds([]);
+      await queryClient.invalidateQueries({ queryKey: ["resources"] });
+      await queryClient.invalidateQueries({ queryKey: ["metrics"] });
+    },
+    onError: () => {
+      message.error("资源状态保存失败");
+    }
+  });
   const resources = data || [];
   const galleryResources = useMemo(() => resources.filter(isPrimaryGalleryResource), [resources]);
   const visibleGalleryResources = useMemo(
@@ -1297,6 +1346,15 @@ function Resources() {
   const fileFilterCounts = useMemo(() => countResourceFileFilters(galleryResources), [galleryResources]);
   const systemResources = useMemo(() => resources.filter((item) => !isPrimaryGalleryResource(item)), [resources]);
   const visibleResourceIDs = useMemo(() => new Set(visibleGalleryResources.map((item) => item.id)), [visibleGalleryResources]);
+  const selectedGalleryResources = useMemo(
+    () => galleryResources.filter((item) => selectedResourceIds.includes(item.id)),
+    [galleryResources, selectedResourceIds]
+  );
+  const selectedResourceClientIDs = useMemo(
+    () => Array.from(new Set(selectedGalleryResources.map((item) => item.client_id).filter(Boolean))),
+    [selectedGalleryResources]
+  );
+  const deleteClientID = selectedClientID || (selectedResourceClientIDs.length === 1 ? selectedResourceClientIDs[0] : "");
   const selectedGalleryCount = selectedResourceIds.filter((id) => galleryResources.some((item) => item.id === id)).length;
   const selectedVisibleCount = selectedResourceIds.filter((id) => visibleResourceIDs.has(id)).length;
   const allGallerySelected = visibleGalleryResources.length > 0 && selectedVisibleCount === visibleGalleryResources.length;
@@ -1312,7 +1370,15 @@ function Resources() {
   };
   const deleteSelectedResources = () => {
     if (selectedGalleryCount === 0 || deleteMutation.isPending) return;
+    if (!deleteClientID) {
+      message.error("删除需要单一应用范围");
+      return;
+    }
     setDeleteOpen(true);
+  };
+  const updateSelectedResourceStatus = (status: string) => {
+    if (selectedGalleryResources.length === 0 || statusMutation.isPending) return;
+    statusMutation.mutate({ items: selectedGalleryResources, status });
   };
   const uploadGalleryType = Form.useWatch("gallery_type", form) || "background";
 
@@ -1330,7 +1396,8 @@ function Resources() {
       tag: "default",
       gallery_type: "background",
       category: "",
-      label: ""
+      label: "",
+      difficulty: "medium"
     });
     setOpen(true);
   };
@@ -1349,6 +1416,7 @@ function Resources() {
         return category || label ? `${label || category}` : "-";
       }
     },
+    { title: "难度", render: (_, row) => resourceDifficulty(row) },
     {
       title: "规格",
       render: (_, row) => {
@@ -1357,7 +1425,16 @@ function Resources() {
         return width && height ? `${width}x${height}` : "-";
       }
     },
-    { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag> }
+    {
+      title: "状态",
+      render: (_, row) => (
+        <Switch
+          checked={row.status === "active"}
+          size="small"
+          onChange={(checked) => statusMutation.mutate({ items: [row], status: checked ? "active" : "disabled" })}
+        />
+      )
+    }
   ];
   return (
     <Card
@@ -1383,7 +1460,9 @@ function Resources() {
         />
         <span>{visibleGalleryResources.length} 个</span>
         {selectedGalleryCount > 0 && <em>已选 {selectedGalleryCount} 个</em>}
-        <Button danger disabled={selectedGalleryCount === 0} loading={deleteMutation.isPending} onClick={deleteSelectedResources}>删除</Button>
+        <Button disabled={selectedGalleryCount === 0} loading={statusMutation.isPending} onClick={() => updateSelectedResourceStatus("active")}>启用</Button>
+        <Button disabled={selectedGalleryCount === 0} loading={statusMutation.isPending} onClick={() => updateSelectedResourceStatus("disabled")}>停用</Button>
+        <Button danger disabled={selectedGalleryCount === 0 || !deleteClientID} loading={deleteMutation.isPending} onClick={deleteSelectedResources}>删除</Button>
       </div>
       {isLoading ? (
         <div className="resource-gallery-empty">加载中</div>
@@ -1470,7 +1549,8 @@ function Resources() {
             tag: "default",
             gallery_type: "background",
             category: "",
-            label: ""
+            label: "",
+            difficulty: "medium"
           }}
           onFinish={async (values: ResourceFormValues) => {
             if (selectedFiles.length === 0) {
@@ -1488,6 +1568,9 @@ function Resources() {
             formData.set("resource_type", defaults.resourceType);
             formData.set("tag", values.tag || defaults.tag);
             formData.set("status", "active");
+            if (usesMaterialDifficulty(values.gallery_type)) {
+              formData.set("difficulty", values.difficulty || "medium");
+            }
             if (values.category) formData.set("category", values.category);
             if (values.label) formData.set("label", values.label);
             const response = await fetch(`${apiBase}/api/v1/admin/resources/upload`, {
@@ -1513,6 +1596,12 @@ function Resources() {
           <Form.Item name="gallery_type" label="图库" rules={[{ required: true }]}>
             <Select options={galleryUploadTypes} />
           </Form.Item>
+          <div className="gallery-upload-note">{galleryUploadNotes[uploadGalleryType] || galleryUploadNotes.background}</div>
+          {usesMaterialDifficulty(uploadGalleryType) && (
+            <Form.Item name="difficulty" label="素材难度">
+              <Select options={resourceDifficultyOptions} />
+            </Form.Item>
+          )}
           <Space.Compact block>
             <Form.Item name="scene" label="场景" style={{ width: "50%" }}>
               <Input placeholder="全场景" />

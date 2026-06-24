@@ -120,6 +120,7 @@ type uploadBaseResource struct {
 	Category     string
 	Label        string
 	Weight       string
+	Difficulty   string
 }
 
 func resourceFromMultipart(r *http.Request) uploadBaseResource {
@@ -137,6 +138,7 @@ func resourceFromMultipart(r *http.Request) uploadBaseResource {
 		Category:     strings.TrimSpace(r.FormValue("category")),
 		Label:        strings.TrimSpace(r.FormValue("label")),
 		Weight:       strings.TrimSpace(r.FormValue("weight")),
+		Difficulty:   strings.TrimSpace(r.FormValue("difficulty")),
 	}
 }
 
@@ -276,6 +278,10 @@ func saveUploadedResource(dir string, base uploadBaseResource, item uploadedReso
 			metadata["weight"] = weight
 		}
 	}
+	if base.Difficulty != "" {
+		metadata["difficulty"] = base.Difficulty
+	}
+	applyDedicatedBackgroundMetadata(metadata, base.ResourceType)
 	return types.CaptchaResource{
 		ID:           id,
 		ClientID:     base.ClientID,
@@ -289,6 +295,25 @@ func saveUploadedResource(dir string, base uploadBaseResource, item uploadedReso
 		Checksum:     "sha256:" + hex.EncodeToString(sum[:]),
 		Metadata:     metadata,
 	}, nil
+}
+
+func applyDedicatedBackgroundMetadata(metadata map[string]any, resourceType string) {
+	switch strings.ToLower(strings.TrimSpace(resourceType)) {
+	case "concat_background_image", "concat_background_library":
+		defaultMetadata(metadata, "usage_profile", "concat_restore")
+		defaultMetadata(metadata, "suitability", "horizontal_continuity")
+		defaultMetadata(metadata, "difficulty", "medium")
+	case "jigsaw_background_image", "jigsaw_background_library":
+		defaultMetadata(metadata, "usage_profile", "jigsaw_shuffle")
+		defaultMetadata(metadata, "suitability", "tile_distinctiveness")
+		defaultMetadata(metadata, "difficulty", "medium")
+	}
+}
+
+func defaultMetadata(metadata map[string]any, key, value string) {
+	if _, ok := metadata[key]; !ok {
+		metadata[key] = value
+	}
 }
 
 func inspectUploadedImage(item uploadedResourceItem) (string, int, int, string) {

@@ -1512,6 +1512,27 @@ func TestAdminUploadsResourceImages(t *testing.T) {
 	if _, err := os.Stat(parsed.Path); err != nil {
 		t.Fatalf("expected uploaded file to exist: %v", err)
 	}
+
+	response = multipartResourceUpload(t, handler, map[string]string{
+		"client_id":     "demo",
+		"captcha_type":  string(types.CaptchaConcat),
+		"resource_type": "concat_background_library",
+		"tag":           "default",
+		"difficulty":    "hard",
+	}, "concat.png", pngBody.Bytes())
+	decode(t, response, &body)
+	if len(body.Items) != 1 {
+		t.Fatalf("expected one dedicated background resource, got %+v", body.Items)
+	}
+	uploaded = body.Items[0]
+	if uploaded.ResourceType != "concat_background_library" || uploaded.CaptchaType != types.CaptchaConcat {
+		t.Fatalf("unexpected dedicated upload: %+v", uploaded)
+	}
+	if uploaded.Metadata["usage_profile"] != "concat_restore" ||
+		uploaded.Metadata["suitability"] != "horizontal_continuity" ||
+		uploaded.Metadata["difficulty"] != "hard" {
+		t.Fatalf("expected concat material metadata, got %+v", uploaded.Metadata)
+	}
 }
 
 func TestCORSAllowedOrigins(t *testing.T) {

@@ -227,6 +227,20 @@ body {
   overflow-wrap: anywhere;
 }
 
+.resource-file-status {
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #64748b;
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.resource-file-status.active {
+  background: #ecfdf3;
+  color: #15803d;
+}
+
 .resource-file-empty {
   min-height: 260px;
   display: grid;
@@ -243,6 +257,15 @@ body {
 .resource-file-empty p {
   margin: 0;
   color: #64748b;
+}
+
+.gallery-upload-note {
+  margin: -8px 0 18px;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #64748b;
+  line-height: 1.6;
+  padding: 10px 12px;
 }
 
 .resource-gallery {
