@@ -299,6 +299,24 @@ func (s *MemoryStore) UpsertResource(resource types.CaptchaResource) types.Captc
 	return resource
 }
 
+func (s *MemoryStore) DeleteResources(clientID string, ids []string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	deleted := 0
+	for _, id := range ids {
+		resource, ok := s.resources[id]
+		if !ok {
+			continue
+		}
+		if clientID != "" && resource.ClientID != clientID {
+			continue
+		}
+		delete(s.resources, id)
+		deleted++
+	}
+	return deleted
+}
+
 func (s *MemoryStore) AddAuditEvent(event types.AuditEvent) types.AuditEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()

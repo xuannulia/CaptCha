@@ -6,11 +6,10 @@ import {
   ExperimentOutlined,
   PlusOutlined,
   ProjectOutlined,
-  SafetyOutlined,
-  UploadOutlined
+  SafetyOutlined
 } from "@ant-design/icons";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Badge, Button, Card, ConfigProvider, Form, Input, InputNumber, Layout, Menu, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
+import { Badge, Button, Card, Checkbox, ConfigProvider, Form, Input, InputNumber, Layout, Menu, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -318,12 +317,11 @@ const galleryWorkflows: Array<{
     defaults: { resource_type: "icon_library", captcha_type: "IMAGE_CLICK", tag: "default" }
   }
 ];
-const resourceListFilters = [
-  { key: "all", label: "全部资源" },
+const resourceFileFilters = [
+  { key: "all", label: "全部文件" },
   { key: "background", label: "背景图库" },
   { key: "grid", label: "图片格子图库" },
-  { key: "icon", label: "图标图库" },
-  { key: "system", label: "系统资源" }
+  { key: "icon", label: "图标图库" }
 ];
 const adminRoutes = [
   { key: "overview", path: "/overview", icon: <BarChartOutlined />, label: "概览", element: <Overview /> },
@@ -715,44 +713,19 @@ function isPrimaryGalleryResource(row: Resource) {
   return key === "background" || key === "grid" || key === "icon";
 }
 
-function countResourceListFilters(resources: Resource[]) {
+function countResourceFileFilters(resources: Resource[]) {
   return resources.reduce<Record<string, number>>((counts, row) => {
     const key = resourceLibraryKey(row);
     counts.all = (counts.all || 0) + 1;
     if (key === "background" || key === "grid" || key === "icon") {
       counts[key] = (counts[key] || 0) + 1;
-    } else {
-      counts.system = (counts.system || 0) + 1;
     }
     return counts;
-  }, { all: 0, background: 0, grid: 0, icon: 0, system: 0 });
+  }, { all: 0, background: 0, grid: 0, icon: 0 });
 }
 
-function matchesResourceListFilter(row: Resource, filter: string) {
-  if (filter === "all") return true;
-  if (filter === "system") return !isPrimaryGalleryResource(row);
-  return resourceLibraryKey(row) === filter;
-}
-
-function resourceSearchCorpus(row: Resource) {
-  return [
-    row.id,
-    row.client_id,
-    row.scene,
-    row.resource_type,
-    row.captcha_type,
-    row.storage_type,
-    row.uri,
-    row.tag,
-    row.status,
-    resourceTitle(row),
-    resourceTypeLabel(row.resource_type),
-    captchaLabel(row.captcha_type || "AUTO"),
-    storageLabel(row.storage_type),
-    statusLabel(row.status),
-    resourceCategory(row),
-    ...Object.values(row.metadata || {}).map((value) => String(value))
-  ].join(" ").toLowerCase();
+function matchesResourceFileFilter(row: Resource, filter: string) {
+  return filter === "all" || resourceLibraryKey(row) === filter;
 }
 
 function captchaLabel(value: string) {
@@ -788,6 +761,15 @@ function resourceDimensions(row: Resource) {
 function resourcePlaceholder(row: Resource) {
   const title = resourceCategory(row) || resourceTypeLabel(row.resource_type);
   return title.slice(0, 4);
+}
+
+function resourceFileName(row: Resource) {
+  const name = metadataText(row, "file_name", "filename", "original_name", "name");
+  if (name) return name;
+  const uri = row.uri || "";
+  const cleanURI = uri.split("?")[0].split("#")[0];
+  const basename = cleanURI.split("/").filter(Boolean).pop();
+  return basename || resourceTitle(row);
 }
 
 function compactURI(uri: string) {
@@ -840,35 +822,24 @@ function ResourceTile({ row }: { row: Resource }) {
   );
 }
 
-function ResourceListItem({ row }: { row: Resource }) {
+function ResourceFileItem({
+  row,
+  selected,
+  onSelect
+}: {
+  row: Resource;
+  selected: boolean;
+  onSelect: (checked: boolean) => void;
+}) {
   const preview = resourcePreviewSrc(row);
-  const library = resourceLibraryKey(row);
+  const name = resourceFileName(row);
   return (
-    <article className="resource-list-item">
-      <div className="resource-list-thumb">
+    <article className={selected ? "resource-file-item selected" : "resource-file-item"}>
+      <Checkbox className="resource-file-check" checked={selected} onChange={(event) => onSelect(event.target.checked)} />
+      <div className="resource-file-thumb">
         {preview ? <img alt="" src={preview} /> : <span>{resourcePlaceholder(row)}</span>}
       </div>
-      <div className="resource-list-body">
-        <div className="resource-list-title">
-          <div>
-            <strong>{resourceTitle(row)}</strong>
-            <span>{resourceLibraryTitle(library)}</span>
-          </div>
-          <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag>
-        </div>
-        <div className="resource-list-meta">
-          <span>{captchaLabel(row.captcha_type || "AUTO")}</span>
-          <span>{resourceTypeLabel(row.resource_type)}</span>
-          <span>{storageLabel(row.storage_type)}</span>
-          <span>{resourceDimensions(row)}</span>
-        </div>
-        <div className="resource-list-extra">
-          <span>场景：{row.scene || "全场景"}</span>
-          <span>标签：{row.tag || "default"}</span>
-          {resourceCategory(row) && <span>分类：{resourceCategory(row)}</span>}
-        </div>
-        <div className="resource-uri" title={row.uri}>{compactURI(row.uri)}</div>
-      </div>
+      <div className="resource-file-name" title={name}>{name}</div>
     </article>
   );
 }
@@ -876,24 +847,57 @@ function ResourceListItem({ row }: { row: Resource }) {
 function Resources() {
   const { data, isLoading } = useList<Resource>("resources", "/api/v1/admin/resources");
   const [open, setOpen] = useState(false);
-  const [searchText, setSearchText] = useState("");
-  const [resourceFilter, setResourceFilter] = useState("all");
-  const [captchaFilter, setCaptchaFilter] = useState("all");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [fileFilter, setFileFilter] = useState("all");
+  const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState("");
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const mutation = usePost<Resource>("resources");
+  const deleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const response = await fetch(`${apiBase}/api/v1/admin/resources/delete`, {
+        method: "POST",
+        headers: { ...adminHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ ids })
+      });
+      if (!response.ok) throw new Error(response.statusText);
+      return await response.json() as { deleted: number };
+    },
+    onSuccess: async () => {
+      setSelectedResourceIds([]);
+      setDeleteOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["resources"] });
+      await queryClient.invalidateQueries({ queryKey: ["metrics"] });
+    }
+  });
   const resources = data || [];
-  const listCounts = useMemo(() => countResourceListFilters(resources), [resources]);
-  const filteredResources = useMemo(() => {
-    const query = searchText.trim().toLowerCase();
-    return resources.filter((item) => {
-      if (!matchesResourceListFilter(item, resourceFilter)) return false;
-      if (captchaFilter !== "all" && (item.captcha_type || "AUTO") !== captchaFilter) return false;
-      return query ? resourceSearchCorpus(item).includes(query) : true;
+  const galleryResources = useMemo(() => resources.filter(isPrimaryGalleryResource), [resources]);
+  const visibleGalleryResources = useMemo(
+    () => galleryResources.filter((item) => matchesResourceFileFilter(item, fileFilter)),
+    [fileFilter, galleryResources]
+  );
+  const fileFilterCounts = useMemo(() => countResourceFileFilters(galleryResources), [galleryResources]);
+  const systemResources = useMemo(() => resources.filter((item) => !isPrimaryGalleryResource(item)), [resources]);
+  const visibleResourceIDs = useMemo(() => new Set(visibleGalleryResources.map((item) => item.id)), [visibleGalleryResources]);
+  const selectedGalleryCount = selectedResourceIds.filter((id) => galleryResources.some((item) => item.id === id)).length;
+  const selectedVisibleCount = selectedResourceIds.filter((id) => visibleResourceIDs.has(id)).length;
+  const allGallerySelected = visibleGalleryResources.length > 0 && selectedVisibleCount === visibleGalleryResources.length;
+  const partiallySelected = selectedVisibleCount > 0 && selectedVisibleCount < visibleGalleryResources.length;
+  const toggleAllGallery = (checked: boolean) => {
+    setSelectedResourceIds((current) => {
+      if (checked) return Array.from(new Set([...current, ...visibleGalleryResources.map((item) => item.id)]));
+      return current.filter((id) => !visibleResourceIDs.has(id));
     });
-  }, [captchaFilter, resourceFilter, resources, searchText]);
+  };
+  const toggleResource = (id: string, checked: boolean) => {
+    setSelectedResourceIds((current) => checked ? Array.from(new Set([...current, id])) : current.filter((item) => item !== id));
+  };
+  const deleteSelectedResources = () => {
+    if (selectedGalleryCount === 0 || deleteMutation.isPending) return;
+    setDeleteOpen(true);
+  };
   const openCreate = (values: Partial<ResourceFormValues> = {}) => {
     form.resetFields();
     setSelectedFiles([]);
@@ -939,66 +943,62 @@ function Resources() {
     <Card
       title="资源图库"
       extra={(
-        <Space wrap>
-          {galleryWorkflows.map((item) => (
-            <Button key={item.key} icon={<UploadOutlined />} onClick={() => openCreate(item.defaults)}>{item.action}</Button>
-          ))}
-          <Button icon={<PlusOutlined />} type="primary" onClick={() => openCreate()}>高级新增</Button>
-        </Space>
+        <Button icon={<PlusOutlined />} type="primary" onClick={() => openCreate()}>新增</Button>
       )}
     >
-      <div className="resource-list-toolbar">
-        <Input.Search
-          allowClear
-          placeholder="搜索名称、分类、标签、验证码、来源或 URI"
-          value={searchText}
-          onChange={(event) => setSearchText(event.currentTarget.value)}
-        />
+      <div className="resource-file-bar">
+        <Checkbox checked={allGallerySelected} indeterminate={partiallySelected} onChange={(event) => toggleAllGallery(event.target.checked)} />
         <Select
-          value={resourceFilter}
-          onChange={(value) => setResourceFilter(value)}
-          options={resourceListFilters.map((item) => ({ value: item.key, label: `${item.label} ${listCounts[item.key] || 0}` }))}
+          showSearch
+          className="resource-file-filter"
+          value={fileFilter}
+          optionFilterProp="label"
+          onChange={(value) => {
+            setFileFilter(value);
+          }}
+          options={resourceFileFilters.map((item) => ({
+            value: item.key,
+            label: `${item.label} ${fileFilterCounts[item.key] || 0}`
+          }))}
         />
-        <Select
-          value={captchaFilter}
-          onChange={(value) => setCaptchaFilter(value)}
-          options={[
-            { value: "all", label: "全部验证码" },
-            { value: "AUTO", label: captchaLabel("AUTO") },
-            ...captchaTypes.map((item) => ({ value: item, label: captchaLabel(item) }))
-          ]}
-        />
-      </div>
-      <div className="resource-list-summary">
-        <strong>{filteredResources.length} 条资源</strong>
-        <span>按图库、验证码类别和关键词筛选；上传图片或 ZIP 后会自动进入列表。</span>
+        <span>{visibleGalleryResources.length} 个</span>
+        {selectedGalleryCount > 0 && <em>已选 {selectedGalleryCount} 个</em>}
+        <Button danger disabled={selectedGalleryCount === 0} loading={deleteMutation.isPending} onClick={deleteSelectedResources}>删除</Button>
       </div>
       {isLoading ? (
         <div className="resource-gallery-empty">加载中</div>
-      ) : filteredResources.length === 0 ? (
-        <div className="resource-list-empty">
-          <strong>没有匹配的资源</strong>
-          <p>换个关键词或筛选条件，或者直接上传到对应图库。</p>
+      ) : visibleGalleryResources.length === 0 ? (
+        <div className="resource-file-empty">
+          <strong>还没有上传图库资源</strong>
+          <p>上传背景、图片格子或图标素材后，这里会像文件夹一样显示图片缩略图。</p>
           <Space wrap>
-            {galleryWorkflows.map((item) => (
-              <Button key={item.key} icon={<UploadOutlined />} onClick={() => openCreate(item.defaults)}>{item.action}</Button>
-            ))}
+            <Button icon={<PlusOutlined />} type="primary" onClick={() => openCreate()}>新增</Button>
           </Space>
         </div>
       ) : (
-        <div className="resource-list-gallery">
-          {filteredResources.map((row) => <ResourceListItem key={row.id} row={row} />)}
+        <div className="resource-file-grid">
+          {visibleGalleryResources.map((row) => (
+            <ResourceFileItem
+              key={row.id}
+              row={row}
+              selected={selectedResourceIds.includes(row.id)}
+              onSelect={(checked) => toggleResource(row.id, checked)}
+            />
+          ))}
         </div>
       )}
       <details className="system-resource-panel">
-        <summary>按图库分组查看</summary>
+        <summary>
+          <span>系统资源</span>
+          <strong>{systemResources.length} 条</strong>
+        </summary>
         {isLoading ? (
           <div className="resource-gallery-empty">加载中</div>
-        ) : filteredResources.length === 0 ? (
-          <div className="resource-gallery-empty">暂无资源</div>
+        ) : systemResources.length === 0 ? (
+          <div className="resource-gallery-empty">暂无系统资源</div>
         ) : (
           <div className="resource-gallery">
-            {groupGalleryResources(filteredResources).map((group) => (
+            {groupGalleryResources(systemResources).map((group) => (
               <section className="resource-library-section" key={group.key}>
                 <div className="resource-library-heading">
                   <h3>{group.title}</h3>
@@ -1016,6 +1016,18 @@ function Resources() {
         <summary>明细列表</summary>
         <Table rowKey="id" loading={isLoading} columns={columns} dataSource={resources} pagination={false} size="small" />
       </details>
+      <Modal
+        title={`删除 ${selectedGalleryCount} 个资源？`}
+        open={deleteOpen}
+        onCancel={() => setDeleteOpen(false)}
+        onOk={() => deleteMutation.mutateAsync(selectedResourceIds)}
+        okText="删除"
+        okButtonProps={{ danger: true }}
+        cancelText="取消"
+        confirmLoading={deleteMutation.isPending}
+      >
+        <p>删除后这些图库素材不会再被验证码抽样使用。</p>
+      </Modal>
       <Modal
         title="新增图库资源"
         open={open}

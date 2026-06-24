@@ -514,6 +514,37 @@ RETURNING id, client_id, scene, captcha_type, resource_type, storage_type, uri, 
 	return saved
 }
 
+func (s *PostgresControlStore) DeleteResources(clientID string, ids []string) int {
+	if len(ids) == 0 {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), postgresTimeout)
+	defer cancel()
+
+	placeholders := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids)+1)
+	for _, id := range ids {
+		args = append(args, id)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+	}
+	query := `DELETE FROM captcha_resources WHERE id IN (` + strings.Join(placeholders, ", ") + `)`
+	if clientID != "" {
+		args = append(args, clientID)
+		query += fmt.Sprintf(` AND client_id = $%d`, len(args))
+	}
+	result, err := s.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		s.logError("delete resources", err)
+		return 0
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		s.logError("delete resources rows affected", err)
+		return 0
+	}
+	return int(count)
+}
+
 func (s *PostgresControlStore) AddAuditEvent(event types.AuditEvent) types.AuditEvent {
 	now := time.Now().UTC()
 	if event.ID == "" {

@@ -2056,7 +2056,7 @@ run_smoke_step "admin applications route" open_admin_page "/applications" "appli
 run_smoke_step "admin routes route" open_admin_page "/routes" "routes" "路由策略" "路径" "模式"
 run_smoke_step "admin ip policies route" open_admin_page "/ip-policies" "ip-policies" "IP 策略" "CIDR" "动作"
 run_smoke_step "admin policy simulate route" open_admin_page "/policy-simulate" "policy-simulate" "策略模拟" "Client ID" "模拟"
-run_smoke_step "admin resources route" open_admin_page "/resources" "resources" "资源" "验证码" "来源"
+run_smoke_step "admin resources route" open_admin_page "/resources" "resources" "资源图库" "全部文件" "新增"
 run_smoke_step "admin audit route" open_admin_page "/audit" "audit" "审计" "原因" "结果"
 run_smoke_step "admin risk features route" open_admin_page "/risk-features" "risk-features" "训练特征" "导出 JSONL" "标签"
 run_smoke_step "admin risk models route" open_admin_page "/risk-models" "risk-models" "模型版本" "模式" "状态"

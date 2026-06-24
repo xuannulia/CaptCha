@@ -42,6 +42,7 @@ type ControlStore interface {
 	UpsertIPPolicy(policy types.IPPolicy) types.IPPolicy
 	ListResources(clientID string) []types.CaptchaResource
 	UpsertResource(resource types.CaptchaResource) types.CaptchaResource
+	DeleteResources(clientID string, ids []string) int
 }
 
 type AuditStore interface {

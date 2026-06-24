@@ -795,6 +795,8 @@ POST /api/v1/admin/policy/simulate
 
 GET /api/v1/admin/resources
 POST /api/v1/admin/resources
+POST /api/v1/admin/resources/upload
+POST /api/v1/admin/resources/delete
 
 GET /api/v1/admin/audit-events
 GET /api/v1/admin/risk-feature-snapshots

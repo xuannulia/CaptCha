@@ -105,6 +105,10 @@ func (s *HybridStore) UpsertResource(resource types.CaptchaResource) types.Captc
 	return s.control.UpsertResource(resource)
 }
 
+func (s *HybridStore) DeleteResources(clientID string, ids []string) int {
+	return s.control.DeleteResources(clientID, ids)
+}
+
 func (s *HybridStore) AddAuditEvent(event types.AuditEvent) types.AuditEvent {
 	return s.audit.AddAuditEvent(event)
 }

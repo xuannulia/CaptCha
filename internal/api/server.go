@@ -82,6 +82,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/resources", s.handleListResources)
 	mux.HandleFunc("POST /api/v1/admin/resources", s.handleUpsertResource)
 	mux.HandleFunc("POST /api/v1/admin/resources/upload", s.handleUploadResources)
+	mux.HandleFunc("POST /api/v1/admin/resources/delete", s.handleDeleteResources)
 	mux.HandleFunc("GET /api/v1/admin/audit-events", s.handleListAuditEvents)
 	mux.HandleFunc("GET /api/v1/admin/risk-feature-snapshots", s.handleListRiskFeatureSnapshots)
 	mux.HandleFunc("GET /api/v1/admin/risk-feature-snapshots/export", s.handleExportRiskFeatureSnapshots)
@@ -658,6 +659,29 @@ func (s *Server) handleUpsertResource(w http.ResponseWriter, r *http.Request) {
 	s.recordConfigAuditEvent(r, saved.ClientID, "CONFIG_RESOURCE_UPSERT", r.URL.Path, saved.Scene, saved.CaptchaType)
 	s.notifyConfigChanged()
 	writeJSON(w, http.StatusOK, saved)
+}
+
+type deleteResourcesRequest struct {
+	ClientID string   `json:"client_id"`
+	IDs      []string `json:"ids"`
+}
+
+func (s *Server) handleDeleteResources(w http.ResponseWriter, r *http.Request) {
+	var req deleteResourcesRequest
+	if err := readJSON(r, &req); err != nil || len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST")
+		return
+	}
+	if len(req.IDs) > 200 {
+		writeError(w, http.StatusBadRequest, "TOO_MANY_RESOURCES")
+		return
+	}
+	deleted := s.store.DeleteResources(req.ClientID, req.IDs)
+	if deleted > 0 {
+		s.recordConfigAuditEvent(r, req.ClientID, "CONFIG_RESOURCE_DELETE", r.URL.Path, "", "")
+		s.notifyConfigChanged()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
 func (s *Server) handleListAuditEvents(w http.ResponseWriter, r *http.Request) {
