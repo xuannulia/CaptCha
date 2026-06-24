@@ -70,15 +70,10 @@ type Resource = {
   status: string;
 };
 
-type ResourceFormValues = Omit<Resource, "id" | "metadata"> & {
-  width?: number;
-  height?: number;
-  mime_type?: string;
-  size_bytes?: number;
+type ResourceFormValues = {
+  gallery_type?: "background" | "grid" | "icon";
   category?: string;
   label?: string;
-  weight?: number;
-  metadata_json?: string;
 };
 
 type AuditEvent = {
@@ -227,22 +222,6 @@ const captchaTypes = [
   "JIGSAW",
   "GRID_IMAGE_CLICK"
 ];
-const resourceTypes = [
-  "background_image",
-  "background_library",
-  "grid_category_library",
-  "slider_template",
-  "rotate_template",
-  "concat_template",
-  "font",
-  "icon",
-  "icon_library",
-  "degree_template",
-  "curve_template",
-  "gesture_template",
-  "jigsaw_template",
-  "pow_challenge"
-];
 const captchaLabels: Record<string, string> = {
   AUTO: "自动",
   PROOF_OF_WORK: "工作量验证",
@@ -296,32 +275,16 @@ const resourceLibraryTitles: Record<string, string> = {
   template: "系统模板",
   single: "单图资源"
 };
-const galleryWorkflows: Array<{
-  key: "background" | "grid" | "icon";
-  action: string;
-  defaults: Partial<ResourceFormValues>;
-}> = [
-  {
-    key: "background",
-    action: "上传背景",
-    defaults: { resource_type: "background_library", captcha_type: "AUTO", tag: "default" }
-  },
-  {
-    key: "grid",
-    action: "上传图片格子",
-    defaults: { resource_type: "grid_category_library", captcha_type: "GRID_IMAGE_CLICK", tag: "default", category: "", label: "" }
-  },
-  {
-    key: "icon",
-    action: "上传图标",
-    defaults: { resource_type: "icon_library", captcha_type: "IMAGE_CLICK", tag: "default" }
-  }
-];
 const resourceFileFilters = [
   { key: "all", label: "全部文件" },
   { key: "background", label: "背景图库" },
   { key: "grid", label: "图片格子图库" },
   { key: "icon", label: "图标图库" }
+];
+const galleryUploadTypes = [
+  { value: "background", label: "背景图库" },
+  { value: "grid", label: "图片格子图库" },
+  { value: "icon", label: "图标图库" }
 ];
 const adminRoutes = [
   { key: "overview", path: "/overview", icon: <BarChartOutlined />, label: "概览", element: <Overview /> },
@@ -728,6 +691,16 @@ function matchesResourceFileFilter(row: Resource, filter: string) {
   return filter === "all" || resourceLibraryKey(row) === filter;
 }
 
+function galleryUploadDefaults(galleryType?: string) {
+  if (galleryType === "grid") {
+    return { captchaType: "GRID_IMAGE_CLICK", resourceType: "grid_category_library", tag: "default" };
+  }
+  if (galleryType === "icon") {
+    return { captchaType: "IMAGE_CLICK", resourceType: "icon_library", tag: "default" };
+  }
+  return { captchaType: "AUTO", resourceType: "background_library", tag: "default" };
+}
+
 function captchaLabel(value: string) {
   return captchaLabels[value] || value;
 }
@@ -854,7 +827,6 @@ function Resources() {
   const [uploadError, setUploadError] = useState("");
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
-  const mutation = usePost<Resource>("resources");
   const deleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       const response = await fetch(`${apiBase}/api/v1/admin/resources/delete`, {
@@ -898,20 +870,15 @@ function Resources() {
     if (selectedGalleryCount === 0 || deleteMutation.isPending) return;
     setDeleteOpen(true);
   };
-  const openCreate = (values: Partial<ResourceFormValues> = {}) => {
+  const uploadGalleryType = Form.useWatch("gallery_type", form) || "background";
+  const openCreate = () => {
     form.resetFields();
     setSelectedFiles([]);
     setUploadError("");
     form.setFieldsValue({
-      client_id: "demo",
-      scene: "",
-      captcha_type: "AUTO",
-      resource_type: "background_library",
-      storage_type: "file",
-      uri: "",
-      tag: "default",
-      status: "active",
-      ...values
+      gallery_type: "background",
+      category: "",
+      label: ""
     });
     setOpen(true);
   };
@@ -1029,7 +996,7 @@ function Resources() {
         <p>删除后这些图库素材不会再被验证码抽样使用。</p>
       </Modal>
       <Modal
-        title="新增图库资源"
+        title="新增图片"
         open={open}
         onCancel={() => {
           setOpen(false);
@@ -1045,84 +1012,58 @@ function Resources() {
           form={form}
           layout="vertical"
           initialValues={{
-            client_id: "demo",
-            scene: "",
-            captcha_type: "AUTO",
-            resource_type: "background_library",
-            storage_type: "file",
-            tag: "default",
-            status: "active"
+            gallery_type: "background",
+            category: "",
+            label: ""
           }}
           onFinish={async (values: ResourceFormValues) => {
-            const { width, height, mime_type, size_bytes, category, label, weight, metadata_json, ...resourceValues } = values;
-            const metadata: Record<string, unknown> = {};
-            if (metadata_json?.trim()) {
-              try {
-                const parsed = JSON.parse(metadata_json);
-                if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-                  throw new Error("metadata must be an object");
-                }
-                Object.assign(metadata, parsed);
-              } catch {
-                form.setFields([{ name: "metadata_json", errors: ["JSON 格式错误"] }]);
-                return;
-              }
-            }
-            if (width !== undefined) metadata.width = width;
-            if (height !== undefined) metadata.height = height;
-            if (mime_type) metadata.mime_type = mime_type;
-            if (size_bytes !== undefined) metadata.size_bytes = size_bytes;
-            if (category) metadata.category = category;
-            if (label) metadata.label = label;
-            if (weight !== undefined) metadata.weight = weight;
-            if (selectedFiles.length > 0) {
-              const formData = new FormData();
-              for (const file of selectedFiles) {
-                formData.append("files", file);
-              }
-              formData.set("client_id", resourceValues.client_id || "demo");
-              formData.set("scene", resourceValues.scene || "");
-              formData.set("captcha_type", resourceValues.captcha_type || "AUTO");
-              formData.set("resource_type", resourceValues.resource_type || "background_library");
-              formData.set("tag", resourceValues.tag || "default");
-              formData.set("status", resourceValues.status || "active");
-              if (category) formData.set("category", category);
-              if (label) formData.set("label", label);
-              if (weight !== undefined) formData.set("weight", String(weight));
-              const response = await fetch(`${apiBase}/api/v1/admin/resources/upload`, {
-                method: "POST",
-                headers: adminHeaders(),
-                body: formData
-              });
-              if (!response.ok) {
-                setUploadError("上传失败");
-                return;
-              }
-              await queryClient.invalidateQueries({ queryKey: ["resources"] });
-              await queryClient.invalidateQueries({ queryKey: ["metrics"] });
-              form.resetFields();
-              setSelectedFiles([]);
-              setUploadError("");
-              setOpen(false);
+            if (selectedFiles.length === 0) {
+              setUploadError("请选择图片或 ZIP");
               return;
             }
-            if (!resourceValues.uri) {
-              form.setFields([{ name: "uri", errors: ["请选择文件上传，或填写高级 URI"] }]);
+            const defaults = galleryUploadDefaults(values.gallery_type);
+            const formData = new FormData();
+            for (const file of selectedFiles) {
+              formData.append("files", file);
+            }
+            formData.set("client_id", "demo");
+            formData.set("scene", "");
+            formData.set("captcha_type", defaults.captchaType);
+            formData.set("resource_type", defaults.resourceType);
+            formData.set("tag", defaults.tag);
+            formData.set("status", "active");
+            if (values.category) formData.set("category", values.category);
+            if (values.label) formData.set("label", values.label);
+            const response = await fetch(`${apiBase}/api/v1/admin/resources/upload`, {
+              method: "POST",
+              headers: adminHeaders(),
+              body: formData
+            });
+            if (!response.ok) {
+              setUploadError("上传失败");
               return;
             }
-            const body = {
-              ...resourceValues,
-              metadata: Object.keys(metadata).length > 0 ? metadata : undefined
-            };
-            await mutation.mutateAsync({ path: "/api/v1/admin/resources", body });
+            await queryClient.invalidateQueries({ queryKey: ["resources"] });
+            await queryClient.invalidateQueries({ queryKey: ["metrics"] });
             form.resetFields();
+            setSelectedFiles([]);
+            setUploadError("");
             setOpen(false);
           }}
         >
-          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="scene" label="场景"><Input /></Form.Item>
-          <Form.Item name="captcha_type" label="验证码类别"><Select options={selectOptions(["AUTO", ...captchaTypes])} /></Form.Item>
-          <Form.Item name="resource_type" label="图库类型" rules={[{ required: true }]}><Select options={selectOptions(resourceTypes)} /></Form.Item>
+          <Form.Item name="gallery_type" label="图库" rules={[{ required: true }]}>
+            <Select options={galleryUploadTypes} />
+          </Form.Item>
+          {uploadGalleryType === "grid" && (
+            <Space.Compact block>
+              <Form.Item name="category" label="分类" rules={[{ required: true, message: "请输入分类" }]} style={{ width: "50%" }}>
+                <Input placeholder="car" />
+              </Form.Item>
+              <Form.Item name="label" label="显示名" style={{ width: "50%" }}>
+                <Input placeholder="汽车" />
+              </Form.Item>
+            </Space.Compact>
+          )}
           <Form.Item label="上传图片或 ZIP" validateStatus={uploadError ? "error" : undefined} help={uploadError || undefined}>
             <div className="upload-box">
               <input
@@ -1145,26 +1086,6 @@ function Resources() {
               )}
             </div>
           </Form.Item>
-          <details className="advanced-resource-fields">
-            <summary>高级来源</summary>
-            <Form.Item name="storage_type" label="存储"><Select options={selectOptions(["file", "classpath", "url", "object_storage", "database", "embedded"])} /></Form.Item>
-            <Form.Item name="uri" label="URI"><Input placeholder="不上传文件时才需要填写" /></Form.Item>
-          </details>
-          <Form.Item name="tag" label="标签"><Input /></Form.Item>
-          <Space.Compact block>
-            <Form.Item name="category" label="分类" style={{ width: "50%" }}><Input placeholder="car" /></Form.Item>
-            <Form.Item name="label" label="显示名" style={{ width: "50%" }}><Input placeholder="汽车" /></Form.Item>
-          </Space.Compact>
-          <Form.Item name="weight" label="权重"><InputNumber min={1} max={1000} style={{ width: "100%" }} /></Form.Item>
-          <Space.Compact block>
-            <Form.Item name="width" label="宽" style={{ width: "50%" }}><InputNumber min={1} max={4096} style={{ width: "100%" }} /></Form.Item>
-            <Form.Item name="height" label="高" style={{ width: "50%" }}><InputNumber min={1} max={4096} style={{ width: "100%" }} /></Form.Item>
-          </Space.Compact>
-          <Form.Item name="mime_type" label="MIME"><Input placeholder="image/png" /></Form.Item>
-          <Form.Item name="size_bytes" label="大小"><InputNumber min={1} max={20971520} style={{ width: "100%" }} /></Form.Item>
-          <Form.Item name="metadata_json" label="扩展 Metadata JSON"><Input.TextArea rows={4} placeholder={'{"category":"car","label":"汽车"}'} /></Form.Item>
-          <Form.Item name="checksum" label="SHA-256"><Input /></Form.Item>
-          <Form.Item name="status" label="状态"><Select options={selectOptions(["active", "disabled"])} /></Form.Item>
         </Form>
       </Modal>
     </Card>
