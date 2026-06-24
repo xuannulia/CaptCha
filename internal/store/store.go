@@ -38,8 +38,10 @@ type ControlStore interface {
 	RotateApplicationSecret(clientID, secretHash string) (types.Application, error)
 	ListRoutePolicies(clientID string) []types.RoutePolicy
 	UpsertRoutePolicy(route types.RoutePolicy) types.RoutePolicy
+	DeleteRoutePolicies(clientID string, ids []string) int
 	ListIPPolicies(clientID string) []types.IPPolicy
 	UpsertIPPolicy(policy types.IPPolicy) types.IPPolicy
+	DeleteIPPolicies(clientID string, ids []string) int
 	ListResources(clientID string) []types.CaptchaResource
 	UpsertResource(resource types.CaptchaResource) types.CaptchaResource
 	DeleteResources(clientID string, ids []string) int

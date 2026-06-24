@@ -89,12 +89,20 @@ func (s *HybridStore) UpsertRoutePolicy(route types.RoutePolicy) types.RoutePoli
 	return s.control.UpsertRoutePolicy(route)
 }
 
+func (s *HybridStore) DeleteRoutePolicies(clientID string, ids []string) int {
+	return s.control.DeleteRoutePolicies(clientID, ids)
+}
+
 func (s *HybridStore) ListIPPolicies(clientID string) []types.IPPolicy {
 	return s.control.ListIPPolicies(clientID)
 }
 
 func (s *HybridStore) UpsertIPPolicy(policy types.IPPolicy) types.IPPolicy {
 	return s.control.UpsertIPPolicy(policy)
+}
+
+func (s *HybridStore) DeleteIPPolicies(clientID string, ids []string) int {
+	return s.control.DeleteIPPolicies(clientID, ids)
 }
 
 func (s *HybridStore) ListResources(clientID string) []types.CaptchaResource {

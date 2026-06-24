@@ -195,6 +195,28 @@ func TestPostgresControlStoreListRoutePolicies(t *testing.T) {
 	}
 }
 
+func TestPostgresControlStoreDeleteRoutePolicies(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectExec("DELETE FROM route_policies WHERE id IN \\(\\$1\\) AND client_id = \\$2").
+		WithArgs("route_stale", "demo").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	store := NewPostgresControlStore(db, slog.Default())
+	if deleted := store.DeleteRoutePolicies("demo", []string{"route_stale"}); deleted != 1 {
+		t.Fatalf("expected one deleted route policy, got %d", deleted)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations: %v", err)
+	}
+}
+
 func TestNormalizeRateStrategy(t *testing.T) {
 	t.Parallel()
 
@@ -261,6 +283,28 @@ func TestPostgresControlStoreUpsertIPPolicy(t *testing.T) {
 	})
 	if policy.Action != types.DecisionBlock || policy.ID != "ip_abuse" {
 		t.Fatalf("unexpected policy: %+v", policy)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations: %v", err)
+	}
+}
+
+func TestPostgresControlStoreDeleteIPPolicies(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectExec("DELETE FROM ip_policies WHERE id IN \\(\\$1\\) AND client_id = \\$2").
+		WithArgs("ip_stale", "demo").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	store := NewPostgresControlStore(db, slog.Default())
+	if deleted := store.DeleteIPPolicies("demo", []string{"ip_stale"}); deleted != 1 {
+		t.Fatalf("expected one deleted ip policy, got %d", deleted)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("expectations: %v", err)

@@ -75,9 +75,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/applications/{client_id}/secret", s.handleRotateApplicationSecret)
 	mux.HandleFunc("GET /api/v1/admin/route-policies", s.handleListRoutePolicies)
 	mux.HandleFunc("POST /api/v1/admin/route-policies", s.handleUpsertRoutePolicy)
+	mux.HandleFunc("POST /api/v1/admin/route-policies/delete", s.handleDeleteRoutePolicies)
 	mux.HandleFunc("POST /api/v1/admin/policy/simulate", s.handleSimulatePolicy)
 	mux.HandleFunc("GET /api/v1/admin/ip-policies", s.handleListIPPolicies)
 	mux.HandleFunc("POST /api/v1/admin/ip-policies", s.handleUpsertIPPolicy)
+	mux.HandleFunc("POST /api/v1/admin/ip-policies/delete", s.handleDeleteIPPolicies)
 	mux.HandleFunc("GET /api/v1/admin/metrics", s.handleAdminMetrics)
 	mux.HandleFunc("GET /api/v1/admin/resources", s.handleListResources)
 	mux.HandleFunc("POST /api/v1/admin/resources", s.handleUpsertResource)
@@ -621,6 +623,24 @@ func (s *Server) handleUpsertRoutePolicy(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, saved)
 }
 
+func (s *Server) handleDeleteRoutePolicies(w http.ResponseWriter, r *http.Request) {
+	var req deleteItemsRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST")
+		return
+	}
+	if req.ClientID == "" || len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "CLIENT_AND_IDS_REQUIRED")
+		return
+	}
+	deleted := s.store.DeleteRoutePolicies(req.ClientID, req.IDs)
+	if deleted > 0 {
+		s.recordConfigAuditEvent(r, req.ClientID, "CONFIG_ROUTE_POLICY_DELETE", r.URL.Path, "", "")
+		s.notifyConfigChanged()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
+}
+
 func (s *Server) handleListIPPolicies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": s.store.ListIPPolicies(r.URL.Query().Get("client_id"))})
 }
@@ -638,6 +658,24 @@ func (s *Server) handleUpsertIPPolicy(w http.ResponseWriter, r *http.Request) {
 	s.recordConfigAuditEvent(r, saved.ClientID, "CONFIG_IP_POLICY_UPSERT", r.URL.Path, "", "")
 	s.notifyConfigChanged()
 	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) handleDeleteIPPolicies(w http.ResponseWriter, r *http.Request) {
+	var req deleteItemsRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST")
+		return
+	}
+	if req.ClientID == "" || len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "CLIENT_AND_IDS_REQUIRED")
+		return
+	}
+	deleted := s.store.DeleteIPPolicies(req.ClientID, req.IDs)
+	if deleted > 0 {
+		s.recordConfigAuditEvent(r, req.ClientID, "CONFIG_IP_POLICY_DELETE", r.URL.Path, "", "")
+		s.notifyConfigChanged()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
 func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
@@ -661,13 +699,13 @@ func (s *Server) handleUpsertResource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, saved)
 }
 
-type deleteResourcesRequest struct {
+type deleteItemsRequest struct {
 	ClientID string   `json:"client_id"`
 	IDs      []string `json:"ids"`
 }
 
 func (s *Server) handleDeleteResources(w http.ResponseWriter, r *http.Request) {
-	var req deleteResourcesRequest
+	var req deleteItemsRequest
 	if err := readJSON(r, &req); err != nil || len(req.IDs) == 0 {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST")
 		return

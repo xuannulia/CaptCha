@@ -319,6 +319,10 @@ RETURNING id, client_id, name, path_pattern, method, scene, mode, challenge_type
 	return saved
 }
 
+func (s *PostgresControlStore) DeleteRoutePolicies(clientID string, ids []string) int {
+	return s.deleteRowsByIDs("route_policies", clientID, ids)
+}
+
 func (s *PostgresControlStore) ListIPPolicies(clientID string) []types.IPPolicy {
 	ctx, cancel := context.WithTimeout(context.Background(), postgresTimeout)
 	defer cancel()
@@ -411,6 +415,10 @@ RETURNING id, client_id, type, cidr, action, reason, enabled, created_at, update
 		return policy
 	}
 	return saved
+}
+
+func (s *PostgresControlStore) DeleteIPPolicies(clientID string, ids []string) int {
+	return s.deleteRowsByIDs("ip_policies", clientID, ids)
 }
 
 func (s *PostgresControlStore) ListResources(clientID string) []types.CaptchaResource {
@@ -515,6 +523,10 @@ RETURNING id, client_id, scene, captcha_type, resource_type, storage_type, uri, 
 }
 
 func (s *PostgresControlStore) DeleteResources(clientID string, ids []string) int {
+	return s.deleteRowsByIDs("captcha_resources", clientID, ids)
+}
+
+func (s *PostgresControlStore) deleteRowsByIDs(table, clientID string, ids []string) int {
 	if len(ids) == 0 {
 		return 0
 	}
@@ -527,19 +539,19 @@ func (s *PostgresControlStore) DeleteResources(clientID string, ids []string) in
 		args = append(args, id)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
 	}
-	query := `DELETE FROM captcha_resources WHERE id IN (` + strings.Join(placeholders, ", ") + `)`
+	query := `DELETE FROM ` + table + ` WHERE id IN (` + strings.Join(placeholders, ", ") + `)`
 	if clientID != "" {
 		args = append(args, clientID)
 		query += fmt.Sprintf(` AND client_id = $%d`, len(args))
 	}
 	result, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
-		s.logError("delete resources", err)
+		s.logError("delete "+table, err)
 		return 0
 	}
 	count, err := result.RowsAffected()
 	if err != nil {
-		s.logError("delete resources rows affected", err)
+		s.logError("delete "+table+" rows affected", err)
 		return 0
 	}
 	return int(count)

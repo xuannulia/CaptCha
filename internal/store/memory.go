@@ -267,6 +267,24 @@ func (s *MemoryStore) UpsertRoutePolicy(route types.RoutePolicy) types.RoutePoli
 	return route
 }
 
+func (s *MemoryStore) DeleteRoutePolicies(clientID string, ids []string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	deleted := 0
+	for _, id := range ids {
+		route, ok := s.routes[id]
+		if !ok {
+			continue
+		}
+		if clientID != "" && route.ClientID != clientID {
+			continue
+		}
+		delete(s.routes, id)
+		deleted++
+	}
+	return deleted
+}
+
 func (s *MemoryStore) ListIPPolicies(clientID string) []types.IPPolicy {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -290,6 +308,24 @@ func (s *MemoryStore) UpsertIPPolicy(policy types.IPPolicy) types.IPPolicy {
 	policy.UpdatedAt = now
 	s.ipPolicies[policy.ID] = policy
 	return policy
+}
+
+func (s *MemoryStore) DeleteIPPolicies(clientID string, ids []string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	deleted := 0
+	for _, id := range ids {
+		policy, ok := s.ipPolicies[id]
+		if !ok {
+			continue
+		}
+		if clientID != "" && policy.ClientID != clientID {
+			continue
+		}
+		delete(s.ipPolicies, id)
+		deleted++
+	}
+	return deleted
 }
 
 func (s *MemoryStore) ListResources(clientID string) []types.CaptchaResource {

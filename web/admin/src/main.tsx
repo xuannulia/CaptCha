@@ -769,6 +769,29 @@ function Routes() {
   const [form] = Form.useForm();
   const mutation = usePost<RoutePolicy>("routes");
   const toggleMutation = usePost<RoutePolicy>("routes");
+  const deleteMutation = usePost<{ deleted: number }>("routes");
+  const deleteRoutePolicy = (row: RoutePolicy) => {
+    Modal.confirm({
+      title: "删除路由策略",
+      content: `删除后 ${row.path_pattern} 不再参与策略匹配。`,
+      okText: "删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setPendingRouteID(row.id);
+        try {
+          await deleteMutation.mutateAsync({
+            path: "/api/v1/admin/route-policies/delete",
+            body: { client_id: row.client_id, ids: [row.id] }
+          });
+        } catch {
+          message.error("路由策略删除失败");
+        } finally {
+          setPendingRouteID("");
+        }
+      }
+    });
+  };
   const columns: ColumnsType<RoutePolicy> = [
     { title: "应用", dataIndex: "client_id", width: 130 },
     { title: "名称", dataIndex: "name" },
@@ -805,19 +828,29 @@ function Routes() {
     },
     {
       title: "操作",
-      width: 90,
+      width: 150,
       render: (_, row) => (
-        <Button size="small" onClick={() => {
-          setEditingRoute(row);
-          form.setFieldsValue({
-            ...row,
-            challenge_escalation: row.challenge_escalation || [],
-            rate_window_seconds: row.rate_limit?.window_seconds,
-            rate_max_requests: row.rate_limit?.max_requests,
-            rate_strategy: row.rate_limit?.strategy || "fixed_window"
-          });
-          setOpen(true);
-        }}>编辑</Button>
+        <Space>
+          <Button size="small" onClick={() => {
+            setEditingRoute(row);
+            form.setFieldsValue({
+              ...row,
+              challenge_escalation: row.challenge_escalation || [],
+              rate_window_seconds: row.rate_limit?.window_seconds,
+              rate_max_requests: row.rate_limit?.max_requests,
+              rate_strategy: row.rate_limit?.strategy || "fixed_window"
+            });
+            setOpen(true);
+          }}>编辑</Button>
+          <Button
+            size="small"
+            danger
+            loading={deleteMutation.isPending && pendingRouteID === row.id}
+            onClick={() => deleteRoutePolicy(row)}
+          >
+            删除
+          </Button>
+        </Space>
       )
     }
   ];
@@ -931,6 +964,29 @@ function IpPolicies() {
   const [form] = Form.useForm();
   const mutation = usePost<IpPolicy>("ip-policies");
   const toggleMutation = usePost<IpPolicy>("ip-policies");
+  const deleteMutation = usePost<{ deleted: number }>("ip-policies");
+  const deleteIPPolicy = (row: IpPolicy) => {
+    Modal.confirm({
+      title: "删除 IP 策略",
+      content: `删除后 ${row.cidr} 不再参与 IP 策略匹配。`,
+      okText: "删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setPendingPolicyID(row.id);
+        try {
+          await deleteMutation.mutateAsync({
+            path: "/api/v1/admin/ip-policies/delete",
+            body: { client_id: row.client_id, ids: [row.id] }
+          });
+        } catch {
+          message.error("IP 策略删除失败");
+        } finally {
+          setPendingPolicyID("");
+        }
+      }
+    });
+  };
   const columns: ColumnsType<IpPolicy> = [
     { title: "应用", dataIndex: "client_id", width: 130 },
     { title: "类型", render: (_, row) => ipPolicyTypeLabel(row.type) },
@@ -962,13 +1018,23 @@ function IpPolicies() {
     },
     {
       title: "操作",
-      width: 90,
+      width: 150,
       render: (_, row) => (
-        <Button size="small" onClick={() => {
-          setEditingPolicy(row);
-          form.setFieldsValue(row);
-          setOpen(true);
-        }}>编辑</Button>
+        <Space>
+          <Button size="small" onClick={() => {
+            setEditingPolicy(row);
+            form.setFieldsValue(row);
+            setOpen(true);
+          }}>编辑</Button>
+          <Button
+            size="small"
+            danger
+            loading={deleteMutation.isPending && pendingPolicyID === row.id}
+            onClick={() => deleteIPPolicy(row)}
+          >
+            删除
+          </Button>
+        </Space>
       )
     }
   ];

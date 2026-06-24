@@ -86,6 +86,73 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 		}
 	})
 
+	t.Run("admin deletes route and ip policies", func(t *testing.T) {
+		routeResponse := request(t, server, http.MethodPost, "/api/v1/admin/route-policies", types.RoutePolicy{
+			ID:              "route_delete_test",
+			ClientID:        "demo",
+			Name:            "delete test",
+			PathPattern:     "/api/delete-test",
+			Method:          "POST",
+			Scene:           "delete-test",
+			Mode:            "always",
+			ChallengeType:   types.CaptchaSlider,
+			FailPolicy:      "fail_open",
+			Enabled:         true,
+			TokenTTLSeconds: 120,
+		})
+		var route types.RoutePolicy
+		decode(t, routeResponse, &route)
+
+		ipResponse := request(t, server, http.MethodPost, "/api/v1/admin/ip-policies", types.IPPolicy{
+			ID:       "ip_delete_test",
+			ClientID: "demo",
+			Type:     "blocklist",
+			CIDR:     "203.0.113.200",
+			Action:   types.DecisionBlock,
+			Reason:   "delete test",
+			Enabled:  true,
+		})
+		var policy types.IPPolicy
+		decode(t, ipResponse, &policy)
+
+		var deleted struct {
+			Deleted int `json:"deleted"`
+		}
+		decode(t, request(t, server, http.MethodPost, "/api/v1/admin/route-policies/delete", map[string]any{
+			"client_id": "demo",
+			"ids":       []string{route.ID},
+		}), &deleted)
+		if deleted.Deleted != 1 {
+			t.Fatalf("expected one route policy deleted, got %+v", deleted)
+		}
+		decode(t, request(t, server, http.MethodPost, "/api/v1/admin/ip-policies/delete", map[string]any{
+			"client_id": "demo",
+			"ids":       []string{policy.ID},
+		}), &deleted)
+		if deleted.Deleted != 1 {
+			t.Fatalf("expected one ip policy deleted, got %+v", deleted)
+		}
+
+		var routeList struct {
+			Items []types.RoutePolicy `json:"items"`
+		}
+		decode(t, request(t, server, http.MethodGet, "/api/v1/admin/route-policies?client_id=demo", nil), &routeList)
+		for _, item := range routeList.Items {
+			if item.ID == route.ID {
+				t.Fatalf("deleted route policy still listed: %+v", routeList.Items)
+			}
+		}
+		var policyList struct {
+			Items []types.IPPolicy `json:"items"`
+		}
+		decode(t, request(t, server, http.MethodGet, "/api/v1/admin/ip-policies?client_id=demo", nil), &policyList)
+		for _, item := range policyList.Items {
+			if item.ID == policy.ID {
+				t.Fatalf("deleted ip policy still listed: %+v", policyList.Items)
+			}
+		}
+	})
+
 	t.Run("admin rotates application secret once", func(t *testing.T) {
 		response := request(t, server, http.MethodPost, "/api/v1/admin/applications/demo/secret", nil)
 		var body struct {
@@ -1426,7 +1493,7 @@ func TestAdminConfigChangesAreAudited(t *testing.T) {
 		DefaultFailPolicy: "fail_open",
 	})
 	request(t, server, http.MethodPost, "/api/v1/admin/applications/demo/secret", nil)
-	request(t, server, http.MethodPost, "/api/v1/admin/route-policies", types.RoutePolicy{
+	routeResponse := request(t, server, http.MethodPost, "/api/v1/admin/route-policies", types.RoutePolicy{
 		ClientID:        "demo",
 		Name:            "audit route",
 		PathPattern:     "/api/audit",
@@ -1438,7 +1505,9 @@ func TestAdminConfigChangesAreAudited(t *testing.T) {
 		Enabled:         true,
 		TokenTTLSeconds: 120,
 	})
-	request(t, server, http.MethodPost, "/api/v1/admin/ip-policies", types.IPPolicy{
+	var route types.RoutePolicy
+	decode(t, routeResponse, &route)
+	ipResponse := request(t, server, http.MethodPost, "/api/v1/admin/ip-policies", types.IPPolicy{
 		ClientID: "demo",
 		Type:     "blocklist",
 		CIDR:     "198.51.100.200",
@@ -1446,6 +1515,8 @@ func TestAdminConfigChangesAreAudited(t *testing.T) {
 		Reason:   "audit test",
 		Enabled:  true,
 	})
+	var policy types.IPPolicy
+	decode(t, ipResponse, &policy)
 	request(t, server, http.MethodPost, "/api/v1/admin/resources", types.CaptchaResource{
 		ClientID:     "demo",
 		Scene:        "audit",
@@ -1455,6 +1526,14 @@ func TestAdminConfigChangesAreAudited(t *testing.T) {
 		URI:          "https://cdn.example.test/audit.png",
 		Tag:          "audit",
 		Status:       "active",
+	})
+	request(t, server, http.MethodPost, "/api/v1/admin/route-policies/delete", map[string]any{
+		"client_id": "demo",
+		"ids":       []string{route.ID},
+	})
+	request(t, server, http.MethodPost, "/api/v1/admin/ip-policies/delete", map[string]any{
+		"client_id": "demo",
+		"ids":       []string{policy.ID},
 	})
 
 	response := request(t, server, http.MethodGet, "/api/v1/admin/audit-events?limit=20", nil)
@@ -1471,6 +1550,8 @@ func TestAdminConfigChangesAreAudited(t *testing.T) {
 		"CONFIG_APPLICATION_SECRET_ROTATE",
 		"CONFIG_ROUTE_POLICY_UPSERT",
 		"CONFIG_IP_POLICY_UPSERT",
+		"CONFIG_ROUTE_POLICY_DELETE",
+		"CONFIG_IP_POLICY_DELETE",
 		"CONFIG_RESOURCE_UPSERT",
 	} {
 		event, ok := reasons[reason]
