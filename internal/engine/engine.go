@@ -14,6 +14,7 @@ import (
 	"image/png"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,8 +64,10 @@ const (
 	concatPieceWidth   = 320 + concatMaxMovement
 	jigsawTileCols     = 2
 	jigsawTileRows     = 2
-	jigsawTileWidth    = 160
-	jigsawTileHeight   = 80
+	jigsawViewWidth    = 300
+	jigsawViewHeight   = 180
+	jigsawTileWidth    = jigsawViewWidth / jigsawTileCols
+	jigsawTileHeight   = jigsawViewHeight / jigsawTileRows
 	gridImageCols      = 3
 	gridImageRows      = 3
 	gridImageTileSize  = 100
@@ -422,7 +425,7 @@ func verifyAnswer(session types.ChallengeSession, answer types.VerifyAnswer) (bo
 	case types.CaptchaWordImageClick, types.CaptchaImageClick:
 		return verifyPointSequence(session.Answer.Points, answer.Points)
 	case types.CaptchaJigsaw:
-		return verifyJigsawSwap(session.Answer.Points, answer.Points, session.RenderPayload)
+		return verifyJigsawSwap(session.Answer, answer, session.RenderPayload)
 	case types.CaptchaGridImageClick:
 		return verifyGridImageSelection(session.Answer.Points, answer.Points, session.RenderPayload)
 	default:
@@ -600,18 +603,21 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 			Words:  words,
 		}, nil
 	case types.CaptchaJigsaw:
-		points := jigsawSwapPoints()
-		return types.Answer{Points: points}, types.RenderPayload{
+		cols, rows := randomJigsawGrid()
+		sourceOrder := jigsawScrambledSourceOrder(cols * rows)
+		expectedOrder := invertJigsawOrder(sourceOrder)
+		points := jigsawChangedTilePoints(sourceOrder, cols, rows, jigsawViewWidth, jigsawViewHeight)
+		return types.Answer{Points: points, Token: encodeJigsawOrder(expectedOrder)}, types.RenderPayload{
 			Type:   types.CaptchaJigsaw,
-			Prompt: "拖动或点击交换错位拼图",
-			View:   types.View{Width: 320, Height: 160},
-			Image:  pngDataURL(drawJigsawImage(points)),
+			Prompt: "点击两块图片交换位置",
+			View:   types.View{Width: jigsawViewWidth, Height: jigsawViewHeight},
+			Image:  pngDataURL(drawJigsawImage(sourceOrder, cols, rows)),
 			Words:  []string{"1", "2"},
 			Parameters: map[string]any{
-				"tile_cols":   jigsawTileCols,
-				"tile_rows":   jigsawTileRows,
-				"tile_width":  jigsawTileWidth,
-				"tile_height": jigsawTileHeight,
+				"tile_cols":   cols,
+				"tile_rows":   rows,
+				"tile_width":  jigsawViewWidth / cols,
+				"tile_height": jigsawViewHeight / rows,
 			},
 		}, nil
 	case types.CaptchaGridImageClick:
@@ -1868,30 +1874,41 @@ func softenMaskAlpha(src *image.RGBA) *image.RGBA {
 	return dst
 }
 
-func drawJigsawImage(points []types.Point) image.Image {
-	base := drawJigsawBase()
-	out := newCanvas(320, 160, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+func drawJigsawImage(sourceOrder []int, cols, rows int) image.Image {
+	cols = max(1, cols)
+	rows = max(1, rows)
+	width := jigsawViewWidth
+	height := jigsawViewHeight
+	base := drawJigsawBase(width, height)
+	out := newCanvas(width, height, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	draw.Draw(out, out.Bounds(), base, image.Point{}, draw.Src)
-	if len(points) >= 2 {
-		first := jigsawTileRect(points[0])
-		second := jigsawTileRect(points[1])
-		draw.Draw(out, first, base, second.Min, draw.Src)
-		draw.Draw(out, second, base, first.Min, draw.Src)
+	if len(sourceOrder) != cols*rows {
+		sourceOrder = identityJigsawOrder(cols * rows)
 	}
-	for x := jigsawTileWidth; x < 320; x += jigsawTileWidth {
-		drawPolyline(out, []image.Point{{X: x, Y: 0}, {X: x, Y: 160}}, 1, color.RGBA{R: 255, G: 255, B: 255, A: 170})
+	for targetIndex, sourceIndex := range sourceOrder {
+		if sourceIndex < 0 || sourceIndex >= cols*rows {
+			continue
+		}
+		target := jigsawTileRectByIndex(targetIndex, cols, rows, width, height)
+		source := jigsawTileRectByIndex(sourceIndex, cols, rows, width, height)
+		draw.Draw(out, target, base, source.Min, draw.Src)
 	}
-	for y := jigsawTileHeight; y < 160; y += jigsawTileHeight {
-		drawPolyline(out, []image.Point{{X: 0, Y: y}, {X: 320, Y: y}}, 1, color.RGBA{R: 255, G: 255, B: 255, A: 170})
+	tileWidth := width / cols
+	tileHeight := height / rows
+	for x := tileWidth; x < width; x += tileWidth {
+		drawPolyline(out, []image.Point{{X: x, Y: 0}, {X: x, Y: height}}, 1, color.RGBA{R: 255, G: 255, B: 255, A: 170})
 	}
-	strokeRect(out, 0, 0, 320, 160, 1, color.RGBA{R: 203, G: 213, B: 225, A: 255})
+	for y := tileHeight; y < height; y += tileHeight {
+		drawPolyline(out, []image.Point{{X: 0, Y: y}, {X: width, Y: y}}, 1, color.RGBA{R: 255, G: 255, B: 255, A: 170})
+	}
+	strokeRect(out, 0, 0, width, height, 1, color.RGBA{R: 203, G: 213, B: 225, A: 255})
 	return out
 }
 
-func drawJigsawBase() *image.RGBA {
-	base := newCanvas(320, 160, color.RGBA{R: 224, G: 242, B: 254, A: 255})
-	for y := 0; y < 160; y++ {
-		for x := 0; x < 320; x++ {
+func drawJigsawBase(width, height int) *image.RGBA {
+	base := newCanvas(width, height, color.RGBA{R: 224, G: 242, B: 254, A: 255})
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
 			base.SetRGBA(x, y, color.RGBA{
 				R: uint8(214 + x/18),
 				G: uint8(232 + y/14),
@@ -1900,40 +1917,128 @@ func drawJigsawBase() *image.RGBA {
 			})
 		}
 	}
-	fillRect(base, 0, 102, 320, 58, color.RGBA{R: 134, G: 239, B: 172, A: 255})
-	drawPolyline(base, []image.Point{{0, 118}, {58, 86}, {108, 110}, {164, 72}, {226, 104}, {320, 78}}, 14, color.RGBA{R: 34, G: 197, B: 94, A: 255})
-	drawPolyline(base, []image.Point{{0, 126}, {58, 94}, {108, 118}, {164, 80}, {226, 112}, {320, 86}}, 5, color.RGBA{R: 22, G: 101, B: 52, A: 150})
-	drawCircle(base, 270, 32, 17, color.RGBA{R: 250, G: 204, B: 21, A: 255})
-	drawCircle(base, 76, 58, 19, color.RGBA{R: 37, G: 99, B: 235, A: 235})
-	fillRect(base, 190, 98, 48, 30, color.RGBA{R: 245, G: 158, B: 11, A: 245})
-	drawPolyline(base, []image.Point{{38, 140}, {82, 130}, {132, 146}, {204, 132}, {284, 144}}, 4, color.RGBA{R: 21, G: 128, B: 61, A: 210})
+	fillRect(base, 0, scaleY(102, height), width, max(1, height-scaleY(102, height)), color.RGBA{R: 134, G: 239, B: 172, A: 255})
+	drawPolyline(base, scaleJigsawPoints(width, height, []image.Point{{0, 118}, {58, 86}, {108, 110}, {164, 72}, {226, 104}, {320, 78}}), max(1, scaleY(14, height)), color.RGBA{R: 34, G: 197, B: 94, A: 255})
+	drawPolyline(base, scaleJigsawPoints(width, height, []image.Point{{0, 126}, {58, 94}, {108, 118}, {164, 80}, {226, 112}, {320, 86}}), max(1, scaleY(5, height)), color.RGBA{R: 22, G: 101, B: 52, A: 150})
+	drawCircle(base, scaleX(270, width), scaleY(32, height), max(1, scaleY(17, height)), color.RGBA{R: 250, G: 204, B: 21, A: 255})
+	drawCircle(base, scaleX(76, width), scaleY(58, height), max(1, scaleY(19, height)), color.RGBA{R: 37, G: 99, B: 235, A: 235})
+	fillRect(base, scaleX(190, width), scaleY(98, height), max(1, scaleX(48, width)), max(1, scaleY(30, height)), color.RGBA{R: 245, G: 158, B: 11, A: 245})
+	drawPolyline(base, scaleJigsawPoints(width, height, []image.Point{{38, 140}, {82, 130}, {132, 146}, {204, 132}, {284, 144}}), max(1, scaleY(4, height)), color.RGBA{R: 21, G: 128, B: 61, A: 210})
 	return base
 }
 
-func jigsawSwapPoints() []types.Point {
-	pairs := [][2]int{
-		{0, 3}, {1, 2}, {0, 2}, {1, 3},
+func scaleJigsawPoints(width, height int, points []image.Point) []image.Point {
+	out := make([]image.Point, 0, len(points))
+	for _, point := range points {
+		out = append(out, image.Point{X: scaleX(point.X, width), Y: scaleY(point.Y, height)})
 	}
-	pair := pairs[mustRandomInt(0, len(pairs)-1)]
-	return []types.Point{
-		jigsawTileCenter(pair[0]),
-		jigsawTileCenter(pair[1]),
-	}
+	return out
 }
 
-func jigsawTileCenter(index int) types.Point {
-	col := index % jigsawTileCols
-	row := index / jigsawTileCols
+func scaleX(x, width int) int {
+	return int(math.Round(float64(x) * float64(width) / 320))
+}
+
+func scaleY(y, height int) int {
+	return int(math.Round(float64(y) * float64(height) / 160))
+}
+
+func randomJigsawGrid() (int, int) {
+	size := mustRandomInt(2, 3)
+	return size, size
+}
+
+func jigsawScrambledSourceOrder(count int) []int {
+	order := identityJigsawOrder(count)
+	if count < 2 {
+		return order
+	}
+	first := mustRandomInt(0, count-1)
+	second := mustRandomInt(0, count-2)
+	if second >= first {
+		second++
+	}
+	order[first], order[second] = order[second], order[first]
+	return order
+}
+
+func identityJigsawOrder(count int) []int {
+	order := make([]int, count)
+	for i := range order {
+		order[i] = i
+	}
+	return order
+}
+
+func invertJigsawOrder(order []int) []int {
+	out := make([]int, len(order))
+	for i := range out {
+		out[i] = i
+	}
+	for target, source := range order {
+		if source >= 0 && source < len(out) {
+			out[source] = target
+		}
+	}
+	return out
+}
+
+func jigsawChangedTilePoints(order []int, cols, rows, width, height int) []types.Point {
+	points := make([]types.Point, 0, 2)
+	for index, source := range order {
+		if index != source {
+			points = append(points, jigsawTileCenter(index, cols, rows, width, height))
+		}
+	}
+	return points
+}
+
+func encodeJigsawOrder(order []int) string {
+	parts := make([]string, len(order))
+	for i, value := range order {
+		parts[i] = fmt.Sprintf("%d", value)
+	}
+	return strings.Join(parts, ",")
+}
+
+func decodeJigsawOrder(value string, count int) ([]int, bool) {
+	parts := strings.Split(strings.TrimSpace(value), ",")
+	if len(parts) != count {
+		return nil, false
+	}
+	order := make([]int, count)
+	seen := make([]bool, count)
+	for i, part := range parts {
+		parsed, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || parsed < 0 || parsed >= count || seen[parsed] {
+			return nil, false
+		}
+		order[i] = parsed
+		seen[parsed] = true
+	}
+	return order, true
+}
+
+func jigsawTileCenter(index, cols, rows, width, height int) types.Point {
+	rect := jigsawTileRectByIndex(index, cols, rows, width, height)
 	return types.Point{
-		X: col*jigsawTileWidth + jigsawTileWidth/2,
-		Y: row*jigsawTileHeight + jigsawTileHeight/2,
+		X: (rect.Min.X + rect.Max.X) / 2,
+		Y: (rect.Min.Y + rect.Max.Y) / 2,
 	}
 }
 
-func jigsawTileRect(center types.Point) image.Rectangle {
-	x := (center.X / jigsawTileWidth) * jigsawTileWidth
-	y := (center.Y / jigsawTileHeight) * jigsawTileHeight
-	return image.Rect(x, y, x+jigsawTileWidth, y+jigsawTileHeight)
+func jigsawTileRectByIndex(index, cols, rows, width, height int) image.Rectangle {
+	cols = max(1, cols)
+	rows = max(1, rows)
+	index = clampInt(index, 0, cols*rows-1)
+	col := index % cols
+	row := index / cols
+	return image.Rect(
+		col*width/cols,
+		row*height/rows,
+		(col+1)*width/cols,
+		(row+1)*height/rows,
+	)
 }
 
 func gridImageTargetPoints() []types.Point {
@@ -2128,16 +2233,19 @@ func verifyPointSequence(expected, actual []types.Point) (bool, string) {
 	return true, "OK"
 }
 
-func verifyJigsawSwap(expected, actual []types.Point, payload types.RenderPayload) (bool, string) {
-	if len(actual) != len(expected) {
+func verifyJigsawSwap(expected types.Answer, actual types.VerifyAnswer, payload types.RenderPayload) (bool, string) {
+	if len(actual.TileOrder) > 0 {
+		return verifyJigsawTileOrder(expected, actual.TileOrder, payload)
+	}
+	if len(actual.Points) != len(expected.Points) {
 		return false, "ANSWER_MISSING"
 	}
 	tileWidth := renderIntParam(payload, "tile_width", jigsawTileWidth)
 	tileHeight := renderIntParam(payload, "tile_height", jigsawTileHeight)
-	matched := make([]bool, len(expected))
-	for _, point := range actual {
+	matched := make([]bool, len(expected.Points))
+	for _, point := range actual.Points {
 		found := false
-		for i, expectedPoint := range expected {
+		for i, expectedPoint := range expected.Points {
 			if matched[i] {
 				continue
 			}
@@ -2152,6 +2260,70 @@ func verifyJigsawSwap(expected, actual []types.Point, payload types.RenderPayloa
 		}
 	}
 	return true, "OK"
+}
+
+func verifyJigsawTileOrder(expected types.Answer, actual []int, payload types.RenderPayload) (bool, string) {
+	cols := renderIntParam(payload, "tile_cols", jigsawTileCols)
+	rows := renderIntParam(payload, "tile_rows", jigsawTileRows)
+	count := max(1, cols*rows)
+	if len(actual) != count {
+		return false, "ANSWER_MISSING"
+	}
+	if !validJigsawOrder(actual, count) {
+		return false, "ANSWER_MISMATCH"
+	}
+	expectedOrder, ok := decodeJigsawOrder(expected.Token, count)
+	if !ok {
+		expectedOrder = jigsawExpectedOrderFromPoints(expected.Points, cols, rows, payload.View.Width, payload.View.Height)
+	}
+	if len(expectedOrder) != count {
+		return false, "ANSWER_MISSING"
+	}
+	for i, value := range actual {
+		if expectedOrder[i] != value {
+			return false, "ANSWER_MISMATCH"
+		}
+	}
+	return true, "OK"
+}
+
+func validJigsawOrder(order []int, count int) bool {
+	if len(order) != count {
+		return false
+	}
+	seen := make([]bool, count)
+	for _, value := range order {
+		if value < 0 || value >= count || seen[value] {
+			return false
+		}
+		seen[value] = true
+	}
+	return true
+}
+
+func jigsawExpectedOrderFromPoints(points []types.Point, cols, rows, width, height int) []int {
+	count := max(1, cols*rows)
+	order := identityJigsawOrder(count)
+	if len(points) < 2 {
+		return order
+	}
+	first := pointToJigsawIndex(points[0], cols, rows, width, height)
+	second := pointToJigsawIndex(points[1], cols, rows, width, height)
+	if first >= 0 && second >= 0 && first != second {
+		order[first], order[second] = order[second], order[first]
+	}
+	return order
+}
+
+func pointToJigsawIndex(point types.Point, cols, rows, width, height int) int {
+	if cols <= 0 || rows <= 0 || width <= 0 || height <= 0 {
+		return -1
+	}
+	x := clampInt(point.X, 0, width-1)
+	y := clampInt(point.Y, 0, height-1)
+	col := clampInt(x*cols/width, 0, cols-1)
+	row := clampInt(y*rows/height, 0, rows-1)
+	return row*cols + col
 }
 
 func verifyGridImageSelection(expected, actual []types.Point, payload types.RenderPayload) (bool, string) {

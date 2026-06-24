@@ -546,26 +546,64 @@ func TestJigsawAcceptsClicksInsideSwappedTiles(t *testing.T) {
 
 	tileWidth := intParam(t, session.RenderPayload.Parameters, "tile_width")
 	tileHeight := intParam(t, session.RenderPayload.Parameters, "tile_height")
-	if tileWidth != jigsawTileWidth || tileHeight != jigsawTileHeight {
-		t.Fatalf("unexpected jigsaw tile size: %dx%d", tileWidth, tileHeight)
+	cols := intParam(t, session.RenderPayload.Parameters, "tile_cols")
+	rows := intParam(t, session.RenderPayload.Parameters, "tile_rows")
+	if cols != rows || (cols != 2 && cols != 3) {
+		t.Fatalf("unexpected jigsaw grid: %dx%d", cols, rows)
 	}
 	if len(session.Answer.Points) != 2 {
 		t.Fatalf("expected two swapped jigsaw tiles, got %v", session.Answer.Points)
 	}
 	insideTileCorners := types.VerifyAnswer{Points: []types.Point{
 		{X: session.Answer.Points[0].X + tileWidth/2 - 3, Y: session.Answer.Points[0].Y},
-		{X: session.Answer.Points[1].X - tileWidth/2 + 3, Y: session.Answer.Points[1].Y},
+		{X: session.Answer.Points[1].X - tileWidth/2 + 3, Y: session.Answer.Points[1].Y + tileHeight/2 - 3},
 	}}
 	result := e.Verify(session, insideTileCorners, normalTrack())
 	if !result.OK {
 		t.Fatalf("expected clicks inside swapped jigsaw tiles to pass, got %+v", result)
 	}
 
-	wrongTiles := types.VerifyAnswer{Points: jigsawWrongTilePoints(session.Answer.Points)}
+	wrongTiles := types.VerifyAnswer{Points: jigsawWrongTilePoints(session.Answer.Points, cols, rows, session.RenderPayload.View.Width, session.RenderPayload.View.Height)}
 	result = e.Verify(session, wrongTiles, normalTrack())
 	if result.OK || result.ReasonCode != "ANSWER_MISMATCH" {
 		t.Fatalf("expected wrong jigsaw tiles to fail, got %+v", result)
 	}
+}
+
+func TestJigsawAcceptsRestoredTileOrder(t *testing.T) {
+	t.Parallel()
+
+	e := New(2 * time.Minute)
+	seen := map[int]bool{}
+	for i := 0; i < 40; i++ {
+		session, err := e.NewSession("app_test", "verify", types.CaptchaJigsaw)
+		if err != nil {
+			t.Fatalf("new jigsaw session: %v", err)
+		}
+		cols := intParam(t, session.RenderPayload.Parameters, "tile_cols")
+		rows := intParam(t, session.RenderPayload.Parameters, "tile_rows")
+		if cols != rows || (cols != 2 && cols != 3) {
+			t.Fatalf("unexpected jigsaw grid: %dx%d", cols, rows)
+		}
+		count := cols * rows
+		expectedOrder, ok := decodeJigsawOrder(session.Answer.Token, count)
+		if !ok {
+			t.Fatalf("expected encoded jigsaw tile order, token=%q count=%d", session.Answer.Token, count)
+		}
+		result := e.Verify(session, types.VerifyAnswer{TileOrder: expectedOrder}, normalTrack())
+		if !result.OK {
+			t.Fatalf("expected restored tile order to pass, got %+v order=%v", result, expectedOrder)
+		}
+		result = e.Verify(session, types.VerifyAnswer{TileOrder: identityJigsawOrder(count)}, normalTrack())
+		if result.OK || result.ReasonCode != "ANSWER_MISMATCH" {
+			t.Fatalf("expected original scrambled order to fail, got %+v", result)
+		}
+		seen[cols] = true
+		if seen[2] && seen[3] {
+			return
+		}
+	}
+	t.Fatalf("expected jigsaw to generate both 2x2 and 3x3 grids, seen=%v", seen)
 }
 
 func TestJigsawSwapTilesAreDynamic(t *testing.T) {
@@ -1057,13 +1095,15 @@ func rotateBluePixel(c color.RGBA) bool {
 	return c.A > 180 && c.B > 160 && c.G > 60 && c.G < 150 && c.R < 90 && int(c.B)-int(c.R) > 100
 }
 
-func jigsawWrongTilePoints(answer []types.Point) []types.Point {
+func jigsawWrongTilePoints(answer []types.Point, cols, rows, width, height int) []types.Point {
 	points := make([]types.Point, 0, 2)
-	for index := 0; index < jigsawTileCols*jigsawTileRows && len(points) < 2; index++ {
-		candidate := jigsawTileCenter(index)
+	tileWidth := max(1, width/max(1, cols))
+	tileHeight := max(1, height/max(1, rows))
+	for index := 0; index < cols*rows && len(points) < 2; index++ {
+		candidate := jigsawTileCenter(index, cols, rows, width, height)
 		matchesAnswer := false
 		for _, point := range answer {
-			if pointInTile(candidate, point, jigsawTileWidth, jigsawTileHeight) {
+			if pointInTile(candidate, point, tileWidth, tileHeight) {
 				matchesAnswer = true
 				break
 			}

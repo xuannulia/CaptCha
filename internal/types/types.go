@@ -102,11 +102,12 @@ type TrackPoint struct {
 }
 
 type VerifyAnswer struct {
-	X      *int    `json:"x,omitempty"`
-	Y      *int    `json:"y,omitempty"`
-	Angle  *int    `json:"angle,omitempty"`
-	Offset *int    `json:"offset,omitempty"`
-	Points []Point `json:"points,omitempty"`
+	X         *int    `json:"x,omitempty"`
+	Y         *int    `json:"y,omitempty"`
+	Angle     *int    `json:"angle,omitempty"`
+	Offset    *int    `json:"offset,omitempty"`
+	Points    []Point `json:"points,omitempty"`
+	TileOrder []int   `json:"tile_order,omitempty"`
 }
 
 type TrackScore struct {

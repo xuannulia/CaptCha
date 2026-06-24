@@ -1490,7 +1490,13 @@ func composeJigsawImage(base *image.RGBA, answer types.Answer, parameters map[st
 	if tileHeight <= 0 {
 		tileHeight = max(1, height/rows)
 	}
-	if len(answer.Points) >= 2 {
+	if order, ok := decodeJigsawResourceSourceOrder(answer.Token, cols*rows); ok {
+		for targetIndex, sourceIndex := range order {
+			target := jigsawResourceTileRectByIndex(targetIndex, width, height, tileWidth, tileHeight)
+			source := jigsawResourceTileRectByIndex(sourceIndex, width, height, tileWidth, tileHeight)
+			draw.Draw(out, target, base, source.Min, draw.Src)
+		}
+	} else if len(answer.Points) >= 2 {
 		first := jigsawResourceTileRect(answer.Points[0], width, height, tileWidth, tileHeight)
 		second := jigsawResourceTileRect(answer.Points[1], width, height, tileWidth, tileHeight)
 		draw.Draw(out, first, base, second.Min, draw.Src)
@@ -1506,9 +1512,60 @@ func composeJigsawImage(base *image.RGBA, answer types.Answer, parameters map[st
 	return out
 }
 
+func decodeJigsawResourceSourceOrder(answerToken string, count int) ([]int, bool) {
+	expected, ok := decodeJigsawResourceOrder(answerToken, count)
+	if !ok {
+		return nil, false
+	}
+	return invertJigsawResourceOrder(expected), true
+}
+
+func decodeJigsawResourceOrder(value string, count int) ([]int, bool) {
+	parts := strings.Split(strings.TrimSpace(value), ",")
+	if len(parts) != count {
+		return nil, false
+	}
+	order := make([]int, count)
+	seen := make([]bool, count)
+	for i, part := range parts {
+		parsed, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || parsed < 0 || parsed >= count || seen[parsed] {
+			return nil, false
+		}
+		order[i] = parsed
+		seen[parsed] = true
+	}
+	return order, true
+}
+
+func invertJigsawResourceOrder(order []int) []int {
+	out := make([]int, len(order))
+	for i := range out {
+		out[i] = i
+	}
+	for target, source := range order {
+		if source >= 0 && source < len(out) {
+			out[source] = target
+		}
+	}
+	return out
+}
+
 func jigsawResourceTileRect(point types.Point, width, height, tileWidth, tileHeight int) image.Rectangle {
 	x := clamp(point.X/tileWidth, 0, max(0, width/tileWidth-1)) * tileWidth
 	y := clamp(point.Y/tileHeight, 0, max(0, height/tileHeight-1)) * tileHeight
+	return image.Rect(x, y, min(width, x+tileWidth), min(height, y+tileHeight))
+}
+
+func jigsawResourceTileRectByIndex(index, width, height, tileWidth, tileHeight int) image.Rectangle {
+	if tileWidth <= 0 || tileHeight <= 0 {
+		return image.Rect(0, 0, width, height)
+	}
+	cols := max(1, width/tileWidth)
+	rows := max(1, height/tileHeight)
+	index = clamp(index, 0, cols*rows-1)
+	x := (index % cols) * tileWidth
+	y := (index / cols) * tileHeight
 	return image.Rect(x, y, min(width, x+tileWidth), min(height, y+tileHeight))
 }
 
