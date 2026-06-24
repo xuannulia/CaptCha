@@ -58,10 +58,12 @@ var svgMaskCache sync.Map
 
 const (
 	maxTrackPoints     = 256
+	imageViewWidth     = 320
+	imageViewHeight    = 180
 	sliderPieceSize    = 67
 	slider2PieceSize   = 62
 	concatMaxMovement  = 160
-	concatPieceWidth   = 320 + concatMaxMovement
+	concatPieceWidth   = imageViewWidth + concatMaxMovement
 	jigsawTileCols     = 2
 	jigsawTileRows     = 2
 	jigsawViewWidth    = 300
@@ -457,7 +459,7 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 		return types.Answer{Points: points, Token: family}, types.RenderPayload{
 			Type:   types.CaptchaGesture,
 			Prompt: "按提示描绘图形",
-			View:   types.View{Width: 320, Height: 160},
+			View:   types.View{Width: imageViewWidth, Height: imageViewHeight},
 			Image:  pngDataURL(drawPathChallenge(points, 0)),
 			Words:  []string{"path"},
 		}, nil
@@ -511,12 +513,12 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 		return types.Answer{X: x, Y: y}, types.RenderPayload{
 			Type:   types.CaptchaSlider,
 			Prompt: "拖动滑块完成拼图",
-			View:   types.View{Width: 320, Height: 160},
+			View:   types.View{Width: imageViewWidth, Height: imageViewHeight},
 			Image:  pngDataURL(image),
 			Piece:  pngDataURL(piece),
 			Parameters: map[string]any{
 				"min":        0,
-				"max":        320 - sliderPieceSize,
+				"max":        imageViewWidth - sliderPieceSize,
 				"piece_y":    y,
 				"piece_size": sliderPieceSize,
 			},
@@ -529,12 +531,12 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 		return types.Answer{X: x, Y: y}, types.RenderPayload{
 			Type:   types.CaptchaSlider2,
 			Prompt: "拖动增强滑块完成拼图",
-			View:   types.View{Width: 320, Height: 160},
+			View:   types.View{Width: imageViewWidth, Height: imageViewHeight},
 			Image:  pngDataURL(image),
 			Piece:  pngDataURL(piece),
 			Parameters: map[string]any{
 				"min":        0,
-				"max":        320 - slider2PieceSize,
+				"max":        imageViewWidth - slider2PieceSize,
 				"piece_y":    y,
 				"piece_size": slider2PieceSize,
 			},
@@ -555,17 +557,17 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 		}, nil
 	case types.CaptchaConcat:
 		offset := mustRandomInt(45, 120)
-		splitY := mustRandomInt(58, 102)
+		splitY := mustRandomInt(scaleY(58, imageViewHeight), scaleY(102, imageViewHeight))
 		scene := drawConcatScene()
 		return types.Answer{Offset: offset}, types.RenderPayload{
 			Type:   types.CaptchaConcat,
 			Prompt: "拖动滑块完成拼图",
-			View:   types.View{Width: 320, Height: 160},
+			View:   types.View{Width: imageViewWidth, Height: imageViewHeight},
 			Image:  pngDataURL(drawConcatBackground(scene, splitY)),
 			Piece:  pngDataURL(drawConcatPiece(scene, offset, splitY)),
 			Parameters: map[string]any{
 				"min":         0,
-				"max":         concatControlMax(offset, 320, 0, concatPieceWidth),
+				"max":         concatControlMax(offset, imageViewWidth, 0, concatPieceWidth),
 				"piece_width": concatPieceWidth,
 				"split_y":     splitY,
 			},
@@ -588,7 +590,7 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 		return types.Answer{Points: points}, types.RenderPayload{
 			Type:   types.CaptchaWordImageClick,
 			Prompt: "依次点击：" + strings.Join(words, "、"),
-			View:   types.View{Width: 320, Height: 160},
+			View:   types.View{Width: imageViewWidth, Height: imageViewHeight},
 			Image:  pngDataURL(drawWordImage(words, points, decoyWords, decoyPoints)),
 			Words:  words,
 		}, nil
@@ -598,7 +600,7 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 		return types.Answer{Points: points}, types.RenderPayload{
 			Type:   types.CaptchaImageClick,
 			Prompt: "依次点击：" + strings.Join(words, "、"),
-			View:   types.View{Width: 320, Height: 160},
+			View:   types.View{Width: imageViewWidth, Height: imageViewHeight},
 			Image:  pngDataURL(drawIconClickImage(icons, points)),
 			Words:  words,
 		}, nil
@@ -769,11 +771,11 @@ func randomSliderMask() sliderMaskKind {
 }
 
 func sliderTargetX(size int) int {
-	return mustRandomInt(86, 320-size-20)
+	return mustRandomInt(86, imageViewWidth-size-20)
 }
 
 func sliderTargetY(size int) int {
-	return mustRandomInt(24, 160-size-14)
+	return mustRandomInt(24, imageViewHeight-size-14)
 }
 
 func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image.Image, image.Image) {
@@ -1139,9 +1141,10 @@ func jitterGesturePath(base []types.Point) []types.Point {
 			jitterX = 0
 			jitterY = 0
 		}
+		scaledY := scaleY(point.Y, imageViewHeight)
 		points = append(points, types.Point{
-			X: min(296, max(24, point.X+offsetX+jitterX)),
-			Y: min(134, max(26, point.Y+offsetY+jitterY)),
+			X: min(imageViewWidth-24, max(24, point.X+offsetX+jitterX)),
+			Y: min(imageViewHeight-26, max(26, scaledY+offsetY+jitterY)),
 		})
 	}
 	return points
@@ -1370,9 +1373,9 @@ func pointsFromImage(segments ...[]image.Point) []types.Point {
 }
 
 func drawPathChallenge(points []types.Point, variant int) image.Image {
-	img := newCanvas(320, 160, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	img := newCanvas(imageViewWidth, imageViewHeight, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	for i := 0; i < 18; i++ {
-		drawCircle(img, mustRandomInt(12, 308), mustRandomInt(12, 148), mustRandomInt(1, 2), color.RGBA{R: 203, G: 213, B: 225, A: 255})
+		drawCircle(img, mustRandomInt(12, imageViewWidth-12), mustRandomInt(12, imageViewHeight-12), mustRandomInt(1, 2), color.RGBA{R: 203, G: 213, B: 225, A: 255})
 	}
 	polyline := imagePoints(points)
 	guideColor := color.RGBA{R: 37, G: 99, B: 235, A: 220}
@@ -1539,13 +1542,13 @@ func imagePoints(points []types.Point) []image.Point {
 }
 
 func drawSliderScene() *image.RGBA {
-	img := newCanvas(320, 160, color.RGBA{R: 232, G: 242, B: 255, A: 255})
-	fillRect(img, 0, 114, 320, 46, color.RGBA{R: 135, G: 180, B: 132, A: 255})
-	drawCircle(img, 266, 36, 18, color.RGBA{R: 245, G: 197, B: 66, A: 255})
-	drawPolyline(img, []image.Point{{0, 122}, {62, 101}, {112, 132}, {160, 112}, {230, 91}, {320, 116}}, 8, color.RGBA{R: 91, G: 137, B: 104, A: 255})
-	drawPolyline(img, []image.Point{{0, 128}, {62, 107}, {112, 138}, {160, 118}, {230, 97}, {320, 122}}, 3, color.RGBA{R: 66, G: 107, B: 83, A: 180})
-	fillRect(img, 38, 50, 34, 8, color.RGBA{R: 255, G: 255, B: 255, A: 190})
-	fillRect(img, 52, 42, 58, 10, color.RGBA{R: 255, G: 255, B: 255, A: 150})
+	img := newCanvas(imageViewWidth, imageViewHeight, color.RGBA{R: 232, G: 242, B: 255, A: 255})
+	fillRect(img, 0, scaleY(114, imageViewHeight), imageViewWidth, imageViewHeight-scaleY(114, imageViewHeight), color.RGBA{R: 135, G: 180, B: 132, A: 255})
+	drawCircle(img, scaleX(266, imageViewWidth), scaleY(36, imageViewHeight), scaleY(18, imageViewHeight), color.RGBA{R: 245, G: 197, B: 66, A: 255})
+	drawPolyline(img, scaleJigsawPoints(imageViewWidth, imageViewHeight, []image.Point{{0, 122}, {62, 101}, {112, 132}, {160, 112}, {230, 91}, {320, 116}}), scaleY(8, imageViewHeight), color.RGBA{R: 91, G: 137, B: 104, A: 255})
+	drawPolyline(img, scaleJigsawPoints(imageViewWidth, imageViewHeight, []image.Point{{0, 128}, {62, 107}, {112, 138}, {160, 118}, {230, 97}, {320, 122}}), max(1, scaleY(3, imageViewHeight)), color.RGBA{R: 66, G: 107, B: 83, A: 180})
+	fillRect(img, scaleX(38, imageViewWidth), scaleY(50, imageViewHeight), scaleX(34, imageViewWidth), max(1, scaleY(8, imageViewHeight)), color.RGBA{R: 255, G: 255, B: 255, A: 190})
+	fillRect(img, scaleX(52, imageViewWidth), scaleY(42, imageViewHeight), scaleX(58, imageViewWidth), max(1, scaleY(10, imageViewHeight)), color.RGBA{R: 255, G: 255, B: 255, A: 150})
 	return img
 }
 
@@ -1642,10 +1645,10 @@ func drawDegreeImage(target int) image.Image {
 }
 
 func drawConcatBackground(scene *image.RGBA, splitY int) image.Image {
-	img := newCanvas(320, 160, color.RGBA{A: 0})
-	splitY = clampInt(splitY, 1, 158)
-	for y := 0; y < 160; y++ {
-		for x := 0; x < 320; x++ {
+	img := newCanvas(imageViewWidth, imageViewHeight, color.RGBA{A: 0})
+	splitY = clampInt(splitY, 1, imageViewHeight-2)
+	for y := 0; y < imageViewHeight; y++ {
+		for x := 0; x < imageViewWidth; x++ {
 			if y < splitY {
 				img.Set(x, y, concatCoverPixel(x, y))
 				continue
@@ -1658,13 +1661,13 @@ func drawConcatBackground(scene *image.RGBA, splitY int) image.Image {
 }
 
 func drawConcatPiece(scene *image.RGBA, offset, splitY int) image.Image {
-	splitY = clampInt(splitY, 1, 158)
+	splitY = clampInt(splitY, 1, imageViewHeight-2)
 	offset = clampInt(offset, 0, concatMaxMovement)
-	piece := newCanvas(concatPieceWidth, 160, color.RGBA{A: 0})
+	piece := newCanvas(concatPieceWidth, imageViewHeight, color.RGBA{A: 0})
 	for x := 0; x < concatPieceWidth; x++ {
-		sourceX := (x - (concatMaxMovement - offset)) % 320
+		sourceX := (x - (concatMaxMovement - offset)) % imageViewWidth
 		if sourceX < 0 {
-			sourceX += 320
+			sourceX += imageViewWidth
 		}
 		for y := 0; y < splitY; y++ {
 			piece.Set(x, y, opaqueRGBA(rgbaAt(scene, sourceX, y)))
@@ -1707,44 +1710,44 @@ func opaqueRGBA(c color.RGBA) color.RGBA {
 }
 
 func drawConcatScene() *image.RGBA {
-	img := newCanvas(320, 160, color.RGBA{R: 226, G: 239, B: 249, A: 255})
-	for y := 0; y < 160; y++ {
-		ratio := float64(y) / 159
+	img := newCanvas(imageViewWidth, imageViewHeight, color.RGBA{R: 226, G: 239, B: 249, A: 255})
+	for y := 0; y < imageViewHeight; y++ {
+		ratio := float64(y) / float64(imageViewHeight-1)
 		c := mixRGBA(color.RGBA{R: 218, G: 238, B: 250, A: 255}, color.RGBA{R: 236, G: 246, B: 228, A: 255}, ratio)
-		fillRect(img, 0, y, 320, 1, c)
+		fillRect(img, 0, y, imageViewWidth, 1, c)
 	}
-	drawPolyline(img, []image.Point{{-20, 116}, {52, 86}, {116, 108}, {172, 78}, {238, 112}, {340, 82}}, 42, color.RGBA{R: 82, G: 126, B: 145, A: 180})
-	drawPolyline(img, []image.Point{{-20, 132}, {72, 106}, {136, 128}, {214, 98}, {340, 128}}, 44, color.RGBA{R: 118, G: 158, B: 124, A: 235})
-	drawPolyline(img, cubicPolyline(
+	drawPolyline(img, scaleJigsawPoints(imageViewWidth, imageViewHeight, []image.Point{{-20, 116}, {52, 86}, {116, 108}, {172, 78}, {238, 112}, {340, 82}}), scaleY(42, imageViewHeight), color.RGBA{R: 82, G: 126, B: 145, A: 180})
+	drawPolyline(img, scaleJigsawPoints(imageViewWidth, imageViewHeight, []image.Point{{-20, 132}, {72, 106}, {136, 128}, {214, 98}, {340, 128}}), scaleY(44, imageViewHeight), color.RGBA{R: 118, G: 158, B: 124, A: 235})
+	drawPolyline(img, scaleJigsawPoints(imageViewWidth, imageViewHeight, cubicPolyline(
 		image.Point{X: -18, Y: 58},
 		image.Point{X: 74, Y: 118},
 		image.Point{X: 134, Y: 38},
 		image.Point{X: 204, Y: 96},
 		52,
-	), 20, color.RGBA{R: 37, G: 99, B: 235, A: 232})
-	drawPolyline(img, cubicPolyline(
+	)), scaleY(20, imageViewHeight), color.RGBA{R: 37, G: 99, B: 235, A: 232})
+	drawPolyline(img, scaleJigsawPoints(imageViewWidth, imageViewHeight, cubicPolyline(
 		image.Point{X: 204, Y: 96},
 		image.Point{X: 246, Y: 124},
 		image.Point{X: 278, Y: 48},
 		image.Point{X: 344, Y: 88},
 		40,
-	), 20, color.RGBA{R: 37, G: 99, B: 235, A: 232})
-	drawPolyline(img, cubicPolyline(
+	)), scaleY(20, imageViewHeight), color.RGBA{R: 37, G: 99, B: 235, A: 232})
+	drawPolyline(img, scaleJigsawPoints(imageViewWidth, imageViewHeight, cubicPolyline(
 		image.Point{X: -12, Y: 101},
 		image.Point{X: 88, Y: 76},
 		image.Point{X: 154, Y: 141},
 		image.Point{X: 246, Y: 84},
 		44,
-	), 8, color.RGBA{R: 245, G: 158, B: 11, A: 230})
-	drawPolyline(img, []image.Point{{24, 136}, {76, 120}, {122, 142}, {184, 122}, {250, 146}, {322, 128}}, 5, color.RGBA{R: 45, G: 85, B: 74, A: 210})
+	)), scaleY(8, imageViewHeight), color.RGBA{R: 245, G: 158, B: 11, A: 230})
+	drawPolyline(img, scaleJigsawPoints(imageViewWidth, imageViewHeight, []image.Point{{24, 136}, {76, 120}, {122, 142}, {184, 122}, {250, 146}, {322, 128}}), max(1, scaleY(5, imageViewHeight)), color.RGBA{R: 45, G: 85, B: 74, A: 210})
 	for i := 0; i < 20; i++ {
-		x := mustRandomInt(12, 308)
-		y := mustRandomInt(10, 142)
+		x := mustRandomInt(12, imageViewWidth-12)
+		y := mustRandomInt(10, imageViewHeight-18)
 		radius := mustRandomInt(1, 3)
 		drawCircle(img, x, y, radius, color.RGBA{R: 255, G: 255, B: 255, A: uint8(mustRandomInt(70, 155))})
 	}
-	drawCircle(img, 262, 34, 17, color.RGBA{R: 250, G: 204, B: 21, A: 245})
-	drawCircle(img, 82, 54, 13, color.RGBA{R: 20, G: 184, B: 166, A: 230})
+	drawCircle(img, scaleX(262, imageViewWidth), scaleY(34, imageViewHeight), scaleY(17, imageViewHeight), color.RGBA{R: 250, G: 204, B: 21, A: 245})
+	drawCircle(img, scaleX(82, imageViewWidth), scaleY(54, imageViewHeight), scaleY(13, imageViewHeight), color.RGBA{R: 20, G: 184, B: 166, A: 230})
 	return img
 }
 
@@ -1776,9 +1779,9 @@ func iconClickChallenge() ([]clickIcon, []types.Point) {
 }
 
 func drawWordImage(words []string, points []types.Point, decoyWords []string, decoyPoints []types.Point) image.Image {
-	img := newCanvas(320, 160, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	img := newCanvas(imageViewWidth, imageViewHeight, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	for i := 0; i < 18; i++ {
-		drawCircle(img, mustRandomInt(10, 310), mustRandomInt(10, 150), mustRandomInt(1, 3), color.RGBA{R: 203, G: 213, B: 225, A: 255})
+		drawCircle(img, mustRandomInt(10, imageViewWidth-10), mustRandomInt(10, imageViewHeight-10), mustRandomInt(1, 3), color.RGBA{R: 203, G: 213, B: 225, A: 255})
 	}
 	colors := []color.RGBA{
 		{R: 31, G: 41, B: 55, A: 255},
@@ -1802,9 +1805,9 @@ func drawWordImage(words []string, points []types.Point, decoyWords []string, de
 }
 
 func drawIconClickImage(icons []clickIcon, points []types.Point) image.Image {
-	img := newCanvas(320, 160, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	img := newCanvas(imageViewWidth, imageViewHeight, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	for i := 0; i < 16; i++ {
-		drawCircle(img, mustRandomInt(12, 308), mustRandomInt(12, 148), mustRandomInt(1, 3), color.RGBA{R: 203, G: 213, B: 225, A: 255})
+		drawCircle(img, mustRandomInt(12, imageViewWidth-12), mustRandomInt(12, imageViewHeight-12), mustRandomInt(1, 3), color.RGBA{R: 203, G: 213, B: 225, A: 255})
 	}
 	palette := []color.RGBA{
 		{R: 37, G: 99, B: 235, A: 255},
@@ -2253,12 +2256,12 @@ var iconClickLibrary = []clickIcon{
 
 func separatedClickPoints(count int) []types.Point {
 	anchors := []types.Point{
-		{X: 52, Y: 44},
-		{X: 160, Y: 44},
-		{X: 268, Y: 44},
-		{X: 52, Y: 122},
-		{X: 160, Y: 122},
-		{X: 268, Y: 122},
+		{X: 52, Y: 52},
+		{X: 160, Y: 52},
+		{X: 268, Y: 52},
+		{X: 52, Y: 136},
+		{X: 160, Y: 136},
+		{X: 268, Y: 136},
 	}
 	indexes := randomIndexes(len(anchors), min(count, len(anchors)))
 	points := make([]types.Point, 0, count)
@@ -2266,7 +2269,7 @@ func separatedClickPoints(count int) []types.Point {
 		anchor := anchors[index]
 		points = append(points, types.Point{
 			X: anchor.X + mustRandomInt(-4, 4),
-			Y: anchor.Y + mustRandomInt(-3, 3),
+			Y: anchor.Y + mustRandomInt(-4, 4),
 		})
 	}
 	return points
