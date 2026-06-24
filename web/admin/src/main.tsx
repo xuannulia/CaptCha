@@ -4,8 +4,10 @@ import {
   BarChartOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
+  PlusOutlined,
   ProjectOutlined,
-  SafetyOutlined
+  SafetyOutlined,
+  UploadOutlined
 } from "@ant-design/icons";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Card, ConfigProvider, Form, Input, InputNumber, Layout, Menu, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
@@ -288,13 +290,40 @@ const statusLabels: Record<string, string> = {
   disabled: "停用"
 };
 const optionLabels = { ...captchaLabels, ...resourceTypeLabels, ...storageLabels, ...statusLabels };
-const resourceLibraryFilters = [
-  { key: "all", label: "全部" },
+const resourceLibraryTitles: Record<string, string> = {
+  background: "背景图库",
+  grid: "图片格子图库",
+  icon: "图标图库",
+  template: "系统模板",
+  single: "单图资源"
+};
+const galleryWorkflows: Array<{
+  key: "background" | "grid" | "icon";
+  action: string;
+  defaults: Partial<ResourceFormValues>;
+}> = [
+  {
+    key: "background",
+    action: "上传背景",
+    defaults: { resource_type: "background_library", captcha_type: "AUTO", tag: "default" }
+  },
+  {
+    key: "grid",
+    action: "上传图片格子",
+    defaults: { resource_type: "grid_category_library", captcha_type: "GRID_IMAGE_CLICK", tag: "default", category: "", label: "" }
+  },
+  {
+    key: "icon",
+    action: "上传图标",
+    defaults: { resource_type: "icon_library", captcha_type: "IMAGE_CLICK", tag: "default" }
+  }
+];
+const resourceListFilters = [
+  { key: "all", label: "全部资源" },
   { key: "background", label: "背景图库" },
-  { key: "grid", label: "图片格子" },
+  { key: "grid", label: "图片格子图库" },
   { key: "icon", label: "图标图库" },
-  { key: "template", label: "模板" },
-  { key: "single", label: "单图" }
+  { key: "system", label: "系统资源" }
 ];
 const adminRoutes = [
   { key: "overview", path: "/overview", icon: <BarChartOutlined />, label: "概览", element: <Overview /> },
@@ -661,14 +690,6 @@ function resourceLibraryKey(row: Resource) {
   return "single";
 }
 
-function countResourceLibraries(resources: Resource[]) {
-  return resources.reduce<Record<string, number>>((counts, row) => {
-    const key = resourceLibraryKey(row);
-    counts[key] = (counts[key] || 0) + 1;
-    return counts;
-  }, {});
-}
-
 function groupGalleryResources(resources: Resource[]) {
   const groups = new Map<string, { key: string; title: string; items: Resource[] }>();
   for (const row of resources) {
@@ -686,7 +707,52 @@ function groupGalleryResources(resources: Resource[]) {
 }
 
 function resourceLibraryTitle(key: string) {
-  return resourceLibraryFilters.find((item) => item.key === key)?.label || "资源";
+  return resourceLibraryTitles[key] || "资源";
+}
+
+function isPrimaryGalleryResource(row: Resource) {
+  const key = resourceLibraryKey(row);
+  return key === "background" || key === "grid" || key === "icon";
+}
+
+function countResourceListFilters(resources: Resource[]) {
+  return resources.reduce<Record<string, number>>((counts, row) => {
+    const key = resourceLibraryKey(row);
+    counts.all = (counts.all || 0) + 1;
+    if (key === "background" || key === "grid" || key === "icon") {
+      counts[key] = (counts[key] || 0) + 1;
+    } else {
+      counts.system = (counts.system || 0) + 1;
+    }
+    return counts;
+  }, { all: 0, background: 0, grid: 0, icon: 0, system: 0 });
+}
+
+function matchesResourceListFilter(row: Resource, filter: string) {
+  if (filter === "all") return true;
+  if (filter === "system") return !isPrimaryGalleryResource(row);
+  return resourceLibraryKey(row) === filter;
+}
+
+function resourceSearchCorpus(row: Resource) {
+  return [
+    row.id,
+    row.client_id,
+    row.scene,
+    row.resource_type,
+    row.captcha_type,
+    row.storage_type,
+    row.uri,
+    row.tag,
+    row.status,
+    resourceTitle(row),
+    resourceTypeLabel(row.resource_type),
+    captchaLabel(row.captcha_type || "AUTO"),
+    storageLabel(row.storage_type),
+    statusLabel(row.status),
+    resourceCategory(row),
+    ...Object.values(row.metadata || {}).map((value) => String(value))
+  ].join(" ").toLowerCase();
 }
 
 function captchaLabel(value: string) {
@@ -747,22 +813,87 @@ function metadataText(row: Resource, ...keys: string[]) {
   return "";
 }
 
+function ResourceTile({ row }: { row: Resource }) {
+  const preview = resourcePreviewSrc(row);
+  return (
+    <article className="resource-tile">
+      <div className="resource-thumb">
+        {preview ? <img alt="" src={preview} /> : <span>{resourcePlaceholder(row)}</span>}
+      </div>
+      <div className="resource-tile-body">
+        <div className="resource-tile-title">
+          <strong>{resourceTitle(row)}</strong>
+          <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag>
+        </div>
+        <div className="resource-tile-meta">
+          <span>{captchaLabel(row.captcha_type || "AUTO")}</span>
+          <span>{storageLabel(row.storage_type)}</span>
+          <span>{resourceDimensions(row)}</span>
+        </div>
+        <div className="resource-tile-meta">
+          <span>{row.scene || "全场景"}</span>
+          <span>{row.tag || "default"}</span>
+        </div>
+        <div className="resource-uri" title={row.uri}>{compactURI(row.uri)}</div>
+      </div>
+    </article>
+  );
+}
+
+function ResourceListItem({ row }: { row: Resource }) {
+  const preview = resourcePreviewSrc(row);
+  const library = resourceLibraryKey(row);
+  return (
+    <article className="resource-list-item">
+      <div className="resource-list-thumb">
+        {preview ? <img alt="" src={preview} /> : <span>{resourcePlaceholder(row)}</span>}
+      </div>
+      <div className="resource-list-body">
+        <div className="resource-list-title">
+          <div>
+            <strong>{resourceTitle(row)}</strong>
+            <span>{resourceLibraryTitle(library)}</span>
+          </div>
+          <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag>
+        </div>
+        <div className="resource-list-meta">
+          <span>{captchaLabel(row.captcha_type || "AUTO")}</span>
+          <span>{resourceTypeLabel(row.resource_type)}</span>
+          <span>{storageLabel(row.storage_type)}</span>
+          <span>{resourceDimensions(row)}</span>
+        </div>
+        <div className="resource-list-extra">
+          <span>场景：{row.scene || "全场景"}</span>
+          <span>标签：{row.tag || "default"}</span>
+          {resourceCategory(row) && <span>分类：{resourceCategory(row)}</span>}
+        </div>
+        <div className="resource-uri" title={row.uri}>{compactURI(row.uri)}</div>
+      </div>
+    </article>
+  );
+}
+
 function Resources() {
   const { data, isLoading } = useList<Resource>("resources", "/api/v1/admin/resources");
   const [open, setOpen] = useState(false);
-  const [activeLibrary, setActiveLibrary] = useState("all");
+  const [searchText, setSearchText] = useState("");
+  const [resourceFilter, setResourceFilter] = useState("all");
+  const [captchaFilter, setCaptchaFilter] = useState("all");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadError, setUploadError] = useState("");
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const mutation = usePost<Resource>("resources");
   const resources = data || [];
-  const visibleResources = useMemo(
-    () => activeLibrary === "all" ? resources : resources.filter((item) => resourceLibraryKey(item) === activeLibrary),
-    [activeLibrary, resources]
-  );
-  const groupedResources = useMemo(() => groupGalleryResources(visibleResources), [visibleResources]);
-  const libraryCounts = useMemo(() => countResourceLibraries(resources), [resources]);
+  const listCounts = useMemo(() => countResourceListFilters(resources), [resources]);
+  const filteredResources = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    return resources.filter((item) => {
+      if (!matchesResourceListFilter(item, resourceFilter)) return false;
+      if (captchaFilter !== "all" && (item.captcha_type || "AUTO") !== captchaFilter) return false;
+      return query ? resourceSearchCorpus(item).includes(query) : true;
+    });
+  }, [captchaFilter, resourceFilter, resources, searchText]);
   const openCreate = (values: Partial<ResourceFormValues> = {}) => {
     form.resetFields();
     setSelectedFiles([]);
@@ -809,73 +940,81 @@ function Resources() {
       title="资源图库"
       extra={(
         <Space wrap>
-          <Button onClick={() => openCreate({ resource_type: "background_library", captcha_type: "AUTO", tag: "default" })}>新增背景</Button>
-          <Button onClick={() => openCreate({ resource_type: "grid_category_library", captcha_type: "GRID_IMAGE_CLICK", tag: "default", category: "", label: "" })}>新增图片格子</Button>
-          <Button onClick={() => openCreate({ resource_type: "icon_library", captcha_type: "IMAGE_CLICK", tag: "default" })}>新增图标</Button>
-          <Button type="primary" onClick={() => openCreate()}>新增资源</Button>
+          {galleryWorkflows.map((item) => (
+            <Button key={item.key} icon={<UploadOutlined />} onClick={() => openCreate(item.defaults)}>{item.action}</Button>
+          ))}
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => openCreate()}>高级新增</Button>
         </Space>
       )}
     >
-      <div className="resource-library-tabs">
-        {resourceLibraryFilters.map((item) => (
-          <button
-            key={item.key}
-            className={activeLibrary === item.key ? "active" : ""}
-            type="button"
-            onClick={() => setActiveLibrary(item.key)}
-          >
-            <span>{item.label}</span>
-            <strong>{item.key === "all" ? resources.length : libraryCounts[item.key] || 0}</strong>
-          </button>
-        ))}
+      <div className="resource-list-toolbar">
+        <Input.Search
+          allowClear
+          placeholder="搜索名称、分类、标签、验证码、来源或 URI"
+          value={searchText}
+          onChange={(event) => setSearchText(event.currentTarget.value)}
+        />
+        <Select
+          value={resourceFilter}
+          onChange={(value) => setResourceFilter(value)}
+          options={resourceListFilters.map((item) => ({ value: item.key, label: `${item.label} ${listCounts[item.key] || 0}` }))}
+        />
+        <Select
+          value={captchaFilter}
+          onChange={(value) => setCaptchaFilter(value)}
+          options={[
+            { value: "all", label: "全部验证码" },
+            { value: "AUTO", label: captchaLabel("AUTO") },
+            ...captchaTypes.map((item) => ({ value: item, label: captchaLabel(item) }))
+          ]}
+        />
+      </div>
+      <div className="resource-list-summary">
+        <strong>{filteredResources.length} 条资源</strong>
+        <span>按图库、验证码类别和关键词筛选；上传图片或 ZIP 后会自动进入列表。</span>
       </div>
       {isLoading ? (
         <div className="resource-gallery-empty">加载中</div>
-      ) : groupedResources.length === 0 ? (
-        <div className="resource-gallery-empty">暂无资源</div>
+      ) : filteredResources.length === 0 ? (
+        <div className="resource-list-empty">
+          <strong>没有匹配的资源</strong>
+          <p>换个关键词或筛选条件，或者直接上传到对应图库。</p>
+          <Space wrap>
+            {galleryWorkflows.map((item) => (
+              <Button key={item.key} icon={<UploadOutlined />} onClick={() => openCreate(item.defaults)}>{item.action}</Button>
+            ))}
+          </Space>
+        </div>
       ) : (
-        <div className="resource-gallery">
-          {groupedResources.map((group) => (
-            <section className="resource-library-section" key={group.key}>
-              <div className="resource-library-heading">
-                <h3>{group.title}</h3>
-                <span>{group.items.length} 张</span>
-              </div>
-              <div className="resource-gallery-grid">
-                {group.items.map((row) => {
-                  const preview = resourcePreviewSrc(row);
-                  return (
-                    <article className="resource-tile" key={row.id}>
-                      <div className="resource-thumb">
-                        {preview ? <img alt="" src={preview} /> : <span>{resourcePlaceholder(row)}</span>}
-                      </div>
-                      <div className="resource-tile-body">
-                        <div className="resource-tile-title">
-                          <strong>{resourceTitle(row)}</strong>
-                          <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag>
-                        </div>
-                        <div className="resource-tile-meta">
-                          <span>{captchaLabel(row.captcha_type || "AUTO")}</span>
-                          <span>{storageLabel(row.storage_type)}</span>
-                          <span>{resourceDimensions(row)}</span>
-                        </div>
-                        <div className="resource-tile-meta">
-                          <span>{row.scene || "全场景"}</span>
-                          <span>{row.tag || "default"}</span>
-                        </div>
-                        <div className="resource-uri" title={row.uri}>{compactURI(row.uri)}</div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+        <div className="resource-list-gallery">
+          {filteredResources.map((row) => <ResourceListItem key={row.id} row={row} />)}
         </div>
       )}
+      <details className="system-resource-panel">
+        <summary>按图库分组查看</summary>
+        {isLoading ? (
+          <div className="resource-gallery-empty">加载中</div>
+        ) : filteredResources.length === 0 ? (
+          <div className="resource-gallery-empty">暂无资源</div>
+        ) : (
+          <div className="resource-gallery">
+            {groupGalleryResources(filteredResources).map((group) => (
+              <section className="resource-library-section" key={group.key}>
+                <div className="resource-library-heading">
+                  <h3>{group.title}</h3>
+                  <span>{group.items.length} 张</span>
+                </div>
+                <div className="resource-gallery-grid">
+                  {group.items.map((row) => <ResourceTile key={row.id} row={row} />)}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </details>
       <details className="resource-table-wrap">
         <summary>明细列表</summary>
-        <Table rowKey="id" loading={isLoading} columns={columns} dataSource={visibleResources} pagination={false} size="small" />
+        <Table rowKey="id" loading={isLoading} columns={columns} dataSource={resources} pagination={false} size="small" />
       </details>
       <Modal
         title="新增图库资源"
