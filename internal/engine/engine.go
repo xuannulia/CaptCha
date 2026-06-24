@@ -60,7 +60,7 @@ const (
 	maxTrackPoints     = 256
 	imageViewWidth     = 320
 	imageViewHeight    = 180
-	sliderPieceSize    = 67
+	sliderPieceSize    = 47
 	slider2PieceSize   = sliderPieceSize
 	concatMaxMovement  = 160
 	concatPieceWidth   = imageViewWidth + concatMaxMovement

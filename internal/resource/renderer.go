@@ -35,7 +35,7 @@ import (
 
 const maxResourceImageBytes = 20 * 1024 * 1024
 const (
-	sliderPieceSizeFallback  = 67
+	sliderPieceSizeFallback  = 47
 	slider2PieceSizeFallback = sliderPieceSizeFallback
 	rotateRenderScale        = 2
 	concatMaxMovement        = 160

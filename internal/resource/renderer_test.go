@@ -387,8 +387,8 @@ func TestApplyVisualsKeepsSliderFallbackSizeAlignedWithEngine(t *testing.T) {
 		captchaType types.CaptchaType
 		wantSize    int
 	}{
-		{name: "slider", captchaType: types.CaptchaSlider, wantSize: 67},
-		{name: "slider v2", captchaType: types.CaptchaSlider2, wantSize: 67},
+		{name: "slider", captchaType: types.CaptchaSlider, wantSize: 47},
+		{name: "slider v2", captchaType: types.CaptchaSlider2, wantSize: 47},
 	}
 
 	for _, tt := range cases {
@@ -469,7 +469,7 @@ func TestDefaultSliderTemplatesUseEmbeddedSVGShapePool(t *testing.T) {
 func TestEmbeddedHeartDefaultSliderMaskKeepsHeartSilhouette(t *testing.T) {
 	t.Parallel()
 
-	mask, ok := renderEmbeddedSliderMask("heart-fill.svg", 67)
+	mask, ok := renderEmbeddedSliderMask("heart-fill.svg", sliderPieceSizeFallback)
 	if !ok {
 		t.Fatalf("expected embedded heart slider mask to render")
 	}
