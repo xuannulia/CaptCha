@@ -800,6 +800,10 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 			t.Fatalf("expected nonce mismatch rejection, got %+v", rejected)
 		}
 
+		session, err = memoryStore.GetSession(created.SessionID)
+		if err != nil {
+			t.Fatalf("get refreshed nonce session: %v", err)
+		}
 		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/verify", map[string]any{
 			"answer": answerForSession(session),
 			"track": []types.TrackPoint{
@@ -1957,6 +1961,64 @@ func TestChallengeSessionSingleUseAndFailureLimit(t *testing.T) {
 	}
 }
 
+func TestFailedVerifyResponseReplacesChallenge(t *testing.T) {
+	server, memoryStore, _ := testServer()
+
+	for attempt := 0; attempt < 20; attempt++ {
+		response := request(t, server, http.MethodPost, "/api/v1/challenge/sessions", map[string]any{
+			"client_id":    "demo",
+			"scene":        "login",
+			"captcha_type": "SLIDER",
+		})
+		var created struct {
+			SessionID string `json:"session_id"`
+		}
+		decode(t, response, &created)
+		original, err := memoryStore.GetSession(created.SessionID)
+		if err != nil {
+			t.Fatalf("get original session: %v", err)
+		}
+
+		wrongX := original.Answer.X + 100
+		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/verify", map[string]any{
+			"answer": map[string]any{"x": wrongX},
+			"track":  trackForX(wrongX),
+		})
+		var failed struct {
+			OK        bool                `json:"ok"`
+			Challenge types.RenderPayload `json:"challenge"`
+		}
+		decode(t, response, &failed)
+		if failed.OK || failed.Challenge.Type != types.CaptchaSlider || failed.Challenge.View.Width == 0 {
+			t.Fatalf("expected failed verify to return replacement challenge, got %+v", failed)
+		}
+		replaced, err := memoryStore.GetSession(created.SessionID)
+		if err != nil {
+			t.Fatalf("get replaced session: %v", err)
+		}
+		if replaced.FailureCount != 1 {
+			t.Fatalf("expected failed replacement to preserve failure count, got %d", replaced.FailureCount)
+		}
+		if absInt(original.Answer.X-replaced.Answer.X) <= 6 {
+			continue
+		}
+
+		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/verify", map[string]any{
+			"answer": answerForSession(original),
+			"track":  trackForX(original.Answer.X),
+		})
+		var stale struct {
+			OK bool `json:"ok"`
+		}
+		decode(t, response, &stale)
+		if stale.OK {
+			t.Fatalf("expected stale answer from replaced challenge to fail")
+		}
+		return
+	}
+	t.Fatal("could not generate a distinct replacement slider answer")
+}
+
 func TestRefreshPreservesFailureCount(t *testing.T) {
 	server, memoryStore, _ := testServer()
 
@@ -2838,6 +2900,13 @@ func trackForX(x int) []types.TrackPoint {
 		{X: float64(x * 3 / 4), Y: 24, T: 430, Type: "move"},
 		{X: float64(x), Y: 21, T: 620, Type: "end"},
 	}
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func syntheticTrackForSession(session types.ChallengeSession) []types.TrackPoint {

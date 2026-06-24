@@ -131,6 +131,8 @@ type VerifyResponse = {
   request_nonce?: string;
   resource_tag?: string;
   return_url?: string;
+  expire_at?: string;
+  challenge?: Challenge;
 };
 
 type TrackPoint = {
@@ -491,21 +493,33 @@ function RuntimeChallenge() {
         window.parent?.postMessage({ type: "CAPTCHA_SUCCESS", ticket: issued, sessionId, route: successRoute, requestNonce: successRequestNonce, returnUrl: successReturnUrl }, "*");
         redirectIfTopLevel(successReturnUrl, issued, sessionId, successRoute, successRequestNonce);
       } else {
-        await refreshAfterFailedVerify(
-          result.reason_code || "VERIFY_FAILED",
-          result.decision === "challenge_harder" ? "验证升级中" : "验证失败，正在刷新"
-        );
+        await handleFailedVerify(result);
       }
     } catch {
-      await refreshAfterFailedVerify("NETWORK_ERROR", "验证失败，正在刷新");
+      await handleFailedVerify(undefined, "NETWORK_ERROR");
     } finally {
       verifyInFlight.current = false;
     }
   }
 
-  async function refreshAfterFailedVerify(reason: string, nextStatus: string) {
+  async function handleFailedVerify(result?: VerifyResponse, fallbackReason = "VERIFY_FAILED") {
+    const reason = result?.reason_code || fallbackReason;
+    const nextStatus = result?.decision === "challenge_harder"
+      ? "验证升级中"
+      : result?.decision === "block"
+        ? "验证失败次数过多"
+        : "验证失败，正在刷新";
     setStatus(nextStatus);
     notifyParentFailure(reason);
+    if (result?.challenge) {
+      applySessionContext(result);
+      resetChallenge(result.challenge);
+      return;
+    }
+    if (result?.decision === "block") {
+      if (challenge) resetAttemptState(challenge);
+      return;
+    }
     await refresh();
   }
 

@@ -1049,6 +1049,18 @@ func (s *Server) recordFailedVerification(w http.ResponseWriter, session types.C
 			result.TrackScore.Bucket = "low"
 		}
 	}
+	if session.Status == types.SessionActive || session.Status == "" {
+		refreshed, err := s.engine.Refresh(session)
+		if err != nil {
+			s.logger.Error("refresh failed verification session", "error", err)
+			session.Status = types.SessionExpired
+			s.store.UpdateSession(session)
+			writeError(w, http.StatusInternalServerError, "REFRESH_FAILED")
+			return
+		}
+		refreshed.RenderPayload = resourcepkg.ApplyVisualsAndAttachForStore(s.store, refreshed.RenderPayload, refreshed.Answer, refreshed.ClientID, refreshed.Scene, refreshed.Type, refreshed.ResourceTag)
+		session = refreshed
+	}
 	s.store.UpdateSession(session)
 	s.recordRiskFeatureSnapshot(attemptedSession, req, result)
 	auditResult := "retry"
@@ -1066,13 +1078,23 @@ func (s *Server) recordFailedVerification(w http.ResponseWriter, session types.C
 		ChallengeType:  session.Type,
 		Result:         auditResult,
 	})
-	writeJSON(w, http.StatusOK, map[string]any{
+	response := map[string]any{
 		"ok":           false,
 		"decision":     result.Decision,
 		"reason_code":  result.ReasonCode,
 		"can_refresh":  canRefreshAfterFailure(session, result),
 		"captcha_type": nextType,
-	})
+	}
+	if session.Status == types.SessionActive || session.Status == "" {
+		response["session_id"] = session.ID
+		response["expire_at"] = session.ExpiresAt
+		response["route"] = session.Route
+		response["request_nonce"] = session.RequestNonce
+		response["resource_tag"] = session.ResourceTag
+		response["return_url"] = session.ReturnURL
+		response["challenge"] = session.RenderPayload
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func canRefreshAfterFailure(session types.ChallengeSession, result types.VerifyResult) bool {
