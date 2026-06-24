@@ -438,6 +438,25 @@ func TestDefaultSliderTemplatesUseEmbeddedSVGShapePool(t *testing.T) {
 	}
 }
 
+func TestEmbeddedHeartDefaultSliderMaskKeepsHeartSilhouette(t *testing.T) {
+	t.Parallel()
+
+	mask, ok := renderEmbeddedSliderMask("heart-fill.svg", 67)
+	if !ok {
+		t.Fatalf("expected embedded heart slider mask to render")
+	}
+	leftLobe := alphaAt(t, mask, 21, 22)
+	rightLobe := alphaAt(t, mask, 45, 22)
+	notch := alphaAt(t, mask, 33, 22)
+	bottom := alphaAt(t, mask, 33, 54)
+	if leftLobe < 35 || rightLobe < 35 || bottom < 35 {
+		t.Fatalf("heart mask should keep two lobes and a lower point: left=%d right=%d bottom=%d", leftLobe, rightLobe, bottom)
+	}
+	if notch >= min(leftLobe, rightLobe) {
+		t.Fatalf("heart mask should keep a top notch: notch=%d left=%d right=%d", notch, leftLobe, rightLobe)
+	}
+}
+
 func TestApplyVisualsUsesRotateTemplateOverlay(t *testing.T) {
 	t.Parallel()
 
