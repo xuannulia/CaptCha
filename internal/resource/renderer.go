@@ -938,8 +938,11 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 			}
 			img.Set(x+px, y+py, gapPixel)
 
-			piecePixel := mixRGBA(sourceMono, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.94)
-			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 232, G: 232, B: 232, A: 255}, math.Min(0.22, math.Pow(1-alphaRatio, 0.72)*0.08+edgeBand*0.05+shade*0.06))
+			detailWeight := clampFloat((alphaRatio-0.50)*2.35, 0, 1)
+			detailWeight *= clampFloat(1-edgeBand*0.45-innerBand*0.12, 0.34, 1)
+			pieceBase := mixRGBA(sourceMono, source, detailWeight)
+			piecePixel := mixRGBA(pieceBase, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.22+light*0.035)
+			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 232, G: 232, B: 232, A: 255}, math.Min(0.18, math.Pow(1-alphaRatio, 0.72)*0.06+edgeBand*0.04+shade*0.045))
 			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 72, G: 72, B: 72, A: 255}, math.Min(0.42, edgeBand*0.08+innerBand*0.24+shade*0.06))
 			if px+py < size {
 				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 255, G: 255, B: 255, A: 255}, edgeBand*0.04+light*0.08)
