@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"captcha/internal/glyphs"
 	"captcha/internal/types"
 
 	"github.com/srwiley/oksvg"
@@ -1696,7 +1697,7 @@ func (icon clickIcon) SVGFile() string {
 
 func wordClickChallenge() ([]string, []types.Point, []string, []types.Point) {
 	targetCount := mustRandomInt(3, 4)
-	decoyCount := mustRandomInt(1, 2)
+	decoyCount := mustRandomInt(2, 4)
 	words := randomStrings(wordClickWordBank, targetCount)
 	excluded := make(map[string]struct{}, len(words))
 	for _, word := range words {
@@ -2282,7 +2283,7 @@ func drawGridDecoy(img *image.RGBA, index, centerX, centerY int) {
 	}
 }
 
-var wordClickWordBank = []string{"山", "水", "火", "木", "田", "日", "月", "口", "中", "王", "文"}
+var wordClickWordBank = glyphs.WordClickBank
 
 var iconClickLibrary = []clickIcon{
 	{ID: "drinks-fill", Label: "饮料"},
@@ -2300,12 +2301,14 @@ var iconClickLibrary = []clickIcon{
 
 func separatedClickPoints(count int) []types.Point {
 	anchors := []types.Point{
-		{X: 52, Y: 52},
-		{X: 160, Y: 52},
-		{X: 268, Y: 52},
-		{X: 52, Y: 136},
-		{X: 160, Y: 136},
-		{X: 268, Y: 136},
+		{X: 42, Y: 48},
+		{X: 122, Y: 48},
+		{X: 202, Y: 48},
+		{X: 282, Y: 48},
+		{X: 42, Y: 132},
+		{X: 122, Y: 132},
+		{X: 202, Y: 132},
+		{X: 282, Y: 132},
 	}
 	indexes := randomIndexes(len(anchors), min(count, len(anchors)))
 	points := make([]types.Point, 0, count)
@@ -2994,7 +2997,7 @@ func pointInPolygon(x, y int, points []image.Point) bool {
 }
 
 func drawBlockGlyph(img *image.RGBA, value string, cx, cy, scale int, c color.RGBA) {
-	pattern, ok := glyphPatterns[value]
+	pattern, ok := glyphs.Pattern(value)
 	if !ok {
 		return
 	}

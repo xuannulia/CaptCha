@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"captcha/internal/glyphs"
 	"captcha/internal/types"
 
 	"github.com/srwiley/oksvg"
@@ -97,6 +98,13 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 	}
 
 	switch payload.Type {
+	case types.CaptchaGesture:
+		background, ok := loadBackgroundResourceImage(resources)
+		if !ok {
+			return payload
+		}
+		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		payload.Image = pngDataURL(composeGestureImage(base, answer.Points, payload.View))
 	case types.CaptchaSlider, types.CaptchaSlider2:
 		background, ok := loadBackgroundResourceImage(resources)
 		if !ok {
@@ -1562,6 +1570,27 @@ func drawCurveResourceTarget(img *image.RGBA, variant int, points []image.Point)
 	}
 }
 
+func composeGestureImage(base *image.RGBA, points []types.Point, view types.View) *image.RGBA {
+	img := cloneRGBA(base)
+	scaleX, scaleY := renderScaleForView(img, view)
+	polyline := make([]image.Point, 0, len(points))
+	for _, point := range points {
+		polyline = append(polyline, image.Point{X: scalePointX(point, scaleX), Y: scalePointY(point, scaleY)})
+	}
+	if len(polyline) == 0 {
+		return img
+	}
+	drawPolylineOver(img, polyline, 16, color.RGBA{R: 255, G: 255, B: 255, A: 205})
+	drawPolylineOver(img, polyline, 12, color.RGBA{R: 15, G: 23, B: 42, A: 88})
+	drawPolylineOver(img, polyline, 8, color.RGBA{R: 146, G: 80, B: 42, A: 240})
+	start := polyline[0]
+	end := polyline[len(polyline)-1]
+	drawCircleOver(img, start.X, start.Y, 13, color.RGBA{R: 45, G: 212, B: 191, A: 235})
+	drawCircleOver(img, end.X, end.Y, 15, color.RGBA{R: 244, G: 63, B: 94, A: 235})
+	drawCircleOver(img, end.X, end.Y, 7, color.RGBA{R: 15, G: 23, B: 42, A: 245})
+	return img
+}
+
 func composeIconClickImage(base *image.RGBA, payload types.RenderPayload, points []types.Point, resources []types.CaptchaResource) (*image.RGBA, []string) {
 	img := cloneRGBA(base)
 	icons := loadResourceImagesByType(resources, "icon_library")
@@ -1910,6 +1939,28 @@ func randomIndex(length int) int {
 	return int(index.Int64())
 }
 
+func randomIndexes(length, count int) []int {
+	if length <= 0 || count <= 0 {
+		return nil
+	}
+	indexes := make([]int, length)
+	for i := range indexes {
+		indexes[i] = i
+	}
+	for i := 0; i < length; i++ {
+		j := i + randomIndex(length-i)
+		indexes[i], indexes[j] = indexes[j], indexes[i]
+	}
+	return indexes[:min(count, length)]
+}
+
+func randomJitter(minValue, maxValue int) int {
+	if maxValue <= minValue {
+		return minValue
+	}
+	return minValue + randomIndex(maxValue-minValue+1)
+}
+
 func concatControlMax(offset, viewWidth, splitX, pieceWidth int) int {
 	_ = offset
 	_ = splitX
@@ -1957,6 +2008,7 @@ func composeWordImage(base *image.RGBA, words []string, points []types.Point, op
 		{R: 31, G: 41, B: 55, A: 255},
 		{R: 37, G: 99, B: 235, A: 255},
 		{R: 190, G: 24, B: 93, A: 255},
+		{R: 126, G: 34, B: 206, A: 255},
 	}
 	if len(options.Colors) > 0 {
 		colors = options.Colors
@@ -1965,6 +2017,14 @@ func composeWordImage(base *image.RGBA, words []string, points []types.Point, op
 	if scale <= 0 {
 		scale = 5
 	}
+	decoyWords := randomGlyphWordsExcluding(glyphs.WordClickBank, 2+randomIndex(3), words)
+	decoyPoints := wordDecoyPoints(img.Bounds().Dx(), img.Bounds().Dy(), points, len(decoyWords))
+	for i, word := range decoyWords {
+		if i >= len(decoyPoints) {
+			break
+		}
+		drawBlockGlyph(img, word, decoyPoints[i].X, decoyPoints[i].Y, max(2, scale-1), color.RGBA{R: 100, G: 116, B: 139, A: 205}, options.Glyphs)
+	}
 	for i, word := range words {
 		if i >= len(points) {
 			break
@@ -1972,6 +2032,71 @@ func composeWordImage(base *image.RGBA, words []string, points []types.Point, op
 		drawBlockGlyph(img, word, points[i].X, points[i].Y, scale, colors[i%len(colors)], options.Glyphs)
 	}
 	return img
+}
+
+func randomGlyphWordsExcluding(pool []string, count int, excluded []string) []string {
+	blocked := make(map[string]struct{}, len(excluded))
+	for _, item := range excluded {
+		blocked[item] = struct{}{}
+	}
+	candidates := make([]string, 0, len(pool))
+	for _, item := range pool {
+		if _, ok := blocked[item]; ok {
+			continue
+		}
+		candidates = append(candidates, item)
+	}
+	indexes := randomIndexes(len(candidates), min(count, len(candidates)))
+	out := make([]string, 0, len(indexes))
+	for _, index := range indexes {
+		out = append(out, candidates[index])
+	}
+	return out
+}
+
+func wordDecoyPoints(width, height int, targetPoints []types.Point, count int) []types.Point {
+	if count <= 0 {
+		return nil
+	}
+	anchors := []types.Point{
+		{X: width / 6, Y: height / 4},
+		{X: width / 2, Y: height / 4},
+		{X: width * 5 / 6, Y: height / 4},
+		{X: width / 6, Y: height / 2},
+		{X: width / 2, Y: height / 2},
+		{X: width * 5 / 6, Y: height / 2},
+		{X: width / 6, Y: height * 3 / 4},
+		{X: width / 2, Y: height * 3 / 4},
+		{X: width * 5 / 6, Y: height * 3 / 4},
+	}
+	indexes := randomIndexes(len(anchors), len(anchors))
+	out := make([]types.Point, 0, count)
+	for _, index := range indexes {
+		point := anchors[index]
+		point.X = clamp(point.X+randomJitter(-4, 4), 20, max(20, width-20))
+		point.Y = clamp(point.Y+randomJitter(-4, 4), 20, max(20, height-20))
+		if tooCloseToWordPoint(point, targetPoints) || tooCloseToWordPoint(point, out) {
+			continue
+		}
+		out = append(out, point)
+		if len(out) >= count {
+			return out
+		}
+	}
+	return out
+}
+
+func tooCloseToWordPoint(point types.Point, others []types.Point) bool {
+	for _, other := range others {
+		if pointDistance(point, other) < 52 {
+			return true
+		}
+	}
+	return false
+}
+
+func pointDistance(a, b types.Point) float64 {
+	return math.Hypot(float64(a.X-b.X), float64(a.Y-b.Y))
 }
 
 func cloneRGBA(src *image.RGBA) *image.RGBA {
@@ -2325,7 +2450,7 @@ func validGlyphPattern(pattern []string) bool {
 func drawBlockGlyph(img *image.RGBA, value string, cx, cy, scale int, c color.RGBA, custom map[string][]string) {
 	pattern, ok := custom[value]
 	if !ok {
-		pattern, ok = glyphPatterns[value]
+		pattern, ok = glyphs.Pattern(value)
 	}
 	if !ok {
 		return

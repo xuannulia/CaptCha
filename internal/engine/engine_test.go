@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"captcha/internal/glyphs"
 	"captcha/internal/types"
 )
 
@@ -737,6 +738,27 @@ func TestPointClickCaptchasUseSeparatedTargets(t *testing.T) {
 				assertReadableTargets(t, session.RenderPayload.View, points)
 			}
 		})
+	}
+}
+
+func TestWordClickBankIsLargeAndDrawable(t *testing.T) {
+	t.Parallel()
+
+	if len(wordClickWordBank) < 40 {
+		t.Fatalf("word click bank should be large enough for random prompts, got %d", len(wordClickWordBank))
+	}
+	seen := make(map[string]struct{}, len(wordClickWordBank))
+	for _, word := range wordClickWordBank {
+		if word == "" {
+			t.Fatal("word click bank should not contain empty glyphs")
+		}
+		if _, ok := seen[word]; ok {
+			t.Fatalf("word click bank should not contain duplicate glyph %q", word)
+		}
+		seen[word] = struct{}{}
+		if _, ok := glyphs.Pattern(word); !ok {
+			t.Fatalf("word click glyph %q has no drawable pattern", word)
+		}
 	}
 }
 

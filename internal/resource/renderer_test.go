@@ -800,6 +800,39 @@ func TestApplyVisualsDrawsChineseWordGlyphs(t *testing.T) {
 	assertRegionChanged(t, image, 58, 42, 32, 32, background)
 }
 
+func TestApplyVisualsComposesGestureOnBackground(t *testing.T) {
+	t.Parallel()
+
+	background := color.RGBA{R: 23, G: 80, B: 160, A: 255}
+	backgroundPath, _ := writeTestPNG(t, 120, 80, background)
+	payload := types.RenderPayload{
+		Type:  types.CaptchaGesture,
+		View:  types.View{Width: 120, Height: 80},
+		Image: "fallback-image",
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{Points: []types.Point{
+		{X: 20, Y: 30},
+		{X: 60, Y: 45},
+		{X: 100, Y: 32},
+	}}, []types.CaptchaResource{
+		{
+			ID:           "res_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          backgroundPath,
+			Status:       "active",
+		},
+	})
+
+	if composed.Image == payload.Image {
+		t.Fatal("expected gesture resource background to replace generated image")
+	}
+	image := decodePNGDataURL(t, composed.Image)
+	assertPixel(t, image, 5, 5, background)
+	assertRegionChanged(t, image, 45, 30, 30, 25, background)
+}
+
 func TestApplyVisualsRejectsClasspathTraversal(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()

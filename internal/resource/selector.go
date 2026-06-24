@@ -429,7 +429,7 @@ func requiredResourceTypes(captchaType types.CaptchaType) []string {
 func requiredResourceTypeGroups(captchaType types.CaptchaType) [][]string {
 	switch normalizeRequestedCaptchaType(captchaType) {
 	case types.CaptchaGesture:
-		return [][]string{{"background_image", "background_library"}, {"gesture_template"}}
+		return [][]string{{"background_image", "background_library"}}
 	case types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3:
 		return [][]string{{"background_image", "background_library"}, {"curve_template"}}
 	case types.CaptchaSlider:
