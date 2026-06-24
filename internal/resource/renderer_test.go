@@ -338,6 +338,37 @@ func TestApplyVisualsUsesSliderTemplateMask(t *testing.T) {
 	}
 }
 
+func TestApplyVisualsUsesDefaultSliderMaskWhenTemplateMissing(t *testing.T) {
+	t.Parallel()
+
+	backgroundPath, _ := writeTestPNG(t, 60, 60, color.RGBA{R: 18, G: 160, B: 75, A: 255})
+	payload := types.RenderPayload{
+		Type:       types.CaptchaSlider,
+		View:       types.View{Width: 120, Height: 80},
+		Image:      "fallback-image",
+		Piece:      "fallback-piece",
+		Parameters: map[string]any{"piece_size": 48},
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{X: 40, Y: 20}, []types.CaptchaResource{
+		{
+			ID:           "res_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          backgroundPath,
+			Status:       "active",
+		},
+	})
+
+	piece := decodePNGDataURL(t, composed.Piece)
+	if alphaAt(t, piece, 0, 0) != 0 {
+		t.Fatalf("expected default slider fallback to keep transparent corners")
+	}
+	if alphaAt(t, piece, 24, 24) == 0 {
+		t.Fatalf("expected default slider fallback to draw an opaque body")
+	}
+}
+
 func TestApplyVisualsUsesRotateTemplateOverlay(t *testing.T) {
 	t.Parallel()
 
@@ -518,6 +549,40 @@ func TestApplyVisualsUsesFontMetadata(t *testing.T) {
 
 	image := decodePNGDataURL(t, composed.Image)
 	assertPixel(t, image, 28, 28, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+}
+
+func TestApplyVisualsDrawsChineseWordGlyphs(t *testing.T) {
+	t.Parallel()
+
+	background := color.RGBA{R: 245, G: 245, B: 245, A: 255}
+	backgroundPath, _ := writeTestPNG(t, 100, 80, background)
+	payload := types.RenderPayload{
+		Type:  types.CaptchaWordImageClick,
+		View:  types.View{Width: 100, Height: 80},
+		Image: "fallback-image",
+		Words: []string{"文", "王", "火", "水"},
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{Points: []types.Point{
+		{X: 24, Y: 24},
+		{X: 74, Y: 24},
+		{X: 24, Y: 58},
+		{X: 74, Y: 58},
+	}}, []types.CaptchaResource{
+		{
+			ID:           "res_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          backgroundPath,
+			Status:       "active",
+		},
+	})
+
+	image := decodePNGDataURL(t, composed.Image)
+	assertRegionChanged(t, image, 8, 8, 32, 32, background)
+	assertRegionChanged(t, image, 58, 8, 32, 32, background)
+	assertRegionChanged(t, image, 8, 42, 32, 32, background)
+	assertRegionChanged(t, image, 58, 42, 32, 32, background)
 }
 
 func TestApplyVisualsRejectsClasspathTraversal(t *testing.T) {
@@ -725,6 +790,32 @@ func TestApplyVisualsComposesSupportedCaptchaTypes(t *testing.T) {
 			answer: types.Answer{X: 50, Y: 20},
 		},
 		{
+			name: "slider v2",
+			payload: types.RenderPayload{
+				Type:  types.CaptchaSlider2,
+				View:  types.View{Width: 120, Height: 80},
+				Image: "fallback-image",
+				Piece: "fallback-piece",
+			},
+			answer: types.Answer{X: 50, Y: 20},
+		},
+		{
+			name: "curve",
+			payload: types.RenderPayload{
+				Type:  types.CaptchaCurve,
+				View:  types.View{Width: 120, Height: 80},
+				Image: "fallback-image",
+				Parameters: map[string]any{
+					"curve_profile": map[string]any{
+						"variant":       1,
+						"moving_points": []map[string]float64{{"x": 22, "y": 28}, {"x": 62, "y": 48}, {"x": 100, "y": 34}},
+						"drive_points":  []map[string]float64{{"x": 0.1, "y": 0}, {"x": 0.1, "y": 0}, {"x": 0.1, "y": 0}},
+					},
+				},
+			},
+			answer: types.Answer{X: 20},
+		},
+		{
 			name: "rotate",
 			payload: types.RenderPayload{
 				Type:  types.CaptchaRotate,
@@ -753,6 +844,32 @@ func TestApplyVisualsComposesSupportedCaptchaTypes(t *testing.T) {
 			},
 			answer: types.Answer{Points: []types.Point{{X: 25, Y: 40}, {X: 60, Y: 40}, {X: 95, Y: 40}}},
 		},
+		{
+			name: "image click",
+			payload: types.RenderPayload{
+				Type:  types.CaptchaImageClick,
+				View:  types.View{Width: 120, Height: 80},
+				Image: "fallback-image",
+				Words: []string{"饮料", "书籍", "苹果"},
+			},
+			answer: types.Answer{Points: []types.Point{{X: 25, Y: 40}, {X: 60, Y: 40}, {X: 95, Y: 40}}},
+		},
+		{
+			name: "jigsaw",
+			payload: types.RenderPayload{
+				Type:  types.CaptchaJigsaw,
+				View:  types.View{Width: 120, Height: 80},
+				Image: "fallback-image",
+				Words: []string{"1", "2"},
+				Parameters: map[string]any{
+					"tile_cols":   2,
+					"tile_rows":   2,
+					"tile_width":  60,
+					"tile_height": 40,
+				},
+			},
+			answer: types.Answer{Points: []types.Point{{X: 30, Y: 20}, {X: 90, Y: 60}}},
+		},
 	}
 
 	for _, tc := range cases {
@@ -764,7 +881,7 @@ func TestApplyVisualsComposesSupportedCaptchaTypes(t *testing.T) {
 				t.Fatalf("expected %s image to be composed from local resource", tc.name)
 			}
 			decodePNGDataURL(t, composed.Image)
-			if tc.payload.Type == types.CaptchaSlider || tc.payload.Type == types.CaptchaConcat {
+			if tc.payload.Type == types.CaptchaSlider || tc.payload.Type == types.CaptchaSlider2 || tc.payload.Type == types.CaptchaConcat {
 				if composed.Piece == tc.payload.Piece {
 					t.Fatalf("expected %s piece to be composed from local resource", tc.name)
 				}
@@ -798,6 +915,48 @@ func TestApplyVisualsUsesBackgroundLibrary(t *testing.T) {
 		t.Fatalf("expected background library to compose image")
 	}
 	decodePNGDataURL(t, composed.Image)
+}
+
+func TestApplyVisualsRendersSVGIconLibrary(t *testing.T) {
+	t.Parallel()
+
+	backgroundPath, _ := writeTestPNG(t, 80, 60, color.RGBA{R: 240, G: 248, B: 255, A: 255})
+	iconPath, checksum := writeTestSVG(t, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M50 8 L92 92 L8 92 Z" fill="#000"/></svg>`)
+	payload := types.RenderPayload{
+		Type:   types.CaptchaImageClick,
+		Prompt: "依次点击：旧图标",
+		View:   types.View{Width: 80, Height: 60},
+		Image:  "fallback-image",
+		Words:  []string{"旧图标"},
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{Points: []types.Point{{X: 40, Y: 30}}}, []types.CaptchaResource{
+		{
+			ID:           "res_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          backgroundPath,
+			Status:       "active",
+		},
+		{
+			ID:           "res_svg_icon",
+			ResourceType: "icon_library",
+			StorageType:  "file",
+			URI:          iconPath,
+			Checksum:     checksum,
+			Metadata:     map[string]any{"mime_type": "image/svg+xml", "label": "三角形"},
+			Status:       "active",
+		},
+	})
+
+	if composed.Image == payload.Image {
+		t.Fatalf("expected svg icon library to compose image")
+	}
+	if len(composed.Words) != 1 || composed.Words[0] != "三角形" || composed.Prompt != "依次点击：三角形" {
+		t.Fatalf("expected icon labels to come from resource metadata, got prompt=%q words=%v", composed.Prompt, composed.Words)
+	}
+	image := decodePNGDataURL(t, composed.Image)
+	assertRegionChanged(t, image, 24, 14, 32, 32, color.RGBA{R: 240, G: 248, B: 255, A: 255})
 }
 
 func TestApplyVisualsUsesGridCategoryLibrary(t *testing.T) {
@@ -887,6 +1046,17 @@ func writeTestPNGAt(t *testing.T, path string, width, height int, c color.RGBA) 
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
+func writeTestSVG(t *testing.T, body string) (string, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "icon.svg")
+	data := []byte(body)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write svg: %v", err)
+	}
+	sum := sha256.Sum256(data)
+	return path, "sha256:" + hex.EncodeToString(sum[:])
+}
+
 func writeSliderMaskPNG(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "slider-template.png")
@@ -972,6 +1142,20 @@ func assertPixel(t *testing.T, img image.Image, x, y int, expected color.RGBA) {
 	if actual != expected {
 		t.Fatalf("pixel %d,%d expected %+v, got %+v", x, y, expected, actual)
 	}
+}
+
+func assertRegionChanged(t *testing.T, img image.Image, x, y, width, height int, background color.RGBA) {
+	t.Helper()
+	for yy := y; yy < y+height; yy++ {
+		for xx := x; xx < x+width; xx++ {
+			r, g, b, a := img.At(xx, yy).RGBA()
+			actual := color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}
+			if actual != background {
+				return
+			}
+		}
+	}
+	t.Fatalf("expected region %d,%d %dx%d to differ from background %+v", x, y, width, height, background)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

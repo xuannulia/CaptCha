@@ -27,6 +27,8 @@ import (
 
 	"captcha/internal/types"
 
+	"github.com/srwiley/oksvg"
+	"github.com/srwiley/rasterx"
 	_ "golang.org/x/image/webp"
 )
 
@@ -62,7 +64,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 	}
 
 	switch payload.Type {
-	case types.CaptchaSlider:
+	case types.CaptchaSlider, types.CaptchaSlider2:
 		background, ok := loadBackgroundResourceImage(resources)
 		if !ok {
 			return payload
@@ -76,6 +78,13 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		parameters := cloneParameters(payload.Parameters)
 		parameters["piece_size"] = size
 		payload.Parameters = parameters
+	case types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3:
+		background, ok := loadBackgroundResourceImage(resources)
+		if !ok {
+			return payload
+		}
+		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		payload.Image = pngDataURL(composeCurveImage(base, payload, answer))
 	case types.CaptchaRotate:
 		rotateSource, ok := loadRotateResourceImage(resources)
 		if !ok {
@@ -115,6 +124,25 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		}
 		base := resizeNearest(background, payload.View.Width, payload.View.Height)
 		payload.Image = pngDataURL(composeWordImage(base, payload.Words, answer.Points, loadFontOptions(resources)))
+	case types.CaptchaImageClick:
+		background, ok := loadBackgroundResourceImage(resources)
+		if !ok {
+			return payload
+		}
+		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		image, words := composeIconClickImage(base, payload.Words, answer.Points, resources)
+		payload.Image = pngDataURL(image)
+		if len(words) > 0 {
+			payload.Words = words
+			payload.Prompt = "依次点击：" + strings.Join(words, "、")
+		}
+	case types.CaptchaJigsaw:
+		background, ok := loadBackgroundResourceImage(resources)
+		if !ok {
+			return payload
+		}
+		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		payload.Image = pngDataURL(composeJigsawImage(base, answer, payload.Parameters))
 	}
 	return payload
 }
@@ -549,6 +577,9 @@ func allowedResourceContentType(resource types.CaptchaResource, value string) bo
 }
 
 func decodeResourceImage(resource types.CaptchaResource, data []byte, contentType string) (image.Image, bool) {
+	if looksLikeSVG(data, contentType, resource.Metadata) {
+		return decodeSVGResourceImage(resource, data, contentType)
+	}
 	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, false
@@ -575,6 +606,58 @@ func decodeResourceImage(resource types.CaptchaResource, data []byte, contentTyp
 	return img, true
 }
 
+func looksLikeSVG(data []byte, contentType string, metadata map[string]any) bool {
+	if strings.EqualFold(normalizedMediaType(contentType), "image/svg+xml") {
+		return true
+	}
+	if expected, ok := metadataString(metadata, "mime_type", "content_type"); ok && strings.EqualFold(strings.TrimSpace(expected), "image/svg+xml") {
+		return true
+	}
+	sniff := strings.ToLower(string(data[:min(len(data), 256)]))
+	return strings.Contains(sniff, "<svg")
+}
+
+func decodeSVGResourceImage(resource types.CaptchaResource, data []byte, contentType string) (image.Image, bool) {
+	const actualMIME = "image/svg+xml"
+	if err := validateMIMEType(resource.ResourceType, actualMIME); err != nil {
+		return nil, false
+	}
+	if mediaType := normalizedMediaType(contentType); mediaType != "" && !strings.EqualFold(mediaType, actualMIME) {
+		return nil, false
+	}
+	if expected, ok := metadataString(resource.Metadata, "mime_type", "content_type"); ok && !strings.EqualFold(strings.TrimSpace(expected), actualMIME) {
+		return nil, false
+	}
+	size := svgRenderSize(resource)
+	icon, err := oksvg.ReadIconStream(bytes.NewReader(data), oksvg.StrictErrorMode)
+	if err != nil {
+		return nil, false
+	}
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	padding := math.Max(0, math.Round(float64(size)*0.04))
+	icon.SetTarget(padding, padding, float64(size)-padding*2, float64(size)-padding*2)
+	scanner := rasterx.NewScannerGV(size, size, img, img.Bounds())
+	raster := rasterx.NewDasher(size, size, scanner)
+	icon.Draw(raster, 1)
+	return img, true
+}
+
+func svgRenderSize(resource types.CaptchaResource) int {
+	if value, ok, err := metadataInt(cloneMetadata(resource.Metadata), "width", "height", "size"); err == nil && ok && value > 0 {
+		return clamp(int(value), 16, 512)
+	}
+	switch strings.ToLower(strings.TrimSpace(resource.ResourceType)) {
+	case "background_image", "background_library":
+		return 320
+	case "rotate_library":
+		return 220
+	case "grid_category_library":
+		return 120
+	default:
+		return 128
+	}
+}
+
 func imageFormatMIME(format string) string {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "gif":
@@ -583,6 +666,8 @@ func imageFormatMIME(format string) string {
 		return "image/jpeg"
 	case "png":
 		return "image/png"
+	case "webp":
+		return "image/webp"
 	default:
 		return ""
 	}
@@ -806,40 +891,78 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 	size = clamp(size, 16, min(img.Bounds().Dx(), img.Bounds().Dy()))
 	x := clamp(answer.X, 0, img.Bounds().Dx()-size)
 	y := clamp(answer.Y, 0, img.Bounds().Dy()-size)
-	if template != nil {
-		mask := resizeAlphaMask(template, size, size)
-		piece := image.NewRGBA(image.Rect(0, 0, size, size))
-		for py := 0; py < size; py++ {
-			for px := 0; px < size; px++ {
-				alpha := colorAlpha(mask.At(px, py))
-				if alpha <= 4 {
-					continue
-				}
-				source := rgbaAt(base, x+px, y+py)
-				alphaRatio := float64(alpha) / 255
-				edgeBand := sliderTemplateEdgeBandStrength(mask, px, py, 4)
-				innerBand := sliderTemplateEdgeBandStrength(mask, px, py, 2)
+	if template == nil {
+		template = defaultSliderTemplate(size)
+	}
+	mask := resizeAlphaMask(template, size, size)
+	piece := image.NewRGBA(image.Rect(0, 0, size, size))
+	for py := 0; py < size; py++ {
+		for px := 0; px < size; px++ {
+			alpha := colorAlpha(mask.At(px, py))
+			if alpha <= 4 {
+				continue
+			}
+			source := rgbaAt(base, x+px, y+py)
+			alphaRatio := float64(alpha) / 255
+			edgeBand := sliderTemplateEdgeBandStrength(mask, px, py, 4)
+			innerBand := sliderTemplateEdgeBandStrength(mask, px, py, 2)
 
-				gapPixel := mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, 0.22+edgeBand*0.08)
-				gapPixel = mixRGBA(gapPixel, color.RGBA{R: 121, G: 126, B: 134, A: 255}, innerBand*0.30)
-				img.Set(x+px, y+py, gapPixel)
+			gapPixel := mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, 0.22+edgeBand*0.08)
+			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 121, G: 126, B: 134, A: 255}, innerBand*0.30)
+			img.Set(x+px, y+py, gapPixel)
 
-				piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.07)
-				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 245, G: 247, B: 250, A: 255}, math.Min(0.98, math.Pow(1-alphaRatio, 0.45)*1.15+edgeBand*0.92))
-				borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 118, G: 123, B: 132, A: 255}, innerBand*0.72)
-				piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.62, innerBand*0.48))
-				piece.Set(px, py, color.NRGBA{R: piecePixel.R, G: piecePixel.G, B: piecePixel.B, A: alpha})
+			piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.07)
+			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 245, G: 247, B: 250, A: 255}, math.Min(0.98, math.Pow(1-alphaRatio, 0.45)*1.15+edgeBand*0.92))
+			borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 118, G: 123, B: 132, A: 255}, innerBand*0.72)
+			piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.62, innerBand*0.48))
+			piece.Set(px, py, color.NRGBA{R: piecePixel.R, G: piecePixel.G, B: piecePixel.B, A: alpha})
+		}
+	}
+	return img, piece
+}
+
+func defaultSliderTemplate(size int) image.Image {
+	size = clamp(size, 16, 256)
+	mask := image.NewRGBA(image.Rect(0, 0, size, size))
+	scale := float64(size)
+	for y := 0; y < size; y++ {
+		ny := (float64(y) + 0.5) / scale
+		for x := 0; x < size; x++ {
+			nx := (float64(x) + 0.5) / scale
+			body := roundedUnitRect(nx, ny, 0.08, 0.18, 0.74, 0.68, 0.12)
+			rightKnob := math.Hypot(nx-0.78, ny-0.50) <= 0.17
+			topKnob := math.Hypot(nx-0.48, ny-0.18) <= 0.13
+			leftBite := math.Hypot(nx-0.09, ny-0.50) <= 0.14
+			if (body || rightKnob || topKnob) && !leftBite {
+				mask.SetRGBA(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
 			}
 		}
-		return img, piece
 	}
-	piece := image.NewRGBA(image.Rect(0, 0, size, size))
-	draw.Draw(piece, piece.Bounds(), base, image.Point{X: x, Y: y}, draw.Src)
-	strokeRect(piece, 0, 0, size, size, 3, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+	return softenAlphaMask(mask)
+}
 
-	fillRect(img, x, y, size, size, color.RGBA{R: 15, G: 23, B: 42, A: 110})
-	strokeRect(img, x, y, size, size, 3, color.RGBA{R: 248, G: 250, B: 252, A: 230})
-	return img, piece
+func roundedUnitRect(x, y, left, top, width, height, radius float64) bool {
+	right := left + width
+	bottom := top + height
+	if x < left || x > right || y < top || y > bottom {
+		return false
+	}
+	innerLeft := left + radius
+	innerRight := right - radius
+	innerTop := top + radius
+	innerBottom := bottom - radius
+	if (x >= innerLeft && x <= innerRight) || (y >= innerTop && y <= innerBottom) {
+		return true
+	}
+	cx := innerLeft
+	if x > innerRight {
+		cx = innerRight
+	}
+	cy := innerTop
+	if y > innerBottom {
+		cy = innerBottom
+	}
+	return math.Hypot(x-cx, y-cy) <= radius
 }
 
 func colorAlpha(c color.Color) uint8 {
@@ -1042,6 +1165,240 @@ func concatCoverPixel(x, y int, base color.RGBA) color.RGBA {
 	return c
 }
 
+func composeCurveImage(base *image.RGBA, payload types.RenderPayload, answer types.Answer) *image.RGBA {
+	img := cloneRGBA(base)
+	profile, ok := payload.Parameters["curve_profile"]
+	if !ok {
+		return img
+	}
+	points := fixedCurvePointsFromProfile(profile, answer.X)
+	if len(points) < 2 {
+		return img
+	}
+	drawCurveResourceTexture(img, curveVariant(payload.Type, profile))
+	drawCurveResourceTarget(img, curveVariant(payload.Type, profile), points)
+	return img
+}
+
+type renderCurvePoint struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+func fixedCurvePointsFromProfile(profile any, answerX int) []image.Point {
+	profileMap, ok := profile.(map[string]any)
+	if !ok {
+		return nil
+	}
+	moving := curvePointsFromAny(profileMap["moving_points"])
+	drives := curvePointsFromAny(profileMap["drive_points"])
+	if len(moving) < 2 || len(drives) < 2 {
+		return nil
+	}
+	count := min(len(moving), len(drives))
+	points := make([]image.Point, 0, count)
+	scale := float64(answerX)
+	for i := 0; i < count; i++ {
+		x := moving[i].X - drives[i].X*scale
+		y := moving[i].Y - drives[i].Y*scale
+		if !math.IsNaN(x) && !math.IsNaN(y) && !math.IsInf(x, 0) && !math.IsInf(y, 0) {
+			points = append(points, image.Point{X: int(math.Round(x)), Y: int(math.Round(y))})
+		}
+	}
+	return points
+}
+
+func curvePointsFromAny(value any) []renderCurvePoint {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var points []renderCurvePoint
+	if err := json.Unmarshal(data, &points); err != nil {
+		return nil
+	}
+	return points
+}
+
+func curveVariant(captchaType types.CaptchaType, profile any) int {
+	if profileMap, ok := profile.(map[string]any); ok {
+		if variant := anyInt(profileMap["variant"], 0); variant > 0 {
+			return variant
+		}
+	}
+	switch captchaType {
+	case types.CaptchaCurve2:
+		return 2
+	case types.CaptchaCurve3:
+		return 3
+	default:
+		return 1
+	}
+}
+
+func drawCurveResourceTexture(img *image.RGBA, variant int) {
+	width := img.Bounds().Dx()
+	height := img.Bounds().Dy()
+	if width <= 0 || height <= 0 {
+		return
+	}
+	for x := 0; x < width; x += 58 {
+		drawLineOver(img, image.Point{X: x, Y: 0}, image.Point{X: x + 18, Y: height}, 1, color.RGBA{R: 255, G: 255, B: 255, A: 28})
+	}
+	if variant == 3 {
+		for y := 22; y < height; y += 34 {
+			drawLineOver(img, image.Point{X: 0, Y: y}, image.Point{X: width, Y: y + 12}, 2, color.RGBA{R: 255, G: 255, B: 255, A: 30})
+		}
+	}
+}
+
+func drawCurveResourceTarget(img *image.RGBA, variant int, points []image.Point) {
+	switch variant {
+	case 2:
+		drawPolylineOver(img, offsetImagePoints(points, 0, -4), 18, color.RGBA{R: 255, G: 255, B: 255, A: 178})
+		drawPolylineOver(img, offsetImagePoints(points, 0, -3), 13, color.RGBA{R: 255, G: 92, B: 173, A: 220})
+		drawPolylineOver(img, points, 7, color.RGBA{R: 192, G: 132, B: 252, A: 245})
+	case 3:
+		drawPolylineOver(img, offsetImagePoints(points, 0, -2), 17, color.RGBA{R: 255, G: 255, B: 255, A: 205})
+		drawPolylineOver(img, points, 8, color.RGBA{R: 248, G: 113, B: 113, A: 235})
+	default:
+		drawPolylineOver(img, offsetImagePoints(points, 0, 5), 16, color.RGBA{R: 15, G: 23, B: 42, A: 118})
+		drawPolylineOver(img, points, 10, color.RGBA{R: 125, G: 211, B: 252, A: 230})
+		drawPolylineOver(img, points, 4, color.RGBA{R: 224, G: 242, B: 254, A: 245})
+	}
+}
+
+func composeIconClickImage(base *image.RGBA, words []string, points []types.Point, resources []types.CaptchaResource) (*image.RGBA, []string) {
+	img := cloneRGBA(base)
+	icons := loadResourceImagesByType(resources, "icon_library")
+	labels := make([]string, 0, min(len(words), len(points)))
+	if len(icons) > 0 {
+		for i, point := range points {
+			icon := icons[i%len(icons)]
+			drawResourceIcon(img, icon.Image, point.X, point.Y, 44, clickPalette(i))
+			label := resourceDisplayLabel(icon.Resource, "")
+			if label == "" && i < len(words) {
+				label = words[i]
+			}
+			if label != "" {
+				labels = append(labels, label)
+			}
+		}
+		return img, labels
+	}
+	for i, point := range points {
+		drawGenericIconMarker(img, point.X, point.Y, i, clickPalette(i))
+		if i < len(words) {
+			labels = append(labels, words[i])
+		}
+	}
+	return img, labels
+}
+
+func drawResourceIcon(img *image.RGBA, icon image.Image, cx, cy, size int, accent color.RGBA) {
+	drawCircleOver(img, cx+2, cy+3, size/2+7, color.RGBA{R: 15, G: 23, B: 42, A: 60})
+	drawCircleOver(img, cx, cy, size/2+6, color.RGBA{R: 255, G: 255, B: 255, A: 224})
+	resized := resizeNearest(icon, size, size)
+	originX := cx - size/2
+	originY := cy - size/2
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			src := rgbaAt(resized, x, y)
+			if src.A <= 8 {
+				continue
+			}
+			c := src
+			if iconLooksMonochrome(src) {
+				c = accent
+				c.A = src.A
+			}
+			blendPixelOver(img, originX+x, originY+y, c)
+		}
+	}
+	drawCircleOutlineOver(img, cx, cy, size/2+7, 2, color.RGBA{R: 255, G: 255, B: 255, A: 180})
+}
+
+func iconLooksMonochrome(c color.RGBA) bool {
+	return absInt(int(c.R)-int(c.G)) < 10 && absInt(int(c.G)-int(c.B)) < 10
+}
+
+func resourceDisplayLabel(resource types.CaptchaResource, fallback string) string {
+	if label, ok := metadataString(resource.Metadata, "label", "title", "display_name", "category", "name"); ok && strings.TrimSpace(label) != "" {
+		return strings.TrimSpace(label)
+	}
+	if fallback != "" {
+		return fallback
+	}
+	if resource.Tag != "" && resource.Tag != "default" {
+		return resource.Tag
+	}
+	return ""
+}
+
+func drawGenericIconMarker(img *image.RGBA, cx, cy, index int, c color.RGBA) {
+	drawCircleOver(img, cx+2, cy+3, 28, color.RGBA{R: 15, G: 23, B: 42, A: 68})
+	drawCircleOver(img, cx, cy, 27, color.RGBA{R: 255, G: 255, B: 255, A: 228})
+	switch index % 4 {
+	case 0:
+		drawCircleOver(img, cx, cy, 15, c)
+	case 1:
+		fillRectOver(img, cx-15, cy-15, 30, 30, c)
+	case 2:
+		fillPolygonOver(img, []image.Point{{X: cx, Y: cy - 18}, {X: cx + 18, Y: cy + 14}, {X: cx - 18, Y: cy + 14}}, c)
+	default:
+		fillPolygonOver(img, []image.Point{{X: cx, Y: cy - 18}, {X: cx + 18, Y: cy}, {X: cx, Y: cy + 18}, {X: cx - 18, Y: cy}}, c)
+	}
+}
+
+func clickPalette(index int) color.RGBA {
+	palette := []color.RGBA{
+		{R: 37, G: 99, B: 235, A: 255},
+		{R: 20, G: 184, B: 166, A: 255},
+		{R: 225, G: 29, B: 72, A: 255},
+		{R: 126, G: 34, B: 206, A: 255},
+	}
+	return palette[index%len(palette)]
+}
+
+func composeJigsawImage(base *image.RGBA, answer types.Answer, parameters map[string]any) *image.RGBA {
+	out := cloneRGBA(base)
+	width := out.Bounds().Dx()
+	height := out.Bounds().Dy()
+	cols := max(1, renderParameterInt(parameters, "tile_cols", 2))
+	rows := max(1, renderParameterInt(parameters, "tile_rows", 2))
+	tileWidth := renderParameterInt(parameters, "tile_width", width/cols)
+	tileHeight := renderParameterInt(parameters, "tile_height", height/rows)
+	if tileWidth <= 0 {
+		tileWidth = max(1, width/cols)
+	}
+	if tileHeight <= 0 {
+		tileHeight = max(1, height/rows)
+	}
+	if len(answer.Points) >= 2 {
+		first := jigsawResourceTileRect(answer.Points[0], width, height, tileWidth, tileHeight)
+		second := jigsawResourceTileRect(answer.Points[1], width, height, tileWidth, tileHeight)
+		draw.Draw(out, first, base, second.Min, draw.Src)
+		draw.Draw(out, second, base, first.Min, draw.Src)
+	}
+	for x := tileWidth; x < width; x += tileWidth {
+		fillRectOver(out, x-1, 0, 2, height, color.RGBA{R: 255, G: 255, B: 255, A: 145})
+	}
+	for y := tileHeight; y < height; y += tileHeight {
+		fillRectOver(out, 0, y-1, width, 2, color.RGBA{R: 255, G: 255, B: 255, A: 145})
+	}
+	strokeRect(out, 0, 0, width, height, 1, color.RGBA{R: 203, G: 213, B: 225, A: 190})
+	return out
+}
+
+func jigsawResourceTileRect(point types.Point, width, height, tileWidth, tileHeight int) image.Rectangle {
+	x := clamp(point.X/tileWidth, 0, max(0, width/tileWidth-1)) * tileWidth
+	y := clamp(point.Y/tileHeight, 0, max(0, height/tileHeight-1)) * tileHeight
+	return image.Rect(x, y, min(width, x+tileWidth), min(height, y+tileHeight))
+}
+
 func opaqueRGBA(c color.RGBA) color.RGBA {
 	c.A = 255
 	return c
@@ -1181,6 +1538,10 @@ func fillRect(img *image.RGBA, x, y, width, height int, c color.RGBA) {
 	draw.Draw(img, image.Rect(x, y, x+width, y+height).Intersect(img.Bounds()), &image.Uniform{C: c}, image.Point{}, draw.Over)
 }
 
+func fillRectOver(img *image.RGBA, x, y, width, height int, c color.RGBA) {
+	fillRect(img, x, y, width, height, c)
+}
+
 func strokeRect(img *image.RGBA, x, y, width, height, thickness int, c color.RGBA) {
 	for i := 0; i < thickness; i++ {
 		fillRect(img, x+i, y+i, width-2*i, 1, c)
@@ -1223,6 +1584,135 @@ func drawCircle(img *image.RGBA, cx, cy, radius int, c color.RGBA) {
 			}
 		}
 	}
+}
+
+func drawCircleOver(img *image.RGBA, cx, cy, radius int, c color.RGBA) {
+	bounds := img.Bounds()
+	r2 := radius * radius
+	for y := cy - radius; y <= cy+radius; y++ {
+		for x := cx - radius; x <= cx+radius; x++ {
+			if x < bounds.Min.X || x >= bounds.Max.X || y < bounds.Min.Y || y >= bounds.Max.Y {
+				continue
+			}
+			dx, dy := x-cx, y-cy
+			if dx*dx+dy*dy <= r2 {
+				blendPixelOver(img, x, y, c)
+			}
+		}
+	}
+}
+
+func drawCircleOutlineOver(img *image.RGBA, cx, cy, radius, thickness int, c color.RGBA) {
+	bounds := img.Bounds()
+	outer := radius * radius
+	innerRadius := max(0, radius-thickness)
+	inner := innerRadius * innerRadius
+	for y := cy - radius; y <= cy+radius; y++ {
+		for x := cx - radius; x <= cx+radius; x++ {
+			if x < bounds.Min.X || x >= bounds.Max.X || y < bounds.Min.Y || y >= bounds.Max.Y {
+				continue
+			}
+			dx, dy := x-cx, y-cy
+			d2 := dx*dx + dy*dy
+			if d2 <= outer && d2 >= inner {
+				blendPixelOver(img, x, y, c)
+			}
+		}
+	}
+}
+
+func drawPolylineOver(img *image.RGBA, points []image.Point, width int, c color.RGBA) {
+	if len(points) == 0 {
+		return
+	}
+	if len(points) == 1 {
+		drawCircleOver(img, points[0].X, points[0].Y, max(1, width/2), c)
+		return
+	}
+	for i := 1; i < len(points); i++ {
+		drawLineOver(img, points[i-1], points[i], width, c)
+	}
+}
+
+func drawLineOver(img *image.RGBA, a, b image.Point, width int, c color.RGBA) {
+	steps := max(absInt(b.X-a.X), absInt(b.Y-a.Y))
+	if steps == 0 {
+		drawCircleOver(img, a.X, a.Y, max(1, width/2), c)
+		return
+	}
+	radius := max(1, width/2)
+	for i := 0; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		x := int(math.Round(float64(a.X)*(1-t) + float64(b.X)*t))
+		y := int(math.Round(float64(a.Y)*(1-t) + float64(b.Y)*t))
+		drawCircleOver(img, x, y, radius, c)
+	}
+}
+
+func fillPolygonOver(img *image.RGBA, points []image.Point, c color.RGBA) {
+	if len(points) < 3 {
+		return
+	}
+	minX, maxX := points[0].X, points[0].X
+	minY, maxY := points[0].Y, points[0].Y
+	for _, point := range points[1:] {
+		minX = min(minX, point.X)
+		maxX = max(maxX, point.X)
+		minY = min(minY, point.Y)
+		maxY = max(maxY, point.Y)
+	}
+	bounds := img.Bounds()
+	minX = clamp(minX, bounds.Min.X, bounds.Max.X-1)
+	maxX = clamp(maxX, bounds.Min.X, bounds.Max.X-1)
+	minY = clamp(minY, bounds.Min.Y, bounds.Max.Y-1)
+	maxY = clamp(maxY, bounds.Min.Y, bounds.Max.Y-1)
+	for y := minY; y <= maxY; y++ {
+		for x := minX; x <= maxX; x++ {
+			if pointInPolygon(float64(x)+0.5, float64(y)+0.5, points) {
+				blendPixelOver(img, x, y, c)
+			}
+		}
+	}
+}
+
+func pointInPolygon(x, y float64, points []image.Point) bool {
+	inside := false
+	j := len(points) - 1
+	for i := range points {
+		xi, yi := float64(points[i].X), float64(points[i].Y)
+		xj, yj := float64(points[j].X), float64(points[j].Y)
+		if (yi > y) != (yj > y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi {
+			inside = !inside
+		}
+		j = i
+	}
+	return inside
+}
+
+func offsetImagePoints(points []image.Point, dx, dy int) []image.Point {
+	out := make([]image.Point, 0, len(points))
+	for _, point := range points {
+		out = append(out, image.Point{X: point.X + dx, Y: point.Y + dy})
+	}
+	return out
+}
+
+func blendPixelOver(img *image.RGBA, x, y int, c color.RGBA) {
+	bounds := img.Bounds()
+	if x < bounds.Min.X || x >= bounds.Max.X || y < bounds.Min.Y || y >= bounds.Max.Y {
+		return
+	}
+	alpha := float64(c.A) / 255
+	if alpha <= 0 {
+		return
+	}
+	dst := rgbaAt(img, x, y)
+	img.SetRGBA(x, y, color.RGBA{
+		R: uint8(math.Round(float64(c.R)*alpha + float64(dst.R)*(1-alpha))),
+		G: uint8(math.Round(float64(c.G)*alpha + float64(dst.G)*(1-alpha))),
+		B: uint8(math.Round(float64(c.B)*alpha + float64(dst.B)*(1-alpha))),
+		A: 255,
+	})
 }
 
 func overlayTemplate(base *image.RGBA, template *image.RGBA) *image.RGBA {
@@ -1385,7 +1875,8 @@ func drawBlockGlyph(img *image.RGBA, value string, cx, cy, scale int, c color.RG
 	height := len(pattern) * scale
 	startX := cx - width/2
 	startY := cy - height/2
-	shadow := color.RGBA{R: 255, G: 255, B: 255, A: 230}
+	shadow := color.RGBA{R: 255, G: 255, B: 255, A: 235}
+	darkEdge := color.RGBA{R: 15, G: 23, B: 42, A: 84}
 	for row, line := range pattern {
 		for col, pixel := range line {
 			if pixel != '1' {
@@ -1393,6 +1884,10 @@ func drawBlockGlyph(img *image.RGBA, value string, cx, cy, scale int, c color.RG
 			}
 			x := startX + col*scale
 			y := startY + row*scale
+			fillRect(img, x-1, y, scale, scale, darkEdge)
+			fillRect(img, x+1, y, scale, scale, darkEdge)
+			fillRect(img, x, y-1, scale, scale, darkEdge)
+			fillRect(img, x, y+1, scale, scale, darkEdge)
 			fillRect(img, x+2, y+2, scale, scale, shadow)
 			fillRect(img, x, y, scale, scale, c)
 		}
@@ -1427,6 +1922,156 @@ var glyphPatterns = map[string][]string{
 		"10000",
 		"01111",
 	},
+	"山": {
+		"000010000",
+		"000010000",
+		"100010001",
+		"100010001",
+		"100010001",
+		"100010001",
+		"111111111",
+		"100000001",
+		"100000001",
+	},
+	"水": {
+		"000010000",
+		"100010001",
+		"010010010",
+		"001010100",
+		"000111000",
+		"001010100",
+		"010010010",
+		"100010001",
+		"000010000",
+	},
+	"火": {
+		"000010000",
+		"010010010",
+		"010010010",
+		"001010100",
+		"000111000",
+		"001010100",
+		"010000010",
+		"100000001",
+		"000000000",
+	},
+	"木": {
+		"000010000",
+		"000010000",
+		"000010000",
+		"111111111",
+		"001010100",
+		"010010010",
+		"100010001",
+		"000010000",
+		"000010000",
+	},
+	"田": {
+		"111111111",
+		"100010001",
+		"100010001",
+		"111111111",
+		"100010001",
+		"100010001",
+		"100010001",
+		"111111111",
+		"000000000",
+	},
+	"日": {
+		"111111111",
+		"100000001",
+		"100000001",
+		"111111111",
+		"100000001",
+		"100000001",
+		"100000001",
+		"111111111",
+		"000000000",
+	},
+	"月": {
+		"011111100",
+		"010000100",
+		"010000100",
+		"011111100",
+		"010000100",
+		"010000100",
+		"010000100",
+		"100001100",
+		"000000000",
+	},
+	"口": {
+		"111111111",
+		"100000001",
+		"100000001",
+		"100000001",
+		"100000001",
+		"100000001",
+		"100000001",
+		"111111111",
+		"000000000",
+	},
+	"中": {
+		"000010000",
+		"111111111",
+		"100010001",
+		"100010001",
+		"111111111",
+		"000010000",
+		"000010000",
+		"000010000",
+		"000010000",
+	},
+	"王": {
+		"111111111",
+		"000010000",
+		"000010000",
+		"011111110",
+		"000010000",
+		"000010000",
+		"000010000",
+		"111111111",
+		"000000000",
+	},
+	"文": {
+		"000010000",
+		"000010000",
+		"111111111",
+		"000010000",
+		"000101000",
+		"001000100",
+		"010000010",
+		"100000001",
+		"000000000",
+	},
+}
+
+func anyInt(value any, fallback int) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(math.Round(typed))
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err == nil {
+			return int(parsed)
+		}
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func clamp(value, min, max int) int {
