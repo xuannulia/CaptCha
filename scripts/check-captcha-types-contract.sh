@@ -54,7 +54,7 @@ grep -Fq 'function galleryUploadDefaults' web/admin/src/main.tsx ||
 	fail "admin resource upload must derive captcha/resource defaults from gallery type"
 grep -Fq 'captchaType: "AUTO", resourceType: "background_library"' web/admin/src/main.tsx ||
 	fail "admin background gallery upload must default captcha type to AUTO"
-for resource_type in background_library grid_category_library icon icon_library degree_template curve_template gesture_template jigsaw_template; do
+for resource_type in background_library concat_background_library jigsaw_background_library grid_category_library icon icon_library degree_template curve_template gesture_template jigsaw_template; do
 	grep -Eq "(\"${resource_type}\"|${resource_type}:)" internal/resource/validator.go ||
 		fail "resource validator must allow $resource_type"
 	grep -Eq "(\"${resource_type}\"|${resource_type}:)" web/admin/src/main.tsx ||

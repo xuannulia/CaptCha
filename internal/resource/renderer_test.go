@@ -667,7 +667,7 @@ func TestApplyVisualsUsesConcatTemplateJSON(t *testing.T) {
 	composed := ApplyVisuals(payload, types.Answer{Offset: 10}, []types.CaptchaResource{
 		{
 			ID:           "res_background",
-			ResourceType: "background_image",
+			ResourceType: "concat_background_image",
 			StorageType:  "file",
 			URI:          backgroundPath,
 			Status:       "active",
@@ -725,6 +725,83 @@ func TestApplyVisualsUsesConcatTemplateJSON(t *testing.T) {
 	if _, ok := composed.Parameters["split_x"]; ok {
 		t.Fatalf("concat resource rendering should not expose legacy vertical split_x: %+v", composed.Parameters)
 	}
+}
+
+func TestApplyVisualsUsesDedicatedConcatBackground(t *testing.T) {
+	t.Parallel()
+
+	genericPath, _ := writeTestPNG(t, 100, 40, color.RGBA{R: 25, G: 120, B: 210, A: 255})
+	concatPath, _ := writeTestPNG(t, 100, 40, color.RGBA{R: 210, G: 80, B: 40, A: 255})
+	payload := types.RenderPayload{
+		Type:  types.CaptchaConcat,
+		View:  types.View{Width: 100, Height: 40},
+		Image: "fallback-image",
+		Piece: "fallback-piece",
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{Offset: 10}, []types.CaptchaResource{
+		{
+			ID:           "res_generic_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          genericPath,
+			Status:       "active",
+		},
+		{
+			ID:           "res_concat_background",
+			ResourceType: "concat_background_image",
+			StorageType:  "file",
+			URI:          concatPath,
+			Status:       "active",
+		},
+	})
+
+	if composed.Image == payload.Image || composed.Piece == payload.Piece {
+		t.Fatalf("expected concat to be composed from dedicated background")
+	}
+	image := decodePNGDataURL(t, composed.Image)
+	assertPixel(t, image, 50, 30, color.RGBA{R: 210, G: 80, B: 40, A: 255})
+}
+
+func TestApplyVisualsUsesDedicatedJigsawBackground(t *testing.T) {
+	t.Parallel()
+
+	genericPath, _ := writeTestPNG(t, 120, 80, color.RGBA{R: 25, G: 120, B: 210, A: 255})
+	jigsawPath, _ := writeTestPNG(t, 120, 80, color.RGBA{R: 80, G: 170, B: 70, A: 255})
+	payload := types.RenderPayload{
+		Type:  types.CaptchaJigsaw,
+		View:  types.View{Width: 120, Height: 80},
+		Image: "fallback-image",
+		Parameters: map[string]any{
+			"tile_cols":   2,
+			"tile_rows":   2,
+			"tile_width":  60,
+			"tile_height": 40,
+		},
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{}, []types.CaptchaResource{
+		{
+			ID:           "res_generic_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          genericPath,
+			Status:       "active",
+		},
+		{
+			ID:           "res_jigsaw_background",
+			ResourceType: "jigsaw_background_image",
+			StorageType:  "file",
+			URI:          jigsawPath,
+			Status:       "active",
+		},
+	})
+
+	if composed.Image == payload.Image {
+		t.Fatalf("expected jigsaw to be composed from dedicated background")
+	}
+	image := decodePNGDataURL(t, composed.Image)
+	assertPixel(t, image, 5, 5, color.RGBA{R: 80, G: 170, B: 70, A: 255})
 }
 
 func TestApplyVisualsUsesFontMetadata(t *testing.T) {
@@ -1013,12 +1090,28 @@ func TestApplyVisualsComposesSupportedCaptchaTypes(t *testing.T) {
 	t.Parallel()
 
 	path, _ := writeTestPNG(t, 40, 30, color.RGBA{R: 25, G: 120, B: 210, A: 255})
+	concatPath, _ := writeTestPNG(t, 40, 30, color.RGBA{R: 210, G: 80, B: 40, A: 255})
+	jigsawPath, _ := writeTestPNG(t, 40, 30, color.RGBA{R: 80, G: 170, B: 70, A: 255})
 	resources := []types.CaptchaResource{
 		{
 			ID:           "res_local_background",
 			ResourceType: "background_image",
 			StorageType:  "file",
 			URI:          path,
+			Status:       "active",
+		},
+		{
+			ID:           "res_concat_background",
+			ResourceType: "concat_background_image",
+			StorageType:  "file",
+			URI:          concatPath,
+			Status:       "active",
+		},
+		{
+			ID:           "res_jigsaw_background",
+			ResourceType: "jigsaw_background_image",
+			StorageType:  "file",
+			URI:          jigsawPath,
 			Status:       "active",
 		},
 	}

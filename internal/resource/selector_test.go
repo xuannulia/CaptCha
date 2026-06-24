@@ -213,6 +213,90 @@ func TestSupportsGridImageClickWithCategoryLibrary(t *testing.T) {
 	}
 }
 
+func TestConcatAndJigsawRequireDedicatedBackgroundLibraries(t *testing.T) {
+	t.Parallel()
+
+	genericConcatResources := []types.CaptchaResource{
+		{
+			ID:           "res_generic_background",
+			CaptchaType:  types.CaptchaConcat,
+			ResourceType: "background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/generic.png",
+			Status:       "active",
+		},
+		{
+			ID:           "res_concat_template",
+			CaptchaType:  types.CaptchaConcat,
+			ResourceType: "concat_template",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/concat-template.json",
+			Status:       "active",
+		},
+	}
+	if SupportsCaptchaType(genericConcatResources, types.CaptchaConcat, "login", "") {
+		t.Fatalf("concat should not be resource-supported by the generic background library")
+	}
+
+	dedicatedResources := append(genericConcatResources,
+		types.CaptchaResource{
+			ID:           "res_concat_background_a",
+			CaptchaType:  types.CaptchaConcat,
+			ResourceType: "concat_background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/concat-a.png",
+			Status:       "active",
+		},
+		types.CaptchaResource{
+			ID:           "res_concat_background_b",
+			CaptchaType:  types.CaptchaConcat,
+			ResourceType: "concat_background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/concat-b.png",
+			Status:       "active",
+		},
+	)
+	selected := Select(dedicatedResources, types.CaptchaConcat, "login", "")
+	if !hasSelectedResource(selected, "concat_background_library", "res_concat_background_a") ||
+		!hasSelectedResource(selected, "concat_background_library", "res_concat_background_b") ||
+		hasSelectedResource(selected, "background_library", "res_generic_background") {
+		t.Fatalf("expected concat to keep only dedicated background libraries, got %+v", selected)
+	}
+	if !SupportsCaptchaType(dedicatedResources, types.CaptchaConcat, "login", "") {
+		t.Fatalf("concat should be supported by dedicated background library plus template")
+	}
+
+	jigsawResources := []types.CaptchaResource{
+		{
+			ID:           "res_generic_jigsaw_background",
+			CaptchaType:  types.CaptchaJigsaw,
+			ResourceType: "background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/generic-jigsaw.png",
+			Status:       "active",
+		},
+	}
+	if SupportsCaptchaType(jigsawResources, types.CaptchaJigsaw, "login", "") {
+		t.Fatalf("jigsaw should not be resource-supported by the generic background library")
+	}
+	jigsawResources = append(jigsawResources, types.CaptchaResource{
+		ID:           "res_jigsaw_background",
+		CaptchaType:  types.CaptchaJigsaw,
+		ResourceType: "jigsaw_background_library",
+		StorageType:  "url",
+		URI:          "https://cdn.example.test/jigsaw.png",
+		Status:       "active",
+	})
+	selected = Select(jigsawResources, types.CaptchaJigsaw, "login", "")
+	if !hasSelectedResource(selected, "jigsaw_background_library", "res_jigsaw_background") ||
+		hasSelectedResource(selected, "background_library", "res_generic_jigsaw_background") {
+		t.Fatalf("expected jigsaw to keep only dedicated background libraries, got %+v", selected)
+	}
+	if !SupportsCaptchaType(jigsawResources, types.CaptchaJigsaw, "login", "") {
+		t.Fatalf("jigsaw should be supported by dedicated background library")
+	}
+}
+
 func TestChooseCaptchaTypeRespectsExplicitType(t *testing.T) {
 	t.Parallel()
 
@@ -220,6 +304,15 @@ func TestChooseCaptchaTypeRespectsExplicitType(t *testing.T) {
 	if chosen != types.CaptchaConcat {
 		t.Fatalf("expected explicit concat to win, got %s", chosen)
 	}
+}
+
+func hasSelectedResource(resources []types.CaptchaResource, resourceType, id string) bool {
+	for _, item := range resources {
+		if item.ResourceType == resourceType && item.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAttachSanitizesRenderMetadata(t *testing.T) {

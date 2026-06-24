@@ -40,6 +40,38 @@ func TestValidateAndNormalizeResource(t *testing.T) {
 	}
 }
 
+func TestValidateAndNormalizeDedicatedBackgroundResourceTypes(t *testing.T) {
+	t.Parallel()
+
+	for _, resourceType := range []string{
+		"concat_background_image",
+		"concat_background_library",
+		"jigsaw_background_image",
+		"jigsaw_background_library",
+	} {
+		resourceType := resourceType
+		t.Run(resourceType, func(t *testing.T) {
+			t.Parallel()
+
+			resource, err := ValidateAndNormalize(types.CaptchaResource{
+				CaptchaType:  types.CaptchaConcat,
+				ResourceType: resourceType,
+				StorageType:  "url",
+				URI:          "https://cdn.example.test/background.png",
+				Metadata: map[string]any{
+					"mime_type": "image/png",
+				},
+			})
+			if err != nil {
+				t.Fatalf("validate dedicated background resource: %v", err)
+			}
+			if resource.ResourceType != resourceType || resource.Metadata["resource_family"] != "image" {
+				t.Fatalf("unexpected normalized resource: %+v", resource)
+			}
+		})
+	}
+}
+
 func TestValidateAndNormalizeResourceRejectsUnsafeValues(t *testing.T) {
 	t.Parallel()
 

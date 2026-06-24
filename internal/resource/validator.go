@@ -18,20 +18,24 @@ const (
 )
 
 var allowedResourceTypes = map[string]struct{}{
-	"background_image":      {},
-	"background_library":    {},
-	"rotate_library":        {},
-	"grid_category_library": {},
-	"slider_template":       {},
-	"rotate_template":       {},
-	"concat_template":       {},
-	"font":                  {},
-	"icon":                  {},
-	"icon_library":          {},
-	"degree_template":       {},
-	"curve_template":        {},
-	"gesture_template":      {},
-	"jigsaw_template":       {},
+	"background_image":          {},
+	"background_library":        {},
+	"concat_background_image":   {},
+	"concat_background_library": {},
+	"jigsaw_background_image":   {},
+	"jigsaw_background_library": {},
+	"rotate_library":            {},
+	"grid_category_library":     {},
+	"slider_template":           {},
+	"rotate_template":           {},
+	"concat_template":           {},
+	"font":                      {},
+	"icon":                      {},
+	"icon_library":              {},
+	"degree_template":           {},
+	"curve_template":            {},
+	"gesture_template":          {},
+	"jigsaw_template":           {},
 }
 
 var allowedStorageTypes = map[string]struct{}{

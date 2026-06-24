@@ -266,12 +266,18 @@ func hasAnySelectedResourceType(selectedTypes map[string]struct{}, alternatives 
 }
 
 func Select(resources []types.CaptchaResource, captchaType types.CaptchaType, scene, tag string) []types.CaptchaResource {
+	selectableTypes := selectableResourceTypes(captchaType)
 	selectedByType := make(map[string]types.CaptchaResource)
 	collectionByType := make(map[string][]types.CaptchaResource)
 	collectionScoreByType := make(map[string]int)
 	for _, item := range resources {
 		if !isActive(item.Status) || !matchesType(item.CaptchaType, captchaType) || !matchesScene(item.Scene, scene) || !matchesTag(item.Tag, tag) || item.ResourceType == "" || item.URI == "" {
 			continue
+		}
+		if len(selectableTypes) > 0 {
+			if _, ok := selectableTypes[strings.ToLower(strings.TrimSpace(item.ResourceType))]; !ok {
+				continue
+			}
 		}
 		if isCollectionResourceType(item.ResourceType) {
 			score := resourceScore(item, captchaType, scene, tag)
@@ -307,9 +313,26 @@ func Select(resources []types.CaptchaResource, captchaType types.CaptchaType, sc
 	return selected
 }
 
+func selectableResourceTypes(captchaType types.CaptchaType) map[string]struct{} {
+	groups := requiredResourceTypeGroups(captchaType)
+	if len(groups) == 0 {
+		return nil
+	}
+	typesByName := make(map[string]struct{})
+	for _, group := range groups {
+		for _, resourceType := range group {
+			resourceType = strings.ToLower(strings.TrimSpace(resourceType))
+			if resourceType != "" {
+				typesByName[resourceType] = struct{}{}
+			}
+		}
+	}
+	return typesByName
+}
+
 func isCollectionResourceType(resourceType string) bool {
 	switch strings.ToLower(strings.TrimSpace(resourceType)) {
-	case "background_library", "rotate_library", "grid_category_library", "icon_library":
+	case "background_library", "concat_background_library", "jigsaw_background_library", "rotate_library", "grid_category_library", "icon_library":
 		return true
 	default:
 		return false
@@ -439,13 +462,15 @@ func requiredResourceTypeGroups(captchaType types.CaptchaType) [][]string {
 	case types.CaptchaRotate:
 		return [][]string{{"rotate_library"}}
 	case types.CaptchaConcat:
-		return [][]string{{"background_image", "background_library"}, {"concat_template"}}
+		return [][]string{{"concat_background_image", "concat_background_library"}, {"concat_template"}}
 	case types.CaptchaWordImageClick:
 		return [][]string{{"background_image", "background_library"}, {"font"}}
 	case types.CaptchaImageClick:
 		return [][]string{{"background_image", "background_library"}, {"icon", "icon_library"}}
 	case types.CaptchaRotateDegree:
 		return [][]string{{"background_image", "background_library"}, {"degree_template"}}
+	case types.CaptchaJigsaw:
+		return [][]string{{"jigsaw_background_image", "jigsaw_background_library"}}
 	case types.CaptchaGridImageClick:
 		return [][]string{{"grid_category_library"}}
 	default:

@@ -71,7 +71,7 @@ type Resource = {
 };
 
 type ResourceFormValues = {
-  gallery_type?: "background" | "rotate" | "grid" | "icon";
+  gallery_type?: "background" | "concatBackground" | "jigsawBackground" | "rotate" | "grid" | "icon";
   category?: string;
   label?: string;
 };
@@ -240,6 +240,10 @@ const captchaLabels: Record<string, string> = {
 const resourceTypeLabels: Record<string, string> = {
   background_image: "单张背景",
   background_library: "背景图库",
+  concat_background_image: "滑动还原单张背景",
+  concat_background_library: "滑动还原图库",
+  jigsaw_background_image: "乱序拼图单张背景",
+  jigsaw_background_library: "乱序拼图图库",
   rotate_library: "旋转校准图库",
   grid_category_library: "图片格子分类图库",
   slider_template: "滑块模板",
@@ -268,6 +272,8 @@ const statusLabels: Record<string, string> = {
 const optionLabels = { ...captchaLabels, ...resourceTypeLabels, ...storageLabels, ...statusLabels };
 const resourceLibraryTitles: Record<string, string> = {
   background: "背景图库",
+  concatBackground: "滑动还原图库",
+  jigsawBackground: "乱序拼图图库",
   rotate: "旋转校准图库",
   grid: "图片格子图库",
   icon: "图标图库",
@@ -277,12 +283,16 @@ const resourceLibraryTitles: Record<string, string> = {
 const resourceFileFilters = [
   { key: "all", label: "全部文件" },
   { key: "background", label: "背景图库" },
+  { key: "concatBackground", label: "滑动还原图库" },
+  { key: "jigsawBackground", label: "乱序拼图图库" },
   { key: "rotate", label: "旋转校准图库" },
   { key: "grid", label: "图片格子图库" },
   { key: "icon", label: "图标图库" }
 ];
 const galleryUploadTypes = [
   { value: "background", label: "背景图库" },
+  { value: "concatBackground", label: "滑动还原图库" },
+  { value: "jigsawBackground", label: "乱序拼图图库" },
   { value: "rotate", label: "旋转校准图库" },
   { value: "grid", label: "图片格子图库" },
   { value: "icon", label: "图标图库" }
@@ -645,6 +655,8 @@ function PolicySimulator() {
 
 function resourceLibraryKey(row: Resource) {
   if (row.resource_type === "background_library") return "background";
+  if (row.resource_type === "concat_background_image" || row.resource_type === "concat_background_library") return "concatBackground";
+  if (row.resource_type === "jigsaw_background_image" || row.resource_type === "jigsaw_background_library") return "jigsawBackground";
   if (row.resource_type === "rotate_library") return "rotate";
   if (row.resource_type === "grid_category_library") return "grid";
   if (row.resource_type === "icon_library") return "icon";
@@ -675,18 +687,18 @@ function resourceLibraryTitle(key: string) {
 
 function isPrimaryGalleryResource(row: Resource) {
   const key = resourceLibraryKey(row);
-  return key === "background" || key === "rotate" || key === "grid" || key === "icon";
+  return key === "background" || key === "concatBackground" || key === "jigsawBackground" || key === "rotate" || key === "grid" || key === "icon";
 }
 
 function countResourceFileFilters(resources: Resource[]) {
   return resources.reduce<Record<string, number>>((counts, row) => {
     const key = resourceLibraryKey(row);
     counts.all = (counts.all || 0) + 1;
-    if (key === "background" || key === "rotate" || key === "grid" || key === "icon") {
+    if (key === "background" || key === "concatBackground" || key === "jigsawBackground" || key === "rotate" || key === "grid" || key === "icon") {
       counts[key] = (counts[key] || 0) + 1;
     }
     return counts;
-  }, { all: 0, background: 0, rotate: 0, grid: 0, icon: 0 });
+  }, { all: 0, background: 0, concatBackground: 0, jigsawBackground: 0, rotate: 0, grid: 0, icon: 0 });
 }
 
 function matchesResourceFileFilter(row: Resource, filter: string) {
@@ -694,6 +706,12 @@ function matchesResourceFileFilter(row: Resource, filter: string) {
 }
 
 function galleryUploadDefaults(galleryType?: string) {
+  if (galleryType === "concatBackground") {
+    return { captchaType: "CONCAT", resourceType: "concat_background_library", tag: "default" };
+  }
+  if (galleryType === "jigsawBackground") {
+    return { captchaType: "JIGSAW", resourceType: "jigsaw_background_library", tag: "default" };
+  }
   if (galleryType === "grid") {
     return { captchaType: "GRID_IMAGE_CLICK", resourceType: "grid_category_library", tag: "default" };
   }

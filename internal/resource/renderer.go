@@ -150,7 +150,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		delete(parameters, "initial_angle")
 		payload.Parameters = parameters
 	case types.CaptchaConcat:
-		background, ok := loadBackgroundResourceImage(resources)
+		background, ok := loadConcatBackgroundResourceImage(resources)
 		if !ok {
 			return payload
 		}
@@ -186,7 +186,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 			payload.Prompt = "依次点击：" + strings.Join(words, "、")
 		}
 	case types.CaptchaJigsaw:
-		background, ok := loadBackgroundResourceImage(resources)
+		background, ok := loadJigsawBackgroundResourceImage(resources)
 		if !ok {
 			return payload
 		}
@@ -205,10 +205,22 @@ func loadResourceImageByType(resources []types.CaptchaResource, resourceType str
 }
 
 func loadBackgroundResourceImage(resources []types.CaptchaResource) (image.Image, bool) {
-	if img, ok := loadResourceImageByType(resources, "background_image"); ok {
+	return loadTypedBackgroundResourceImage(resources, "background_image", "background_library")
+}
+
+func loadConcatBackgroundResourceImage(resources []types.CaptchaResource) (image.Image, bool) {
+	return loadTypedBackgroundResourceImage(resources, "concat_background_image", "concat_background_library")
+}
+
+func loadJigsawBackgroundResourceImage(resources []types.CaptchaResource) (image.Image, bool) {
+	return loadTypedBackgroundResourceImage(resources, "jigsaw_background_image", "jigsaw_background_library")
+}
+
+func loadTypedBackgroundResourceImage(resources []types.CaptchaResource, singleType, libraryType string) (image.Image, bool) {
+	if img, ok := loadResourceImageByType(resources, singleType); ok {
 		return img, true
 	}
-	return loadResourceImageByType(resources, "background_library")
+	return loadResourceImageByType(resources, libraryType)
 }
 
 func loadRotateResourceImage(resources []types.CaptchaResource) (image.Image, bool) {
@@ -696,7 +708,7 @@ func svgRenderSize(resource types.CaptchaResource) int {
 		return clamp(int(value), 16, 512)
 	}
 	switch strings.ToLower(strings.TrimSpace(resource.ResourceType)) {
-	case "background_image", "background_library":
+	case "background_image", "background_library", "concat_background_image", "concat_background_library", "jigsaw_background_image", "jigsaw_background_library":
 		return 320
 	case "rotate_library":
 		return 220
