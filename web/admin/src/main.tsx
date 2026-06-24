@@ -242,6 +242,60 @@ const resourceTypes = [
   "jigsaw_template",
   "pow_challenge"
 ];
+const captchaLabels: Record<string, string> = {
+  AUTO: "自动",
+  PROOF_OF_WORK: "工作量验证",
+  GESTURE: "手势描绘",
+  CURVE: "滑动曲线 V1",
+  CURVE_V2: "滑动曲线 V2",
+  CURVE_V3: "滑动曲线 V3",
+  SLIDER: "滑块拼图",
+  SLIDER_V2: "增强滑块拼图",
+  ROTATE: "旋转矫正",
+  CONCAT: "滑动还原",
+  ROTATE_DEGREE: "角度指针",
+  WORD_IMAGE_CLICK: "文字点选",
+  IMAGE_CLICK: "图标点选",
+  JIGSAW: "乱序拼图",
+  GRID_IMAGE_CLICK: "图片格子"
+};
+const resourceTypeLabels: Record<string, string> = {
+  background_image: "单张背景",
+  background_library: "背景图库",
+  grid_category_library: "图片格子分类图库",
+  slider_template: "滑块模板",
+  rotate_template: "旋转模板",
+  concat_template: "滑动还原模板",
+  font: "字体",
+  icon: "单个图标",
+  icon_library: "图标图库",
+  degree_template: "角度模板",
+  curve_template: "曲线模板",
+  gesture_template: "手势模板",
+  jigsaw_template: "拼图模板",
+  pow_challenge: "工作量素材"
+};
+const storageLabels: Record<string, string> = {
+  embedded: "内置",
+  classpath: "类路径",
+  file: "本地文件",
+  url: "URL",
+  object_storage: "对象存储",
+  database: "数据库"
+};
+const statusLabels: Record<string, string> = {
+  active: "启用",
+  disabled: "停用"
+};
+const optionLabels = { ...captchaLabels, ...resourceTypeLabels, ...storageLabels, ...statusLabels };
+const resourceLibraryFilters = [
+  { key: "all", label: "全部" },
+  { key: "background", label: "背景图库" },
+  { key: "grid", label: "图片格子" },
+  { key: "icon", label: "图标图库" },
+  { key: "template", label: "模板" },
+  { key: "single", label: "单图" }
+];
 const adminRoutes = [
   { key: "overview", path: "/overview", icon: <BarChartOutlined />, label: "概览", element: <Overview /> },
   { key: "applications", path: "/applications", icon: <ProjectOutlined />, label: "应用", element: <Applications /> },
@@ -598,15 +652,132 @@ function PolicySimulator() {
   );
 }
 
+function resourceLibraryKey(row: Resource) {
+  if (row.resource_type === "background_library") return "background";
+  if (row.resource_type === "grid_category_library") return "grid";
+  if (row.resource_type === "icon_library") return "icon";
+  if (row.resource_type.endsWith("_template") || row.resource_type === "font" || row.resource_type === "pow_challenge") return "template";
+  if (row.resource_type === "background_image" || row.resource_type === "icon") return "single";
+  return "single";
+}
+
+function countResourceLibraries(resources: Resource[]) {
+  return resources.reduce<Record<string, number>>((counts, row) => {
+    const key = resourceLibraryKey(row);
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function groupGalleryResources(resources: Resource[]) {
+  const groups = new Map<string, { key: string; title: string; items: Resource[] }>();
+  for (const row of resources) {
+    const library = resourceLibraryKey(row);
+    const category = resourceCategory(row);
+    const title = library === "grid" && category
+      ? `图片格子 / ${category}`
+      : `${resourceLibraryTitle(library)} / ${captchaLabel(row.captcha_type || "AUTO")}`;
+    const key = `${library}:${row.captcha_type || "AUTO"}:${category || row.tag || "default"}`;
+    const group = groups.get(key) || { key, title, items: [] };
+    group.items.push(row);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values()).sort((a, b) => a.title.localeCompare(b.title, "zh-Hans-CN"));
+}
+
+function resourceLibraryTitle(key: string) {
+  return resourceLibraryFilters.find((item) => item.key === key)?.label || "资源";
+}
+
+function captchaLabel(value: string) {
+  return captchaLabels[value] || value;
+}
+
+function resourceTypeLabel(value: string) {
+  return resourceTypeLabels[value] || value;
+}
+
+function storageLabel(value: string) {
+  return storageLabels[value] || value;
+}
+
+function statusLabel(value: string) {
+  return statusLabels[value] || value;
+}
+
+function resourceCategory(row: Resource) {
+  return metadataText(row, "label") || metadataText(row, "category");
+}
+
+function resourceTitle(row: Resource) {
+  return resourceCategory(row) || resourceTypeLabel(row.resource_type);
+}
+
+function resourceDimensions(row: Resource) {
+  const width = metadataText(row, "width");
+  const height = metadataText(row, "height");
+  return width && height ? `${width}x${height}` : "未声明尺寸";
+}
+
+function resourcePlaceholder(row: Resource) {
+  const title = resourceCategory(row) || resourceTypeLabel(row.resource_type);
+  return title.slice(0, 4);
+}
+
+function compactURI(uri: string) {
+  if (!uri) return "-";
+  if (uri.length <= 42) return uri;
+  return `${uri.slice(0, 24)}...${uri.slice(-12)}`;
+}
+
+function resourcePreviewSrc(row: Resource) {
+  const dataURL = metadataText(row, "data_url", "data_uri");
+  if (dataURL?.startsWith("data:image/")) return dataURL;
+  if (/^https?:\/\//i.test(row.uri)) return row.uri;
+  if (/^data:image\//i.test(row.uri)) return row.uri;
+  return "";
+}
+
+function metadataText(row: Resource, ...keys: string[]) {
+  for (const key of keys) {
+    const value = row.metadata?.[key];
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number") return String(value);
+  }
+  return "";
+}
+
 function Resources() {
   const { data, isLoading } = useList<Resource>("resources", "/api/v1/admin/resources");
   const [open, setOpen] = useState(false);
+  const [activeLibrary, setActiveLibrary] = useState("all");
   const [form] = Form.useForm();
   const mutation = usePost<Resource>("resources");
+  const resources = data || [];
+  const visibleResources = useMemo(
+    () => activeLibrary === "all" ? resources : resources.filter((item) => resourceLibraryKey(item) === activeLibrary),
+    [activeLibrary, resources]
+  );
+  const groupedResources = useMemo(() => groupGalleryResources(visibleResources), [visibleResources]);
+  const libraryCounts = useMemo(() => countResourceLibraries(resources), [resources]);
+  const openCreate = (values: Partial<ResourceFormValues> = {}) => {
+    form.setFieldsValue({
+      client_id: "demo",
+      scene: "",
+      captcha_type: "AUTO",
+      resource_type: "background_library",
+      storage_type: "url",
+      uri: "",
+      tag: "default",
+      status: "active",
+      ...values
+    });
+    setOpen(true);
+  };
   const columns: ColumnsType<Resource> = [
-    { title: "类型", dataIndex: "resource_type" },
-    { title: "验证码", dataIndex: "captcha_type" },
-    { title: "来源", dataIndex: "storage_type" },
+    { title: "图库", render: (_, row) => resourceTypeLabel(row.resource_type) },
+    { title: "验证码类别", render: (_, row) => captchaLabel(row.captcha_type || "AUTO") },
+    { title: "来源", render: (_, row) => storageLabel(row.storage_type) },
     { title: "场景", dataIndex: "scene", render: (value) => value || "-" },
     { title: "标签", dataIndex: "tag" },
     {
@@ -625,12 +796,82 @@ function Resources() {
         return width && height ? `${width}x${height}` : "-";
       }
     },
-    { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : "default"}>{row.status}</Tag> }
+    { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag> }
   ];
   return (
-    <Card title="资源" extra={<Button type="primary" onClick={() => setOpen(true)}>新增</Button>}>
-      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title="新增资源" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="保存">
+    <Card
+      title="资源图库"
+      extra={(
+        <Space wrap>
+          <Button onClick={() => openCreate({ resource_type: "background_library", captcha_type: "AUTO", tag: "default" })}>新增背景</Button>
+          <Button onClick={() => openCreate({ resource_type: "grid_category_library", captcha_type: "GRID_IMAGE_CLICK", tag: "default", category: "", label: "" })}>新增图片格子</Button>
+          <Button onClick={() => openCreate({ resource_type: "icon_library", captcha_type: "IMAGE_CLICK", tag: "default" })}>新增图标</Button>
+          <Button type="primary" onClick={() => openCreate()}>新增资源</Button>
+        </Space>
+      )}
+    >
+      <div className="resource-library-tabs">
+        {resourceLibraryFilters.map((item) => (
+          <button
+            key={item.key}
+            className={activeLibrary === item.key ? "active" : ""}
+            type="button"
+            onClick={() => setActiveLibrary(item.key)}
+          >
+            <span>{item.label}</span>
+            <strong>{item.key === "all" ? resources.length : libraryCounts[item.key] || 0}</strong>
+          </button>
+        ))}
+      </div>
+      {isLoading ? (
+        <div className="resource-gallery-empty">加载中</div>
+      ) : groupedResources.length === 0 ? (
+        <div className="resource-gallery-empty">暂无资源</div>
+      ) : (
+        <div className="resource-gallery">
+          {groupedResources.map((group) => (
+            <section className="resource-library-section" key={group.key}>
+              <div className="resource-library-heading">
+                <h3>{group.title}</h3>
+                <span>{group.items.length} 张</span>
+              </div>
+              <div className="resource-gallery-grid">
+                {group.items.map((row) => {
+                  const preview = resourcePreviewSrc(row);
+                  return (
+                    <article className="resource-tile" key={row.id}>
+                      <div className="resource-thumb">
+                        {preview ? <img alt="" src={preview} /> : <span>{resourcePlaceholder(row)}</span>}
+                      </div>
+                      <div className="resource-tile-body">
+                        <div className="resource-tile-title">
+                          <strong>{resourceTitle(row)}</strong>
+                          <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag>
+                        </div>
+                        <div className="resource-tile-meta">
+                          <span>{captchaLabel(row.captcha_type || "AUTO")}</span>
+                          <span>{storageLabel(row.storage_type)}</span>
+                          <span>{resourceDimensions(row)}</span>
+                        </div>
+                        <div className="resource-tile-meta">
+                          <span>{row.scene || "全场景"}</span>
+                          <span>{row.tag || "default"}</span>
+                        </div>
+                        <div className="resource-uri" title={row.uri}>{compactURI(row.uri)}</div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+      <details className="resource-table-wrap">
+        <summary>明细列表</summary>
+        <Table rowKey="id" loading={isLoading} columns={columns} dataSource={visibleResources} pagination={false} size="small" />
+      </details>
+      <Modal title="新增图库资源" open={open} onCancel={() => { setOpen(false); form.resetFields(); }} onOk={() => form.submit()} okText="保存资源" cancelText="取消">
         <Form
           form={form}
           layout="vertical"
@@ -638,8 +879,8 @@ function Resources() {
             client_id: "demo",
             scene: "",
             captcha_type: "AUTO",
-            resource_type: "background_image",
-            storage_type: "embedded",
+            resource_type: "background_library",
+            storage_type: "url",
             tag: "default",
             status: "active"
           }}
@@ -676,8 +917,8 @@ function Resources() {
         >
           <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="scene" label="场景"><Input /></Form.Item>
-          <Form.Item name="captcha_type" label="验证码"><Select options={selectOptions(["AUTO", ...captchaTypes])} /></Form.Item>
-          <Form.Item name="resource_type" label="资源类型" rules={[{ required: true }]}><Select options={selectOptions(resourceTypes)} /></Form.Item>
+          <Form.Item name="captcha_type" label="验证码类别"><Select options={selectOptions(["AUTO", ...captchaTypes])} /></Form.Item>
+          <Form.Item name="resource_type" label="图库类型" rules={[{ required: true }]}><Select options={selectOptions(resourceTypes)} /></Form.Item>
           <Form.Item name="storage_type" label="存储"><Select options={selectOptions(["embedded", "classpath", "file", "url", "object_storage", "database"])} /></Form.Item>
           <Form.Item name="uri" label="URI" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="tag" label="标签"><Input /></Form.Item>
@@ -1015,7 +1256,7 @@ function usePost<T>(invalidateKey: string) {
 }
 
 function selectOptions(values: string[]) {
-  return values.map((value) => ({ value, label: value }));
+  return values.map((value) => ({ value, label: optionLabels[value] || value }));
 }
 
 function adminHeaders(): Record<string, string> {
