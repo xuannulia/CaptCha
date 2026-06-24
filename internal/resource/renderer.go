@@ -42,6 +42,8 @@ const (
 	sliderBorderRadius       = 4
 	sliderBorderFalloff      = 1.65
 	sliderBorderOutsideAlpha = 8
+	iconClickEdgeRadius      = 2
+	iconClickEdgeDarken      = 0.24
 	rotateRenderScale        = 2
 	concatMaxMovement        = 160
 )
@@ -854,6 +856,24 @@ func resizeNearest(src image.Image, width, height int) *image.RGBA {
 	return dst
 }
 
+func resizeBilinear(src image.Image, width, height int) *image.RGBA {
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	bounds := src.Bounds()
+	srcWidth := bounds.Dx()
+	srcHeight := bounds.Dy()
+	if width <= 0 || height <= 0 || srcWidth <= 0 || srcHeight <= 0 {
+		return dst
+	}
+	for y := 0; y < height; y++ {
+		sy := float64(bounds.Min.Y) + (float64(y)+0.5)*float64(srcHeight)/float64(height) - 0.5
+		for x := 0; x < width; x++ {
+			sx := float64(bounds.Min.X) + (float64(x)+0.5)*float64(srcWidth)/float64(width) - 0.5
+			dst.SetRGBA(x, y, sampleBilinearRGBA(src, sx, sy))
+		}
+	}
+	return dst
+}
+
 func resizeAlphaMask(src image.Image, width, height int) *image.RGBA {
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 	bounds := src.Bounds()
@@ -1618,9 +1638,7 @@ func isLikelyIconPixel(c color.RGBA) bool {
 }
 
 func drawResourceIcon(img *image.RGBA, icon image.Image, cx, cy, size int, accent color.RGBA) {
-	drawCircleOver(img, cx+2, cy+3, size/2+7, color.RGBA{R: 15, G: 23, B: 42, A: 60})
-	drawCircleOver(img, cx, cy, size/2+6, color.RGBA{R: 255, G: 255, B: 255, A: 224})
-	resized := resizeNearest(icon, size, size)
+	resized := resizeBilinear(icon, size, size)
 	originX := cx - size/2
 	originY := cy - size/2
 	for y := 0; y < size; y++ {
@@ -1634,14 +1652,34 @@ func drawResourceIcon(img *image.RGBA, icon image.Image, cx, cy, size int, accen
 				c = accent
 				c.A = src.A
 			}
+			edge := imageAlphaEdgeStrength(resized, x, y, iconClickEdgeRadius)
+			c = mixRGBA(c, color.RGBA{R: 15, G: 23, B: 42, A: 255}, edge*iconClickEdgeDarken)
 			blendPixelOver(img, originX+x, originY+y, c)
 		}
 	}
-	drawCircleOutlineOver(img, cx, cy, size/2+7, 2, color.RGBA{R: 255, G: 255, B: 255, A: 180})
 }
 
 func iconLooksMonochrome(c color.RGBA) bool {
 	return absInt(int(c.R)-int(c.G)) < 10 && absInt(int(c.G)-int(c.B)) < 10
+}
+
+func imageAlphaEdgeStrength(img image.Image, x, y, radius int) float64 {
+	if radius <= 0 || colorAlpha(img.At(x, y)) <= 10 {
+		return 0
+	}
+	best := float64(radius + 1)
+	for dy := -radius; dy <= radius; dy++ {
+		for dx := -radius; dx <= radius; dx++ {
+			distance := math.Hypot(float64(dx), float64(dy))
+			if distance > float64(radius) || distance >= best {
+				continue
+			}
+			if colorAlpha(img.At(x+dx, y+dy)) <= 8 {
+				best = distance
+			}
+		}
+	}
+	return sliderInnerBorderStrength(best, radius)
 }
 
 func resourceDisplayLabel(resource types.CaptchaResource, fallback string) string {

@@ -78,6 +78,9 @@ const (
 	gridImageCols            = 3
 	gridImageRows            = 3
 	gridImageTileSize        = 100
+	iconClickVisualSize      = 42
+	iconClickEdgeRadius      = 2
+	iconClickEdgeDarken      = 0.24
 	curveViewWidth           = 300
 	curveViewHeight          = 180
 	curveAnswerSlack         = 18
@@ -1792,7 +1795,7 @@ func drawIconClickImage(icons []clickIcon, points []types.Point) image.Image {
 		if i >= len(points) {
 			break
 		}
-		drawSVGIcon(img, icon.SVGFile(), points[i].X, points[i].Y, 42, palette[i%len(palette)])
+		drawSVGIcon(img, icon.SVGFile(), points[i].X, points[i].Y, iconClickVisualSize, palette[i%len(palette)])
 	}
 	return img
 }
@@ -1801,7 +1804,6 @@ func drawSVGIcon(img *image.RGBA, filename string, cx, cy, size int, c color.RGB
 	mask := svgIconMask(filename, size)
 	originX := cx - size/2
 	originY := cy - size/2
-	drawSVGMask(img, mask, originX+2, originY+3, color.RGBA{R: 15, G: 23, B: 42, A: 72}, 0.72)
 	drawSVGMask(img, mask, originX, originY, c, 1)
 }
 
@@ -1818,11 +1820,31 @@ func drawSVGMask(dst *image.RGBA, mask *image.RGBA, originX, originY int, c colo
 			if gx < bounds.Min.X || gx >= bounds.Max.X || gy < bounds.Min.Y || gy >= bounds.Max.Y {
 				continue
 			}
-			pixel := c
+			edge := iconMaskEdgeStrength(mask, x, y, iconClickEdgeRadius)
+			pixel := mixRGBA(c, color.RGBA{R: 15, G: 23, B: 42, A: 255}, edge*iconClickEdgeDarken)
 			pixel.A = uint8(math.Round(float64(c.A) * float64(alpha) / 255 * math.Max(0, math.Min(1, alphaScale))))
 			blendPixel(dst, gx, gy, pixel)
 		}
 	}
+}
+
+func iconMaskEdgeStrength(mask *image.RGBA, x, y, radius int) float64 {
+	if radius <= 0 || rgbaAt(mask, x, y).A <= 10 {
+		return 0
+	}
+	best := float64(radius + 1)
+	for dy := -radius; dy <= radius; dy++ {
+		for dx := -radius; dx <= radius; dx++ {
+			distance := math.Hypot(float64(dx), float64(dy))
+			if distance > float64(radius) || distance >= best {
+				continue
+			}
+			if rgbaAt(mask, x+dx, y+dy).A <= 8 {
+				best = distance
+			}
+		}
+	}
+	return sliderInnerBorderStrength(best, radius)
 }
 
 type svgMaskCacheKey struct {

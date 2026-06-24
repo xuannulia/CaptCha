@@ -759,6 +759,31 @@ func TestCaptchaIconSVGAssetsAreEmbeddedAndFiltered(t *testing.T) {
 	}
 }
 
+func TestIconClickSVGDrawsInsideMaskWithoutOffsetShadow(t *testing.T) {
+	t.Parallel()
+
+	background := color.RGBA{R: 248, G: 250, B: 252, A: 255}
+	filename := "shuji.svg"
+	size := iconClickVisualSize
+	cx, cy := 60, 60
+	originX := cx - size/2
+	originY := cy - size/2
+	img := newCanvas(120, 120, background)
+	drawSVGIcon(img, filename, cx, cy, size, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+	mask := svgIconMask(filename, size)
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			if alphaAt(t, mask, x, y) > 10 {
+				continue
+			}
+			pixel := rgbaAt(img, originX+x, originY+y)
+			if pixel != background {
+				t.Fatalf("icon should not paint offset shadow outside mask at %d,%d: got=%+v", x, y, pixel)
+			}
+		}
+	}
+}
+
 func TestSliderSVGMaskVisibleSizeIsNormalized(t *testing.T) {
 	t.Parallel()
 
