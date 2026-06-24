@@ -256,7 +256,6 @@ button:disabled {
   top: 0;
   height: 100%;
   max-width: 100%;
-  min-width: 52px;
   background: #8bc34a;
   pointer-events: none;
 }
@@ -443,7 +442,6 @@ button:disabled {
   position: absolute;
   inset: 0 auto 0 0;
   max-width: 100%;
-  min-width: 52px;
   background: #8bc34a;
 }
 

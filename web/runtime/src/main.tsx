@@ -145,7 +145,6 @@ type TrackPoint = {
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8080";
 const refreshIconURL = "/refresh.svg";
 const closeIconURL = "/close.svg";
-const sliderLeadWidth = 52;
 const sliderThumbWidth = 52;
 
 function App() {
@@ -693,8 +692,8 @@ function RuntimeChallenge() {
     if (rect.width <= 0) return undefined;
     const bounds = rangeBounds(challenge);
     const thumbOffset = controlDragStart.current?.offset ?? sliderThumbWidth / 2;
-    const travelWidth = Math.max(1, rect.width - sliderLeadWidth - sliderThumbWidth);
-    const ratio = clamp((event.clientX - rect.left - sliderLeadWidth - thumbOffset) / travelWidth, 0, 1);
+    const travelWidth = Math.max(1, rect.width - sliderThumbWidth);
+    const ratio = clamp((event.clientX - rect.left - thumbOffset) / travelWidth, 0, 1);
     const raw = bounds.min + ratio * (bounds.max - bounds.min);
     const next = snapValue(raw, bounds.min, bounds.max, bounds.step);
     const trackY = Math.round(clamp(event.clientY - rect.top, 0, rect.height));
@@ -1153,12 +1152,12 @@ function sliderRatioFromValue(value: number, bounds: { min: number; max: number 
 }
 
 function sliderThumbLeftPx(ratio: number, width: number) {
-  return sliderLeadWidth + ratio * Math.max(1, width - sliderLeadWidth - sliderThumbWidth);
+  return ratio * Math.max(1, width - sliderThumbWidth);
 }
 
 function sliderThumbLeftStyle(ratio: number) {
   const percentValue = ratio * 100;
-  const pixelOffset = sliderLeadWidth - ratio * (sliderLeadWidth + sliderThumbWidth);
+  const pixelOffset = -ratio * sliderThumbWidth;
   return `calc(${percentValue}% + ${pixelOffset}px)`;
 }
 
