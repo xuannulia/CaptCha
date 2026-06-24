@@ -784,6 +784,20 @@ func TestIconClickSVGDrawsInsideMaskWithoutOffsetShadow(t *testing.T) {
 	}
 }
 
+func TestIconClickImageUsesHighResolutionCanvas(t *testing.T) {
+	t.Parallel()
+
+	e := New(2 * time.Minute)
+	session, err := e.NewSession("app_test", "register", types.CaptchaImageClick)
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	image := decodePNGDataURL(t, session.RenderPayload.Image)
+	if image.Bounds().Dx() != session.RenderPayload.View.Width*iconClickRenderScale || image.Bounds().Dy() != session.RenderPayload.View.Height*iconClickRenderScale {
+		t.Fatalf("icon click image should render at %dx density: image=%s view=%+v", iconClickRenderScale, image.Bounds(), session.RenderPayload.View)
+	}
+}
+
 func TestSliderSVGMaskVisibleSizeIsNormalized(t *testing.T) {
 	t.Parallel()
 

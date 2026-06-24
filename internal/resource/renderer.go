@@ -42,6 +42,8 @@ const (
 	sliderBorderRadius       = 4
 	sliderBorderFalloff      = 1.65
 	sliderBorderOutsideAlpha = 8
+	iconClickRenderScale     = 2
+	iconClickResourceSize    = 44
 	iconClickEdgeRadius      = 2
 	iconClickEdgeDarken      = 0.24
 	rotateRenderScale        = 2
@@ -168,7 +170,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		if !ok {
 			return payload
 		}
-		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		base := resizeBilinear(background, payload.View.Width*iconClickRenderScale, payload.View.Height*iconClickRenderScale)
 		image, words := composeIconClickImage(base, payload, answer.Points, resources)
 		payload.Image = pngDataURL(image)
 		if len(words) > 0 {
@@ -1564,10 +1566,12 @@ func composeIconClickImage(base *image.RGBA, payload types.RenderPayload, points
 	img := cloneRGBA(base)
 	icons := loadResourceImagesByType(resources, "icon_library")
 	labels := make([]string, 0, min(len(payload.Words), len(points)))
+	scaleX, scaleY := renderScaleForView(base, payload.View)
+	iconSize := max(1, int(math.Round(float64(iconClickResourceSize)*math.Min(scaleX, scaleY))))
 	if len(icons) > 0 {
 		for i, point := range points {
 			icon := icons[i%len(icons)]
-			drawResourceIcon(img, icon.Image, point.X, point.Y, 44, clickPalette(i))
+			drawResourceIcon(img, icon.Image, scalePointX(point, scaleX), scalePointY(point, scaleY), iconSize, clickPalette(i))
 			label := resourceDisplayLabel(icon.Resource, "")
 			if label == "" && i < len(payload.Words) {
 				label = payload.Words[i]
@@ -1582,7 +1586,7 @@ func composeIconClickImage(base *image.RGBA, payload types.RenderPayload, points
 		return img, payload.Words
 	}
 	for i, point := range points {
-		drawGenericIconMarker(img, point.X, point.Y, i, clickPalette(i))
+		drawGenericIconMarker(img, scalePointX(point, scaleX), scalePointY(point, scaleY), i, clickPalette(i), iconSize)
 		if i < len(payload.Words) {
 			labels = append(labels, payload.Words[i])
 		}
@@ -1595,7 +1599,7 @@ func overlayPayloadIconObjects(dst *image.RGBA, dataURL string) bool {
 	if !ok {
 		return false
 	}
-	src = resizeNearest(src, dst.Bounds().Dx(), dst.Bounds().Dy())
+	src = resizeBilinear(src, dst.Bounds().Dx(), dst.Bounds().Dy())
 	changed := false
 	for y := 0; y < src.Bounds().Dy(); y++ {
 		for x := 0; x < src.Bounds().Dx(); x++ {
@@ -1652,11 +1656,34 @@ func drawResourceIcon(img *image.RGBA, icon image.Image, cx, cy, size int, accen
 				c = accent
 				c.A = src.A
 			}
-			edge := imageAlphaEdgeStrength(resized, x, y, iconClickEdgeRadius)
+			edge := imageAlphaEdgeStrength(resized, x, y, scaledIconEdgeRadius(size, iconClickResourceSize))
 			c = mixRGBA(c, color.RGBA{R: 15, G: 23, B: 42, A: 255}, edge*iconClickEdgeDarken)
 			blendPixelOver(img, originX+x, originY+y, c)
 		}
 	}
+}
+
+func renderScaleForView(img image.Image, view types.View) (float64, float64) {
+	if view.Width <= 0 || view.Height <= 0 {
+		return 1, 1
+	}
+	bounds := img.Bounds()
+	return float64(bounds.Dx()) / float64(view.Width), float64(bounds.Dy()) / float64(view.Height)
+}
+
+func scalePointX(point types.Point, scale float64) int {
+	return int(math.Round(float64(point.X) * scale))
+}
+
+func scalePointY(point types.Point, scale float64) int {
+	return int(math.Round(float64(point.Y) * scale))
+}
+
+func scaledIconEdgeRadius(size, baseSize int) int {
+	if baseSize <= 0 {
+		return iconClickEdgeRadius
+	}
+	return max(1, int(math.Round(float64(size)*float64(iconClickEdgeRadius)/float64(baseSize))))
 }
 
 func iconLooksMonochrome(c color.RGBA) bool {
@@ -1695,18 +1722,24 @@ func resourceDisplayLabel(resource types.CaptchaResource, fallback string) strin
 	return ""
 }
 
-func drawGenericIconMarker(img *image.RGBA, cx, cy, index int, c color.RGBA) {
-	drawCircleOver(img, cx+2, cy+3, 28, color.RGBA{R: 15, G: 23, B: 42, A: 68})
-	drawCircleOver(img, cx, cy, 27, color.RGBA{R: 255, G: 255, B: 255, A: 228})
+func drawGenericIconMarker(img *image.RGBA, cx, cy, index int, c color.RGBA, size int) {
+	scale := float64(size) / float64(iconClickResourceSize)
+	drawCircleOver(img, cx+int(math.Round(2*scale)), cy+int(math.Round(3*scale)), int(math.Round(28*scale)), color.RGBA{R: 15, G: 23, B: 42, A: 68})
+	drawCircleOver(img, cx, cy, int(math.Round(27*scale)), color.RGBA{R: 255, G: 255, B: 255, A: 228})
 	switch index % 4 {
 	case 0:
-		drawCircleOver(img, cx, cy, 15, c)
+		drawCircleOver(img, cx, cy, int(math.Round(15*scale)), c)
 	case 1:
-		fillRectOver(img, cx-15, cy-15, 30, 30, c)
+		unit := int(math.Round(15 * scale))
+		fillRectOver(img, cx-unit, cy-unit, unit*2, unit*2, c)
 	case 2:
-		fillPolygonOver(img, []image.Point{{X: cx, Y: cy - 18}, {X: cx + 18, Y: cy + 14}, {X: cx - 18, Y: cy + 14}}, c)
+		top := int(math.Round(18 * scale))
+		side := int(math.Round(18 * scale))
+		bottom := int(math.Round(14 * scale))
+		fillPolygonOver(img, []image.Point{{X: cx, Y: cy - top}, {X: cx + side, Y: cy + bottom}, {X: cx - side, Y: cy + bottom}}, c)
 	default:
-		fillPolygonOver(img, []image.Point{{X: cx, Y: cy - 18}, {X: cx + 18, Y: cy}, {X: cx, Y: cy + 18}, {X: cx - 18, Y: cy}}, c)
+		radius := int(math.Round(18 * scale))
+		fillPolygonOver(img, []image.Point{{X: cx, Y: cy - radius}, {X: cx + radius, Y: cy}, {X: cx, Y: cy + radius}, {X: cx - radius, Y: cy}}, c)
 	}
 }
 

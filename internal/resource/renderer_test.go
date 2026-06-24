@@ -1171,7 +1171,10 @@ func TestApplyVisualsRendersSVGIconLibrary(t *testing.T) {
 		t.Fatalf("expected icon labels to come from resource metadata, got prompt=%q words=%v", composed.Prompt, composed.Words)
 	}
 	image := decodePNGDataURL(t, composed.Image)
-	assertRegionChanged(t, image, 24, 14, 32, 32, color.RGBA{R: 240, G: 248, B: 255, A: 255})
+	if image.Bounds().Dx() != payload.View.Width*iconClickRenderScale || image.Bounds().Dy() != payload.View.Height*iconClickRenderScale {
+		t.Fatalf("expected high resolution icon click image, got %s for view %+v", image.Bounds(), payload.View)
+	}
+	assertRegionChanged(t, image, 48, 28, 64, 64, color.RGBA{R: 240, G: 248, B: 255, A: 255})
 }
 
 func TestApplyVisualsPreservesBuiltInIconObjectsWithoutIconLibrary(t *testing.T) {
@@ -1202,7 +1205,7 @@ func TestApplyVisualsPreservesBuiltInIconObjectsWithoutIconLibrary(t *testing.T)
 
 	image := decodePNGDataURL(t, composed.Image)
 	assertPixel(t, image, 4, 4, background)
-	assertPixel(t, image, 40, 30, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+	assertPixel(t, image, 80, 60, color.RGBA{R: 37, G: 99, B: 235, A: 255})
 	if composed.Prompt != payload.Prompt || len(composed.Words) != 1 || composed.Words[0] != "电脑" {
 		t.Fatalf("expected built-in icon labels to be retained, got prompt=%q words=%v", composed.Prompt, composed.Words)
 	}

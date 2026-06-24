@@ -78,6 +78,7 @@ const (
 	gridImageCols            = 3
 	gridImageRows            = 3
 	gridImageTileSize        = 100
+	iconClickRenderScale     = 2
 	iconClickVisualSize      = 42
 	iconClickEdgeRadius      = 2
 	iconClickEdgeDarken      = 0.24
@@ -1782,9 +1783,12 @@ func drawWordImage(words []string, points []types.Point, decoyWords []string, de
 }
 
 func drawIconClickImage(icons []clickIcon, points []types.Point) image.Image {
-	img := newCanvas(imageViewWidth, imageViewHeight, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	scale := iconClickRenderScale
+	width := imageViewWidth * scale
+	height := imageViewHeight * scale
+	img := newCanvas(width, height, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	for i := 0; i < 16; i++ {
-		drawCircle(img, mustRandomInt(12, imageViewWidth-12), mustRandomInt(12, imageViewHeight-12), mustRandomInt(1, 3), color.RGBA{R: 203, G: 213, B: 225, A: 255})
+		drawCircle(img, mustRandomInt(12*scale, width-12*scale), mustRandomInt(12*scale, height-12*scale), mustRandomInt(1*scale, 3*scale), color.RGBA{R: 203, G: 213, B: 225, A: 255})
 	}
 	palette := []color.RGBA{
 		{R: 37, G: 99, B: 235, A: 255},
@@ -1795,7 +1799,7 @@ func drawIconClickImage(icons []clickIcon, points []types.Point) image.Image {
 		if i >= len(points) {
 			break
 		}
-		drawSVGIcon(img, icon.SVGFile(), points[i].X, points[i].Y, iconClickVisualSize, palette[i%len(palette)])
+		drawSVGIcon(img, icon.SVGFile(), points[i].X*scale, points[i].Y*scale, iconClickVisualSize*scale, palette[i%len(palette)])
 	}
 	return img
 }
@@ -1810,6 +1814,7 @@ func drawSVGIcon(img *image.RGBA, filename string, cx, cy, size int, c color.RGB
 func drawSVGMask(dst *image.RGBA, mask *image.RGBA, originX, originY int, c color.RGBA, alphaScale float64) {
 	bounds := dst.Bounds()
 	maskBounds := mask.Bounds()
+	edgeRadius := scaledIconEdgeRadius(maskBounds.Dx(), iconClickVisualSize)
 	for y := maskBounds.Min.Y; y < maskBounds.Max.Y; y++ {
 		for x := maskBounds.Min.X; x < maskBounds.Max.X; x++ {
 			alpha := rgbaAt(mask, x, y).A
@@ -1820,12 +1825,19 @@ func drawSVGMask(dst *image.RGBA, mask *image.RGBA, originX, originY int, c colo
 			if gx < bounds.Min.X || gx >= bounds.Max.X || gy < bounds.Min.Y || gy >= bounds.Max.Y {
 				continue
 			}
-			edge := iconMaskEdgeStrength(mask, x, y, iconClickEdgeRadius)
+			edge := iconMaskEdgeStrength(mask, x, y, edgeRadius)
 			pixel := mixRGBA(c, color.RGBA{R: 15, G: 23, B: 42, A: 255}, edge*iconClickEdgeDarken)
 			pixel.A = uint8(math.Round(float64(c.A) * float64(alpha) / 255 * math.Max(0, math.Min(1, alphaScale))))
 			blendPixel(dst, gx, gy, pixel)
 		}
 	}
+}
+
+func scaledIconEdgeRadius(size, baseSize int) int {
+	if baseSize <= 0 {
+		return iconClickEdgeRadius
+	}
+	return max(1, int(math.Round(float64(size)*float64(iconClickEdgeRadius)/float64(baseSize))))
 }
 
 func iconMaskEdgeStrength(mask *image.RGBA, x, y, radius int) float64 {
