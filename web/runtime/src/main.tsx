@@ -648,7 +648,7 @@ function RuntimeChallenge() {
     const bounds = rangeBounds(challenge);
     let raw: number;
     if (challenge.type === "SLIDER" || challenge.type === "SLIDER_V2") {
-      raw = point.x - numberParam(challenge, "piece_size", 42) / 2;
+      raw = point.x - sliderPieceSize(challenge) / 2;
     } else {
       raw = bounds.min + (point.x / Math.max(1, challenge.view.width)) * (bounds.max - bounds.min);
     }
@@ -963,8 +963,8 @@ function RuntimeChallenge() {
                 style={{
                   left: percent(value, challenge.view.width),
                   top: percent(numberParam(challenge, "piece_y", challenge.view.height - 60), challenge.view.height),
-                  width: percent(numberParam(challenge, "piece_size", 42), challenge.view.width),
-                  height: percent(numberParam(challenge, "piece_size", 42), challenge.view.height)
+                  width: percent(sliderPieceSize(challenge), challenge.view.width),
+                  height: percent(sliderPieceSize(challenge), challenge.view.height)
                 }}
               />
             )}
@@ -1062,6 +1062,10 @@ function rangeBounds(challenge: Challenge) {
 function numberParam(challenge: Challenge, name: keyof ChallengeParameters, fallback: number) {
   const value = challenge.parameters?.[name];
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function sliderPieceSize(challenge: Challenge) {
+  return numberParam(challenge, "piece_size", challenge.type === "SLIDER_V2" ? 62 : 67);
 }
 
 function curveDragStart(event: PointerEvent, currentValue: number) {

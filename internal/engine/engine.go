@@ -809,7 +809,7 @@ func drawSlider2Challenge(targetX, targetY, size int, mask sliderMaskKind) (imag
 		if abs(decoy.X-targetX) < size && abs(decoy.Y-targetY) < size {
 			continue
 		}
-		drawSliderMaskGhost(bgRGBA, decoy.X, decoy.Y, size, mask, 0.64)
+		drawSliderMaskGhost(bgRGBA, decoy.X, decoy.Y, size, mask, 0.82)
 	}
 	return bgRGBA, piece
 }
@@ -837,8 +837,8 @@ func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind,
 			ratio := opacity * float64(maskAlpha) / 255
 			edgeSoft := sliderAlphaEdgeStrength(maskFile, size, x, y, 6)
 			edgeCore := sliderAlphaEdgeStrength(maskFile, size, x, y, 2)
-			ghost := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, ratio*0.34)
-			ghost = mixRGBA(ghost, color.RGBA{R: 71, G: 85, B: 105, A: 255}, ratio*(0.16+edgeSoft*0.22+edgeCore*0.36))
+			ghost := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, 0.05*opacity+ratio*0.24)
+			ghost = mixRGBA(ghost, color.RGBA{R: 71, G: 85, B: 105, A: 255}, 0.06*opacity+ratio*(0.20+edgeSoft*0.24+edgeCore*0.40))
 			img.Set(gx, gy, ghost)
 		}
 	}

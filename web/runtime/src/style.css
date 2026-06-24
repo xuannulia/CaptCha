@@ -320,7 +320,7 @@ button:disabled {
 }
 
 .rotate-board {
-  width: min(100%, 260px);
+  width: min(100%, 180px);
   margin: 0 auto;
 }
 

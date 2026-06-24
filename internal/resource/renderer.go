@@ -33,8 +33,12 @@ import (
 )
 
 const maxResourceImageBytes = 20 * 1024 * 1024
-const sliderTemplateSize = 42
-const concatMaxMovement = 160
+const (
+	sliderPieceSizeFallback  = 67
+	slider2PieceSizeFallback = 62
+	rotateRenderScale        = 2
+	concatMaxMovement        = 160
+)
 
 var resourceHTTPClient = &http.Client{
 	Timeout: 3 * time.Second,
@@ -71,7 +75,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		}
 		base := resizeNearest(background, payload.View.Width, payload.View.Height)
 		sliderTemplate, _ := loadResourceImageByType(resources, "slider_template")
-		size := sliderPieceSize(payload.Parameters, sliderTemplateSize)
+		size := sliderPieceSize(payload.Parameters, sliderPieceSizeFallbackFor(payload.Type))
 		composed, piece := composeSlider(base, answer, sliderTemplate, size)
 		if payload.Type == types.CaptchaSlider2 {
 			composed = composeSliderDecoys(composed, answer, sliderTemplate, size)
@@ -93,11 +97,13 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		if !ok {
 			return payload
 		}
-		base := cropCircularRotateImage(rotateSource, payload.View.Width, payload.View.Height)
+		renderWidth := max(1, payload.View.Width*rotateRenderScale)
+		renderHeight := max(1, payload.View.Height*rotateRenderScale)
+		base := cropCircularRotateImage(rotateSource, renderWidth, renderHeight)
 		start := ((360-answer.Angle)%360 + 360) % 360
 		rotated := rotateImage(base, start)
 		if rotateTemplate, ok := loadResourceImageByType(resources, "rotate_template"); ok {
-			rotated = overlayTemplate(rotated, resizeNearest(rotateTemplate, payload.View.Width, payload.View.Height))
+			rotated = overlayTemplate(rotated, resizeNearest(rotateTemplate, renderWidth, renderHeight))
 		}
 		payload.Image = pngDataURL(rotated)
 		parameters := cloneParameters(payload.Parameters)
@@ -934,7 +940,7 @@ func composeSliderDecoys(img *image.RGBA, answer types.Answer, template image.Im
 		if absInt(decoy.X-answer.X) < size && absInt(decoy.Y-answer.Y) < size {
 			continue
 		}
-		drawSliderMaskGhost(img, mask, decoy.X, decoy.Y, size, 0.64)
+		drawSliderMaskGhost(img, mask, decoy.X, decoy.Y, size, 0.82)
 	}
 	return img
 }
@@ -964,8 +970,8 @@ func drawSliderMaskGhost(img *image.RGBA, mask image.Image, ox, oy, size int, op
 			ratio := opacity * float64(alpha) / 255
 			edgeBand := sliderTemplateEdgeBandStrength(mask, x, y, 4)
 			innerBand := sliderTemplateEdgeBandStrength(mask, x, y, 2)
-			ghost := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, ratio*0.34)
-			ghost = mixRGBA(ghost, color.RGBA{R: 71, G: 85, B: 105, A: 255}, ratio*(0.16+edgeBand*0.22+innerBand*0.38))
+			ghost := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, 0.05*opacity+ratio*0.24)
+			ghost = mixRGBA(ghost, color.RGBA{R: 71, G: 85, B: 105, A: 255}, 0.06*opacity+ratio*(0.20+edgeBand*0.24+innerBand*0.42))
 			img.Set(gx, gy, ghost)
 		}
 	}
@@ -1540,6 +1546,13 @@ func cloneParameters(parameters map[string]any) map[string]any {
 
 func sliderPieceSize(parameters map[string]any, fallback int) int {
 	return renderParameterInt(parameters, "piece_size", fallback)
+}
+
+func sliderPieceSizeFallbackFor(captchaType types.CaptchaType) int {
+	if captchaType == types.CaptchaSlider2 {
+		return slider2PieceSizeFallback
+	}
+	return sliderPieceSizeFallback
 }
 
 func renderParameterInt(parameters map[string]any, key string, fallback int) int {

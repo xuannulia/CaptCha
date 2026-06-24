@@ -369,6 +369,49 @@ func TestApplyVisualsUsesDefaultSliderMaskWhenTemplateMissing(t *testing.T) {
 	}
 }
 
+func TestApplyVisualsKeepsSliderFallbackSizeAlignedWithEngine(t *testing.T) {
+	t.Parallel()
+
+	backgroundPath, _ := writeTestPNG(t, 320, 160, color.RGBA{R: 18, G: 160, B: 75, A: 255})
+	resources := []types.CaptchaResource{
+		{
+			ID:           "res_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          backgroundPath,
+			Status:       "active",
+		},
+	}
+	cases := []struct {
+		name        string
+		captchaType types.CaptchaType
+		wantSize    int
+	}{
+		{name: "slider", captchaType: types.CaptchaSlider, wantSize: 67},
+		{name: "slider v2", captchaType: types.CaptchaSlider2, wantSize: 62},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := types.RenderPayload{
+				Type:  tt.captchaType,
+				View:  types.View{Width: 320, Height: 160},
+				Image: "fallback-image",
+				Piece: "fallback-piece",
+			}
+
+			composed := ApplyVisuals(payload, types.Answer{X: 140, Y: 60}, resources)
+			piece := decodePNGDataURL(t, composed.Piece)
+			if piece.Bounds().Dx() != tt.wantSize || piece.Bounds().Dy() != tt.wantSize {
+				t.Fatalf("expected %s fallback piece size %dx%d, got %s", tt.captchaType, tt.wantSize, tt.wantSize, piece.Bounds())
+			}
+			if got := renderParameterInt(composed.Parameters, "piece_size", 0); got != tt.wantSize {
+				t.Fatalf("expected %s payload piece_size %d, got %d", tt.captchaType, tt.wantSize, got)
+			}
+		})
+	}
+}
+
 func TestApplyVisualsUsesRotateTemplateOverlay(t *testing.T) {
 	t.Parallel()
 
