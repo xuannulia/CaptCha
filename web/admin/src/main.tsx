@@ -11,7 +11,7 @@ import {
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Checkbox, ConfigProvider, Form, Input, InputNumber, Layout, Menu, message, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes as RouterRoutes, useLocation, useNavigate } from "react-router-dom";
 import "./style.css";
@@ -85,6 +85,7 @@ type ResourceFormValues = {
 
 type AuditEvent = {
   id: string;
+  client_id: string;
   scene: string;
   account_id_hash?: string;
   device_id_hash?: string;
@@ -97,6 +98,7 @@ type AuditEvent = {
 type RiskFeatureSnapshot = {
   id: string;
   attempt_id: string;
+  client_id: string;
   scene: string;
   challenge_type: string;
   label: string;
@@ -200,6 +202,28 @@ type Application = {
   created_at?: string;
   updated_at?: string;
 };
+
+type SelectOption = {
+  value: string;
+  label: string;
+};
+
+type ApplicationScopeState = {
+  applications?: Application[];
+  appOptions: SelectOption[];
+  scopeOptions: SelectOption[];
+  selectedClientID: string;
+  defaultClientID: string;
+  setSelectedClientID: (value: string) => void;
+};
+
+const ApplicationScopeContext = React.createContext<ApplicationScopeState>({
+  appOptions: [],
+  scopeOptions: [{ value: "", label: "全部应用" }],
+  selectedClientID: "",
+  defaultClientID: "demo",
+  setSelectedClientID: () => undefined
+});
 
 type ListResponse<T> = {
   items: T[];
@@ -397,8 +421,38 @@ function AdminShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const active = adminRoutes.find((route) => route.path === location.pathname)?.key || "overview";
+  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
+  const [selectedClientID, setSelectedClientID] = useState(() => localStorage.getItem("captcha-admin-client-id") || "");
+  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
+  const scopeOptions = useMemo(() => [{ value: "", label: "全部应用" }, ...appOptions], [appOptions]);
+  const defaultClientID = selectedClientID || firstApplicationClientID(applications);
+
+  useEffect(() => {
+    if (selectedClientID) {
+      localStorage.setItem("captcha-admin-client-id", selectedClientID);
+    } else {
+      localStorage.removeItem("captcha-admin-client-id");
+    }
+  }, [selectedClientID]);
+
+  useEffect(() => {
+    if (!selectedClientID || !applications?.length) return;
+    if (!applications.some((item) => item.client_id === selectedClientID)) {
+      setSelectedClientID("");
+    }
+  }, [applications, selectedClientID]);
+
+  const applicationScope = useMemo(() => ({
+    applications,
+    appOptions,
+    scopeOptions,
+    selectedClientID,
+    defaultClientID,
+    setSelectedClientID
+  }), [applications, appOptions, scopeOptions, selectedClientID, defaultClientID]);
 
   return (
+    <ApplicationScopeContext.Provider value={applicationScope}>
         <Layout className="app">
           <Layout.Sider width={224} theme="light" className="sider">
             <div className="brand">CaptCha</div>
@@ -412,7 +466,17 @@ function AdminShell() {
           <Layout>
             <Layout.Header className="header">
               <strong>{titleFor(active)}</strong>
-              <span className="header-subtitle">管理控制台</span>
+              <Space className="header-actions">
+                <Select
+                  className="application-scope-select"
+                  value={selectedClientID}
+                  options={scopeOptions}
+                  onChange={setSelectedClientID}
+                  optionFilterProp="label"
+                  showSearch
+                />
+                <span className="header-subtitle">管理控制台</span>
+              </Space>
             </Layout.Header>
             <Layout.Content className="content">
               <RouterRoutes>
@@ -423,14 +487,17 @@ function AdminShell() {
             </Layout.Content>
           </Layout>
         </Layout>
+    </ApplicationScopeContext.Provider>
   );
 }
 
 function Overview() {
+  const { selectedClientID } = useApplicationScope();
+  const metricsPath = scopedPath("/api/v1/admin/metrics?limit=200", selectedClientID);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["metrics"],
+    queryKey: ["metrics", selectedClientID],
     queryFn: async () => {
-      const response = await fetch(`${apiBase}/api/v1/admin/metrics?limit=200`, { headers: adminHeaders() });
+      const response = await fetch(`${apiBase}${metricsPath}`, { headers: adminHeaders() });
       if (!response.ok) throw new Error(response.statusText);
       return await response.json() as AdminMetrics;
     },
@@ -630,9 +697,8 @@ function Applications() {
 }
 
 function Routes() {
-  const { data, isLoading } = useList<RoutePolicy>("routes", "/api/v1/admin/route-policies");
-  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
-  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
+  const { applications, appOptions, selectedClientID, defaultClientID } = useApplicationScope();
+  const { data, isLoading } = useList<RoutePolicy>("routes", scopedPath("/api/v1/admin/route-policies", selectedClientID));
   const [open, setOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RoutePolicy | null>(null);
   const [pendingRouteID, setPendingRouteID] = useState("");
@@ -695,7 +761,7 @@ function Routes() {
     setEditingRoute(null);
     form.resetFields();
     form.setFieldsValue({
-      client_id: firstApplicationClientID(applications),
+      client_id: defaultClientID,
       method: "POST",
       mode: "always",
       challenge_type: "SLIDER",
@@ -726,7 +792,7 @@ function Routes() {
           form={form}
           layout="vertical"
           initialValues={{
-            client_id: firstApplicationClientID(applications),
+            client_id: defaultClientID,
             method: "POST",
             mode: "always",
             challenge_type: "SLIDER",
@@ -793,9 +859,8 @@ function Routes() {
 }
 
 function IpPolicies() {
-  const { data, isLoading } = useList<IpPolicy>("ip-policies", "/api/v1/admin/ip-policies");
-  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
-  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
+  const { appOptions, selectedClientID, defaultClientID } = useApplicationScope();
+  const { data, isLoading } = useList<IpPolicy>("ip-policies", scopedPath("/api/v1/admin/ip-policies", selectedClientID));
   const [open, setOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<IpPolicy | null>(null);
   const [pendingPolicyID, setPendingPolicyID] = useState("");
@@ -846,7 +911,7 @@ function IpPolicies() {
   const openCreatePolicy = () => {
     setEditingPolicy(null);
     form.resetFields();
-    form.setFieldsValue({ client_id: firstApplicationClientID(applications), type: "blocklist", action: "block", enabled: true });
+    form.setFieldsValue({ client_id: defaultClientID, type: "blocklist", action: "block", enabled: true });
     setOpen(true);
   };
   const closePolicyModal = () => {
@@ -861,7 +926,7 @@ function IpPolicies() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ client_id: firstApplicationClientID(applications), type: "blocklist", action: "block", enabled: true }}
+          initialValues={{ client_id: defaultClientID, type: "blocklist", action: "block", enabled: true }}
           onFinish={async (values) => {
             try {
               await mutation.mutateAsync({
@@ -889,18 +954,22 @@ function IpPolicies() {
 }
 
 function PolicySimulator() {
-  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
-  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
+  const { appOptions, defaultClientID } = useApplicationScope();
   const [form] = Form.useForm();
   const mutation = usePost<PolicySimulation>("policy-simulate");
   const simulation = mutation.data;
+
+  useEffect(() => {
+    form.setFieldValue("client_id", defaultClientID);
+  }, [defaultClientID, form]);
+
   return (
     <Card title="策略模拟">
       <Form
         form={form}
         layout="inline"
         className="filters"
-        initialValues={{ client_id: "demo", method: "POST", path: "/api/login" }}
+        initialValues={{ client_id: defaultClientID, method: "POST", path: "/api/login" }}
         onFinish={(values) => mutation.mutate({ path: "/api/v1/admin/policy/simulate", body: values })}
       >
         <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
@@ -1071,6 +1140,10 @@ function statusLabel(value: string) {
   return statusLabels[value] || value;
 }
 
+function useApplicationScope() {
+  return React.useContext(ApplicationScopeContext);
+}
+
 function applicationOptions(applications?: Application[]) {
   return (applications || []).map((item) => ({
     value: item.client_id,
@@ -1080,6 +1153,11 @@ function applicationOptions(applications?: Application[]) {
 
 function firstApplicationClientID(applications?: Application[]) {
   return applications?.[0]?.client_id || "demo";
+}
+
+function scopedPath(path: string, clientID: string) {
+  if (!clientID) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}client_id=${encodeURIComponent(clientID)}`;
 }
 
 function resourceCategory(row: Resource) {
@@ -1183,9 +1261,8 @@ function ResourceFileItem({
 }
 
 function Resources() {
-  const { data, isLoading } = useList<Resource>("resources", "/api/v1/admin/resources");
-  const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
-  const appOptions = useMemo(() => applicationOptions(applications), [applications]);
+  const { appOptions, selectedClientID, defaultClientID } = useApplicationScope();
+  const { data, isLoading } = useList<Resource>("resources", scopedPath("/api/v1/admin/resources", selectedClientID));
   const [open, setOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [fileFilter, setFileFilter] = useState("all");
@@ -1238,12 +1315,17 @@ function Resources() {
     setDeleteOpen(true);
   };
   const uploadGalleryType = Form.useWatch("gallery_type", form) || "background";
+
+  useEffect(() => {
+    setSelectedResourceIds([]);
+  }, [selectedClientID]);
+
   const openCreate = () => {
     form.resetFields();
     setSelectedFiles([]);
     setUploadError("");
     form.setFieldsValue({
-      client_id: firstApplicationClientID(applications),
+      client_id: defaultClientID,
       scene: "",
       tag: "default",
       gallery_type: "background",
@@ -1383,7 +1465,7 @@ function Resources() {
           form={form}
           layout="vertical"
           initialValues={{
-            client_id: firstApplicationClientID(applications),
+            client_id: defaultClientID,
             scene: "",
             tag: "default",
             gallery_type: "background",
@@ -1400,7 +1482,7 @@ function Resources() {
             for (const file of selectedFiles) {
               formData.append("files", file);
             }
-            formData.set("client_id", values.client_id || firstApplicationClientID(applications));
+            formData.set("client_id", values.client_id || defaultClientID);
             formData.set("scene", values.scene || "");
             formData.set("captcha_type", defaults.captchaType);
             formData.set("resource_type", defaults.resourceType);
@@ -1478,25 +1560,33 @@ function Resources() {
 }
 
 function Audit() {
+  const { selectedClientID } = useApplicationScope();
   const [filters, setFilters] = useState({ action: "", result: "", scene: "", account_id_hash: "", device_id_hash: "" });
   const [pageState, setPageState] = useState({ page: 1, pageSize: 20 });
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    setPageState((prev) => ({ ...prev, page: 1 }));
+  }, [selectedClientID]);
+
   const path = useMemo(() => {
     const params = new URLSearchParams({
       limit: String(pageState.pageSize),
       offset: String((pageState.page - 1) * pageState.pageSize)
     });
+    if (selectedClientID) params.set("client_id", selectedClientID);
     if (filters.scene) params.set("scene", filters.scene);
     if (filters.action) params.set("action", filters.action);
     if (filters.result) params.set("result", filters.result);
     if (filters.account_id_hash) params.set("account_id_hash", filters.account_id_hash);
     if (filters.device_id_hash) params.set("device_id_hash", filters.device_id_hash);
     return `/api/v1/admin/audit-events?${params.toString()}`;
-  }, [filters, pageState.page, pageState.pageSize]);
+  }, [filters, pageState.page, pageState.pageSize, selectedClientID]);
   const { data, isLoading } = usePagedList<AuditEvent>("audit", path);
   const rows = data?.items || [];
   const total = (pageState.page - 1) * pageState.pageSize + rows.length + (data?.has_more ? 1 : 0);
   const columns: ColumnsType<AuditEvent> = [
+    { title: "应用", dataIndex: "client_id", width: 130 },
     { title: "场景", dataIndex: "scene" },
     { title: "账号", dataIndex: "account_id_hash" },
     { title: "设备", dataIndex: "device_id_hash" },
@@ -1556,27 +1646,35 @@ function Audit() {
 }
 
 function RiskFeatures() {
+  const { selectedClientID } = useApplicationScope();
   const [filters, setFilters] = useState({ challenge_type: "", label: "", model_trainable: "", scene: "" });
   const [pageState, setPageState] = useState({ page: 1, pageSize: 20 });
   const [exporting, setExporting] = useState(false);
   const [form] = Form.useForm();
+
+  useEffect(() => {
+    setPageState((prev) => ({ ...prev, page: 1 }));
+  }, [selectedClientID]);
+
   const path = useMemo(() => {
     const params = new URLSearchParams({
       limit: String(pageState.pageSize),
       offset: String((pageState.page - 1) * pageState.pageSize)
     });
+    if (selectedClientID) params.set("client_id", selectedClientID);
     if (filters.scene) params.set("scene", filters.scene);
     if (filters.challenge_type) params.set("challenge_type", filters.challenge_type);
     if (filters.label) params.set("label", filters.label);
     if (filters.model_trainable) params.set("model_trainable", filters.model_trainable);
     return `/api/v1/admin/risk-feature-snapshots?${params.toString()}`;
-  }, [filters, pageState.page, pageState.pageSize]);
+  }, [filters, pageState.page, pageState.pageSize, selectedClientID]);
   const { data, isLoading } = usePagedList<RiskFeatureSnapshot>("risk-features", path);
   const rows = data?.items || [];
   const total = (pageState.page - 1) * pageState.pageSize + rows.length + (data?.has_more ? 1 : 0);
   const mutation = usePost<RiskFeatureSnapshot>("risk-features");
   const exportTrainingData = async () => {
     const params = new URLSearchParams({ limit: "1000" });
+    if (selectedClientID) params.set("client_id", selectedClientID);
     if (filters.scene) params.set("scene", filters.scene);
     if (filters.challenge_type) params.set("challenge_type", filters.challenge_type);
     if (filters.label) params.set("label", filters.label);
@@ -1611,6 +1709,7 @@ function RiskFeatures() {
     });
   };
   const columns: ColumnsType<RiskFeatureSnapshot> = [
+    { title: "应用", dataIndex: "client_id", width: 130 },
     { title: "会话", dataIndex: "attempt_id" },
     { title: "场景", dataIndex: "scene" },
     { title: "验证码", render: (_, row) => captchaLabel(row.challenge_type) },

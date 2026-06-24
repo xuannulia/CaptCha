@@ -44,6 +44,15 @@ body {
   font-size: 13px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.application-scope-select {
+  width: 220px;
+}
+
 .overview-page {
   display: grid;
   gap: 16px;
