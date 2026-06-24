@@ -73,6 +73,9 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		sliderTemplate, _ := loadResourceImageByType(resources, "slider_template")
 		size := sliderPieceSize(payload.Parameters, sliderTemplateSize)
 		composed, piece := composeSlider(base, answer, sliderTemplate, size)
+		if payload.Type == types.CaptchaSlider2 {
+			composed = composeSliderDecoys(composed, answer, sliderTemplate, size)
+		}
 		payload.Image = pngDataURL(composed)
 		payload.Piece = pngDataURL(piece)
 		parameters := cloneParameters(payload.Parameters)
@@ -130,7 +133,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 			return payload
 		}
 		base := resizeNearest(background, payload.View.Width, payload.View.Height)
-		image, words := composeIconClickImage(base, payload.Words, answer.Points, resources)
+		image, words := composeIconClickImage(base, payload, answer.Points, resources)
 		payload.Image = pngDataURL(image)
 		if len(words) > 0 {
 			payload.Words = words
@@ -907,18 +910,65 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 			edgeBand := sliderTemplateEdgeBandStrength(mask, px, py, 4)
 			innerBand := sliderTemplateEdgeBandStrength(mask, px, py, 2)
 
-			gapPixel := mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, 0.22+edgeBand*0.08)
-			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 121, G: 126, B: 134, A: 255}, innerBand*0.30)
+			gapPixel := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, 0.18+edgeBand*0.08)
+			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 71, G: 85, B: 105, A: 255}, 0.16+edgeBand*0.18+innerBand*0.34)
 			img.Set(x+px, y+py, gapPixel)
 
 			piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.07)
 			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 245, G: 247, B: 250, A: 255}, math.Min(0.98, math.Pow(1-alphaRatio, 0.45)*1.15+edgeBand*0.92))
-			borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 118, G: 123, B: 132, A: 255}, innerBand*0.72)
-			piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.62, innerBand*0.48))
+			borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 51, G: 65, B: 85, A: 255}, innerBand*0.92)
+			piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.76, edgeBand*0.22+innerBand*0.58))
 			piece.Set(px, py, color.NRGBA{R: piecePixel.R, G: piecePixel.G, B: piecePixel.B, A: alpha})
 		}
 	}
 	return img, piece
+}
+
+func composeSliderDecoys(img *image.RGBA, answer types.Answer, template image.Image, size int) *image.RGBA {
+	size = clamp(size, 16, min(img.Bounds().Dx(), img.Bounds().Dy()))
+	if template == nil {
+		template = defaultSliderTemplate(size)
+	}
+	mask := resizeAlphaMask(template, size, size)
+	for _, decoy := range sliderDecoyPointsForImage(img, size) {
+		if absInt(decoy.X-answer.X) < size && absInt(decoy.Y-answer.Y) < size {
+			continue
+		}
+		drawSliderMaskGhost(img, mask, decoy.X, decoy.Y, size, 0.64)
+	}
+	return img
+}
+
+func sliderDecoyPointsForImage(img image.Image, size int) []image.Point {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	return []image.Point{
+		{X: 18, Y: 24},
+		{X: max(0, width-size-18), Y: max(0, height-size-22)},
+	}
+}
+
+func drawSliderMaskGhost(img *image.RGBA, mask image.Image, ox, oy, size int, opacity float64) {
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			alpha := colorAlpha(mask.At(x, y))
+			if alpha <= 18 {
+				continue
+			}
+			gx, gy := ox+x, oy+y
+			if !image.Pt(gx, gy).In(img.Bounds()) {
+				continue
+			}
+			source := rgbaAt(img, gx, gy)
+			ratio := opacity * float64(alpha) / 255
+			edgeBand := sliderTemplateEdgeBandStrength(mask, x, y, 4)
+			innerBand := sliderTemplateEdgeBandStrength(mask, x, y, 2)
+			ghost := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, ratio*0.34)
+			ghost = mixRGBA(ghost, color.RGBA{R: 71, G: 85, B: 105, A: 255}, ratio*(0.16+edgeBand*0.22+innerBand*0.38))
+			img.Set(gx, gy, ghost)
+		}
+	}
 }
 
 func defaultSliderTemplate(size int) image.Image {
@@ -996,9 +1046,9 @@ func cropCircularRotateImage(src image.Image, width, height int) *image.RGBA {
 			if math.Hypot(dx, dy) > radius {
 				continue
 			}
-			sx := srcX0 + x*srcSize/diameter
-			sy := srcY0 + y*srcSize/diameter
-			dst.Set(x0+x, y0+y, src.At(sx, sy))
+			sx := float64(srcX0) + (float64(x)+0.5)*float64(srcSize)/float64(diameter) - 0.5
+			sy := float64(srcY0) + (float64(y)+0.5)*float64(srcSize)/float64(diameter) - 0.5
+			dst.Set(x0+x, y0+y, sampleBilinearRGBA(src, sx, sy))
 		}
 	}
 	return dst
@@ -1041,14 +1091,40 @@ func rotateImage(src *image.RGBA, angle int) *image.RGBA {
 		for x := 0; x < width; x++ {
 			dx := float64(x) - cx
 			dy := float64(y) - cy
-			sx := int(math.Round(cx + dx*cosine - dy*sine))
-			sy := int(math.Round(cy + dx*sine + dy*cosine))
-			if sx >= 0 && sx < width && sy >= 0 && sy < height {
-				dst.Set(x, y, src.At(sx, sy))
+			sx := cx + dx*cosine - dy*sine
+			sy := cy + dx*sine + dy*cosine
+			if sx >= 0 && sx <= float64(width-1) && sy >= 0 && sy <= float64(height-1) {
+				dst.Set(x, y, sampleBilinearRGBA(src, sx, sy))
 			}
 		}
 	}
 	return dst
+}
+
+func sampleBilinearRGBA(src image.Image, x, y float64) color.RGBA {
+	bounds := src.Bounds()
+	x0 := clamp(int(math.Floor(x)), bounds.Min.X, bounds.Max.X-1)
+	y0 := clamp(int(math.Floor(y)), bounds.Min.Y, bounds.Max.Y-1)
+	x1 := clamp(x0+1, bounds.Min.X, bounds.Max.X-1)
+	y1 := clamp(y0+1, bounds.Min.Y, bounds.Max.Y-1)
+	wx := x - math.Floor(x)
+	wy := y - math.Floor(y)
+	c00 := rgbaAt(src, x0, y0)
+	c10 := rgbaAt(src, x1, y0)
+	c01 := rgbaAt(src, x0, y1)
+	c11 := rgbaAt(src, x1, y1)
+	return color.RGBA{
+		R: uint8(math.Round(bilinearChannel(c00.R, c10.R, c01.R, c11.R, wx, wy))),
+		G: uint8(math.Round(bilinearChannel(c00.G, c10.G, c01.G, c11.G, wx, wy))),
+		B: uint8(math.Round(bilinearChannel(c00.B, c10.B, c01.B, c11.B, wx, wy))),
+		A: uint8(math.Round(bilinearChannel(c00.A, c10.A, c01.A, c11.A, wx, wy))),
+	}
+}
+
+func bilinearChannel(c00, c10, c01, c11 uint8, wx, wy float64) float64 {
+	top := float64(c00)*(1-wx) + float64(c10)*wx
+	bottom := float64(c01)*(1-wx) + float64(c11)*wx
+	return top*(1-wy) + bottom*wy
 }
 
 type concatTemplateOptions struct {
@@ -1271,17 +1347,17 @@ func drawCurveResourceTarget(img *image.RGBA, variant int, points []image.Point)
 	}
 }
 
-func composeIconClickImage(base *image.RGBA, words []string, points []types.Point, resources []types.CaptchaResource) (*image.RGBA, []string) {
+func composeIconClickImage(base *image.RGBA, payload types.RenderPayload, points []types.Point, resources []types.CaptchaResource) (*image.RGBA, []string) {
 	img := cloneRGBA(base)
 	icons := loadResourceImagesByType(resources, "icon_library")
-	labels := make([]string, 0, min(len(words), len(points)))
+	labels := make([]string, 0, min(len(payload.Words), len(points)))
 	if len(icons) > 0 {
 		for i, point := range points {
 			icon := icons[i%len(icons)]
 			drawResourceIcon(img, icon.Image, point.X, point.Y, 44, clickPalette(i))
 			label := resourceDisplayLabel(icon.Resource, "")
-			if label == "" && i < len(words) {
-				label = words[i]
+			if label == "" && i < len(payload.Words) {
+				label = payload.Words[i]
 			}
 			if label != "" {
 				labels = append(labels, label)
@@ -1289,13 +1365,63 @@ func composeIconClickImage(base *image.RGBA, words []string, points []types.Poin
 		}
 		return img, labels
 	}
+	if overlayPayloadIconObjects(img, payload.Image) {
+		return img, payload.Words
+	}
 	for i, point := range points {
 		drawGenericIconMarker(img, point.X, point.Y, i, clickPalette(i))
-		if i < len(words) {
-			labels = append(labels, words[i])
+		if i < len(payload.Words) {
+			labels = append(labels, payload.Words[i])
 		}
 	}
 	return img, labels
+}
+
+func overlayPayloadIconObjects(dst *image.RGBA, dataURL string) bool {
+	src, ok := decodePNGDataURLImage(dataURL)
+	if !ok {
+		return false
+	}
+	src = resizeNearest(src, dst.Bounds().Dx(), dst.Bounds().Dy())
+	changed := false
+	for y := 0; y < src.Bounds().Dy(); y++ {
+		for x := 0; x < src.Bounds().Dx(); x++ {
+			pixel := rgbaAt(src, x, y)
+			if !isLikelyIconPixel(pixel) {
+				continue
+			}
+			blendPixelOver(dst, x, y, pixel)
+			changed = true
+		}
+	}
+	return changed
+}
+
+func decodePNGDataURLImage(value string) (*image.RGBA, bool) {
+	data, contentType, ok := parseDataURL(value)
+	if !ok || !strings.EqualFold(contentType, "image/png") {
+		return nil, false
+	}
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, false
+	}
+	if rgba, ok := img.(*image.RGBA); ok {
+		return rgba, true
+	}
+	out := image.NewRGBA(img.Bounds())
+	draw.Draw(out, out.Bounds(), img, img.Bounds().Min, draw.Src)
+	return out, true
+}
+
+func isLikelyIconPixel(c color.RGBA) bool {
+	if c.A <= 12 {
+		return false
+	}
+	maxChannel := max(int(c.R), max(int(c.G), int(c.B)))
+	minChannel := min(int(c.R), min(int(c.G), int(c.B)))
+	luma := 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+	return maxChannel-minChannel > 28 || luma < 150
 }
 
 func drawResourceIcon(img *image.RGBA, icon image.Image, cx, cy, size int, accent color.RGBA) {

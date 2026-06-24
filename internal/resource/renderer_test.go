@@ -959,6 +959,40 @@ func TestApplyVisualsRendersSVGIconLibrary(t *testing.T) {
 	assertRegionChanged(t, image, 24, 14, 32, 32, color.RGBA{R: 240, G: 248, B: 255, A: 255})
 }
 
+func TestApplyVisualsPreservesBuiltInIconObjectsWithoutIconLibrary(t *testing.T) {
+	t.Parallel()
+
+	background := color.RGBA{R: 12, G: 120, B: 80, A: 255}
+	backgroundPath, _ := writeTestPNG(t, 80, 60, background)
+	native := image.NewRGBA(image.Rect(0, 0, 80, 60))
+	fillRect(native, 0, 0, 80, 60, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	fillRect(native, 30, 20, 20, 20, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+	payload := types.RenderPayload{
+		Type:   types.CaptchaImageClick,
+		Prompt: "依次点击：电脑",
+		View:   types.View{Width: 80, Height: 60},
+		Image:  pngDataURL(native),
+		Words:  []string{"电脑"},
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{Points: []types.Point{{X: 40, Y: 30}}}, []types.CaptchaResource{
+		{
+			ID:           "res_background",
+			ResourceType: "background_image",
+			StorageType:  "file",
+			URI:          backgroundPath,
+			Status:       "active",
+		},
+	})
+
+	image := decodePNGDataURL(t, composed.Image)
+	assertPixel(t, image, 4, 4, background)
+	assertPixel(t, image, 40, 30, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+	if composed.Prompt != payload.Prompt || len(composed.Words) != 1 || composed.Words[0] != "电脑" {
+		t.Fatalf("expected built-in icon labels to be retained, got prompt=%q words=%v", composed.Prompt, composed.Words)
+	}
+}
+
 func TestApplyVisualsUsesGridCategoryLibrary(t *testing.T) {
 	t.Parallel()
 

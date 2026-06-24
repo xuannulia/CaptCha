@@ -603,8 +603,8 @@ function RuntimeChallenge() {
       setPoints(nextPoints);
       return { points: nextPoints, track: nextTrack, value: valueRef.current, autoVerify: true };
     }
-    const snapshot = appendClickPoint(end, nextTrack);
-    if (snapshot && snapshot.points.length >= clickTargetCount(challenge)) {
+    const snapshot = toggleJigsawPoint(end, nextTrack);
+    if (snapshot && snapshot.completed && snapshot.points.length >= clickTargetCount(challenge)) {
       swapJigsawTiles(snapshot.points[0], snapshot.points[1]);
     }
     return snapshot ? { ...snapshot, autoVerify: false } : snapshot;
@@ -754,6 +754,23 @@ function RuntimeChallenge() {
     return { points: nextPoints, value: valueRef.current, track: nextTrack };
   }
 
+  function toggleJigsawPoint(point: ChallengePoint, nextTrack = trackRef.current) {
+    if (!challenge || !isJigsawCaptcha(challenge)) return undefined;
+    const targetCount = clickTargetCount(challenge);
+    const base = pointsRef.current;
+    if (base.length >= targetCount) {
+      return { points: base, value: valueRef.current, track: nextTrack, completed: false };
+    }
+    const tileIndex = jigsawTileIndexFromPoint(challenge, point);
+    const existingIndex = base.findIndex((selected) => jigsawTileIndexFromPoint(challenge, selected) === tileIndex);
+    const nextPoints = existingIndex >= 0
+      ? base.filter((_, index) => index !== existingIndex)
+      : [...base, jigsawTileCenterPoint(challenge, tileIndex)].slice(0, targetCount);
+    pointsRef.current = nextPoints;
+    setPoints(nextPoints);
+    return { points: nextPoints, value: valueRef.current, track: nextTrack, completed: existingIndex < 0 && nextPoints.length >= targetCount };
+  }
+
   function toggleClickPoint(point: ChallengePoint, nextTrack = trackRef.current) {
     if (!challenge) return undefined;
     const base = pointsRef.current;
@@ -870,7 +887,7 @@ function RuntimeChallenge() {
               </div>
               <div class="tianai-captcha-tips" id="tianai-captcha-tips">{curveTipText(status)}</div>
             </div>
-            <div
+          <div
               ref={controlRef}
               class="slider-move"
               role="slider"
@@ -898,9 +915,9 @@ function RuntimeChallenge() {
         )}
 
         {challenge && !isCurveCaptcha(challenge) && (
-          <div
+            <div
             ref={boardRef}
-            class={`board ${isPathCaptcha(challenge) ? "path-board" : ""} ${isCurveCaptcha(challenge) ? "curve-board" : ""} ${isJigsawCaptcha(challenge) ? "jigsaw-board" : ""} ${usesBoardDragControl(challenge) ? "drag-board" : ""}`}
+            class={`board ${isPathCaptcha(challenge) ? "path-board" : ""} ${isCurveCaptcha(challenge) ? "curve-board" : ""} ${isJigsawCaptcha(challenge) ? "jigsaw-board" : ""} ${challenge.type === "ROTATE" ? "rotate-board" : ""} ${usesBoardDragControl(challenge) ? "drag-board" : ""}`}
             style={{ aspectRatio: `${challenge.view.width} / ${challenge.view.height}` }}
             onPointerDown={onBoardPointerDown}
             onPointerMove={onBoardPointerMove}
@@ -928,7 +945,7 @@ function RuntimeChallenge() {
                 {jigsawTiles.map((sourceIndex, cellIndex) => (
                   <span
                     key={`${cellIndex}-${sourceIndex}`}
-                    class="jigsaw-tile"
+                    class={`jigsaw-tile ${isJigsawTileSelected(challenge, cellIndex, points) ? "selected" : ""}`}
                     style={jigsawTileStyle(challenge, sourceIndex)}
                   />
                 ))}
@@ -1260,6 +1277,23 @@ function jigsawTileIndexFromPoint(challenge: Challenge, point: ChallengePoint) {
   const col = Math.floor(clamp(point.x, 0, challenge.view.width - 1) / (challenge.view.width / cols));
   const row = Math.floor(clamp(point.y, 0, challenge.view.height - 1) / (challenge.view.height / rows));
   return clamp(row, 0, rows - 1) * cols + clamp(col, 0, cols - 1);
+}
+
+function jigsawTileCenterPoint(challenge: Challenge, tileIndex: number) {
+  const cols = jigsawCols(challenge);
+  const rows = jigsawRows(challenge);
+  const safeIndex = clamp(tileIndex, 0, cols * rows - 1);
+  const col = safeIndex % cols;
+  const row = Math.floor(safeIndex / cols);
+  return {
+    x: Math.round((col + 0.5) * (challenge.view.width / cols)),
+    y: Math.round((row + 0.5) * (challenge.view.height / rows))
+  };
+}
+
+function isJigsawTileSelected(challenge: Challenge, cellIndex: number, points: ChallengePoint[]) {
+  if (points.length >= clickTargetCount(challenge)) return false;
+  return points.some((point) => jigsawTileIndexFromPoint(challenge, point) === cellIndex);
 }
 
 function jigsawTileStyle(challenge: Challenge, sourceIndex: number) {

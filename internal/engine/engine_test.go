@@ -1035,7 +1035,7 @@ func inferRotateAnswerFromImage(t *testing.T, img image.Image) int {
 	bestStart := 0
 	bestMismatch := int(^uint(0) >> 1)
 	for candidate := 0; candidate < 360; candidate++ {
-		model := drawRotateImage(candidate)
+		model := drawRotateImage(candidate, bounds.Dx())
 		mismatch := 0
 		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 			for x := bounds.Min.X; x < bounds.Max.X; x++ {

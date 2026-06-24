@@ -1,8 +1,12 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"math"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +31,7 @@ type MemoryStore struct {
 	routes       map[string]types.RoutePolicy
 	ipPolicies   map[string]types.IPPolicy
 	resources    map[string]types.CaptchaResource
+	resourcePath string
 	auditEvents  []types.AuditEvent
 	features     []types.RiskFeatureSnapshot
 	models       map[string]types.RiskModelVersion
@@ -42,6 +47,14 @@ type rateCounter struct {
 }
 
 func NewMemoryStore() *MemoryStore {
+	return newMemoryStore("")
+}
+
+func NewMemoryStoreWithResourcePersistence(path string) *MemoryStore {
+	return newMemoryStore(strings.TrimSpace(path))
+}
+
+func newMemoryStore(resourcePath string) *MemoryStore {
 	now := time.Now()
 	s := &MemoryStore{
 		sessions:     make(map[string]types.ChallengeSession),
@@ -55,8 +68,10 @@ func NewMemoryStore() *MemoryStore {
 		features:     make([]types.RiskFeatureSnapshot, 0, 128),
 		models:       make(map[string]types.RiskModelVersion),
 		rateCounters: make(map[string]rateCounter),
+		resourcePath: resourcePath,
 	}
 	s.seed(now)
+	s.loadResourcesFromDisk()
 	return s
 }
 
@@ -296,6 +311,7 @@ func (s *MemoryStore) UpsertResource(resource types.CaptchaResource) types.Captc
 	}
 	resource.UpdatedAt = now
 	s.resources[resource.ID] = resource
+	s.persistResourcesLocked()
 	return resource
 }
 
@@ -314,7 +330,62 @@ func (s *MemoryStore) DeleteResources(clientID string, ids []string) int {
 		delete(s.resources, id)
 		deleted++
 	}
+	if deleted > 0 {
+		s.persistResourcesLocked()
+	}
 	return deleted
+}
+
+type memoryResourceState struct {
+	Resources []types.CaptchaResource `json:"resources"`
+}
+
+func (s *MemoryStore) loadResourcesFromDisk() {
+	if s.resourcePath == "" {
+		return
+	}
+	data, err := os.ReadFile(s.resourcePath)
+	if err != nil {
+		return
+	}
+	var state memoryResourceState
+	if json.Unmarshal(data, &state) != nil {
+		return
+	}
+	resources := make(map[string]types.CaptchaResource, len(state.Resources))
+	for _, resource := range state.Resources {
+		if resource.ID == "" {
+			continue
+		}
+		resources[resource.ID] = resource
+	}
+	s.resources = resources
+}
+
+func (s *MemoryStore) persistResourcesLocked() {
+	if s.resourcePath == "" {
+		return
+	}
+	resources := make([]types.CaptchaResource, 0, len(s.resources))
+	for _, resource := range s.resources {
+		resources = append(resources, resource)
+	}
+	sort.SliceStable(resources, func(i, j int) bool {
+		return resources[i].ID < resources[j].ID
+	})
+	data, err := json.MarshalIndent(memoryResourceState{Resources: resources}, "", "  ")
+	if err != nil {
+		return
+	}
+	dir := filepath.Dir(s.resourcePath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	tmp := s.resourcePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, s.resourcePath)
 }
 
 func (s *MemoryStore) AddAuditEvent(event types.AuditEvent) types.AuditEvent {

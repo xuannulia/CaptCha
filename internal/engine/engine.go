@@ -57,8 +57,8 @@ var svgMaskCache sync.Map
 
 const (
 	maxTrackPoints     = 256
-	sliderPieceSize    = 96
-	slider2PieceSize   = 88
+	sliderPieceSize    = 67
+	slider2PieceSize   = 62
 	concatMaxMovement  = 160
 	concatPieceWidth   = 320 + concatMaxMovement
 	jigsawTileCols     = 2
@@ -542,8 +542,8 @@ func (e *Engine) generate(captchaType types.CaptchaType) (types.Answer, types.Re
 		return types.Answer{Angle: answer}, types.RenderPayload{
 			Type:   types.CaptchaRotate,
 			Prompt: "旋转图形至正向",
-			View:   types.View{Width: 220, Height: 220},
-			Image:  pngDataURL(drawRotateImage(start)),
+			View:   types.View{Width: 180, Height: 180},
+			Image:  pngDataURL(drawRotateImage(start, 180)),
 			Parameters: map[string]any{
 				"min":  0,
 				"max":  359,
@@ -784,14 +784,14 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 			alphaRatio := float64(maskAlpha) / 255
 			fringe := math.Max(edgeSoft, (1-alphaRatio)*0.92)
 
-			gapPixel := mixRGBA(source, color.RGBA{R: 248, G: 250, B: 252, A: 255}, 0.20+edgeSoft*0.12)
-			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 121, G: 126, B: 134, A: 255}, edgeSoft*0.12+edgeCore*0.18+innerBand*0.24)
+			gapPixel := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, 0.18+edgeSoft*0.08)
+			gapPixel = mixRGBA(gapPixel, color.RGBA{R: 71, G: 85, B: 105, A: 255}, 0.16+edgeSoft*0.18+edgeCore*0.24+innerBand*0.30)
 			bg.Set(gx, gy, gapPixel)
 
 			piecePixel := mixRGBA(source, color.RGBA{R: 255, G: 255, B: 255, A: 255}, 0.07)
 			piecePixel = mixRGBA(piecePixel, color.RGBA{R: 245, G: 247, B: 250, A: 255}, math.Min(0.98, math.Pow(1-alphaRatio, 0.45)*1.15+edgeBand*0.92+edgeSoft*0.18))
-			borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 118, G: 123, B: 132, A: 255}, math.Min(1, innerBand*0.72+edgeCore*0.46+edgeSoft*0.12))
-			piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.64, fringe*0.20+edgeCore*0.18+innerBand*0.42))
+			borderTone := mixRGBA(color.RGBA{R: 238, G: 240, B: 243, A: 255}, color.RGBA{R: 51, G: 65, B: 85, A: 255}, math.Min(1, innerBand*0.92+edgeCore*0.58+edgeSoft*0.14))
+			piecePixel = mixRGBA(piecePixel, borderTone, math.Min(0.76, fringe*0.24+edgeCore*0.22+innerBand*0.54))
 			if edgeSoft > edgeCore {
 				piecePixel = mixRGBA(piecePixel, color.RGBA{R: 250, G: 251, B: 252, A: 255}, (edgeSoft-edgeCore)*0.08)
 			}
@@ -809,7 +809,7 @@ func drawSlider2Challenge(targetX, targetY, size int, mask sliderMaskKind) (imag
 		if abs(decoy.X-targetX) < size && abs(decoy.Y-targetY) < size {
 			continue
 		}
-		drawSliderMaskGhost(bgRGBA, decoy.X, decoy.Y, size, mask, 0.42)
+		drawSliderMaskGhost(bgRGBA, decoy.X, decoy.Y, size, mask, 0.64)
 	}
 	return bgRGBA, piece
 }
@@ -837,8 +837,8 @@ func drawSliderMaskGhost(img *image.RGBA, ox, oy, size int, mask sliderMaskKind,
 			ratio := opacity * float64(maskAlpha) / 255
 			edgeSoft := sliderAlphaEdgeStrength(maskFile, size, x, y, 6)
 			edgeCore := sliderAlphaEdgeStrength(maskFile, size, x, y, 2)
-			ghost := mixRGBA(source, color.RGBA{R: 245, G: 247, B: 250, A: 255}, ratio*0.42)
-			ghost = mixRGBA(ghost, color.RGBA{R: 119, G: 124, B: 133, A: 255}, ratio*(edgeSoft*0.18+edgeCore*0.30))
+			ghost := mixRGBA(source, color.RGBA{R: 226, G: 232, B: 240, A: 255}, ratio*0.34)
+			ghost = mixRGBA(ghost, color.RGBA{R: 71, G: 85, B: 105, A: 255}, ratio*(0.16+edgeSoft*0.22+edgeCore*0.36))
 			img.Set(gx, gy, ghost)
 		}
 	}
@@ -1499,18 +1499,30 @@ func sliderMaskFile(mask sliderMaskKind) string {
 	return string(sliderMaskPuzzle)
 }
 
-func drawRotateImage(start int) image.Image {
-	img := newCanvas(220, 220, color.RGBA{R: 248, G: 250, B: 252, A: 255})
-	drawCircle(img, 110, 110, 89, color.RGBA{R: 203, G: 213, B: 225, A: 255})
-	drawCircle(img, 110, 110, 83, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+func drawRotateImage(start int, canvasSize ...int) image.Image {
+	size := 220
+	if len(canvasSize) > 0 && canvasSize[0] > 0 {
+		size = canvasSize[0]
+	}
+	center := size / 2
+	outer := int(math.Round(float64(size) * 0.405))
+	inner := int(math.Round(float64(size) * 0.377))
+	shapeTop := -int(math.Round(float64(size) * 0.327))
+	shapeSideX := int(math.Round(float64(size) * 0.282))
+	shapeSideY := int(math.Round(float64(size) * 0.191))
+	shapeCenterY := int(math.Round(float64(size) * 0.073))
+	hub := int(math.Round(float64(size) * 0.100))
+	img := newCanvas(size, size, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	drawCircle(img, center, center, outer, color.RGBA{R: 203, G: 213, B: 225, A: 255})
+	drawCircle(img, center, center, inner, color.RGBA{R: 248, G: 250, B: 252, A: 255})
 	shape := []image.Point{
-		rotatePoint(0, -72, start, 110, 110),
-		rotatePoint(62, 42, start, 110, 110),
-		rotatePoint(0, 16, start, 110, 110),
-		rotatePoint(-62, 42, start, 110, 110),
+		rotatePoint(0, shapeTop, start, center, center),
+		rotatePoint(shapeSideX, shapeSideY, start, center, center),
+		rotatePoint(0, shapeCenterY, start, center, center),
+		rotatePoint(-shapeSideX, shapeSideY, start, center, center),
 	}
 	fillPolygon(img, shape, color.RGBA{R: 37, G: 99, B: 235, A: 255})
-	drawCircle(img, 110, 110, 22, color.RGBA{R: 250, G: 204, B: 21, A: 255})
+	drawCircle(img, center, center, hub, color.RGBA{R: 250, G: 204, B: 21, A: 255})
 	return img
 }
 

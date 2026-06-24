@@ -277,8 +277,9 @@ func buildStore(logger *slog.Logger) store.Store {
 func buildControlStore(logger *slog.Logger) controlStore {
 	postgresDSN := os.Getenv("CAPTCHA_POSTGRES_DSN")
 	if postgresDSN == "" {
-		logger.Info("using memory control store")
-		return store.NewMemoryStore()
+		resourceStateFile := env("CAPTCHA_MEMORY_RESOURCE_STATE_FILE", "./data/resource-state.json")
+		logger.Info("using memory control store", "resource_state_file", resourceStateFile)
+		return store.NewMemoryStoreWithResourcePersistence(resourceStateFile)
 	}
 
 	db, err := sql.Open("pgx", postgresDSN)

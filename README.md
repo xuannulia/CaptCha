@@ -111,6 +111,8 @@ CAPTCHA_REDIS_ADDR=localhost:6379 \
 
 PostgreSQL migrations are applied from `./migrations/postgres` by default. Demo data is seeded by default; set `CAPTCHA_SEED_DEMO=false` to disable it.
 
+When PostgreSQL is not configured, the memory control store persists captcha resource metadata to `./data/resource-state.json` by default. Override it with `CAPTCHA_MEMORY_RESOURCE_STATE_FILE` if local uploads should survive server restarts in another path.
+
 Serve classpath captcha resources from packaged local directories:
 
 ```bash
