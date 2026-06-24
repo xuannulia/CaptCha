@@ -38,7 +38,8 @@ const (
 	sliderPieceSizeFallback  = 47
 	slider2PieceSizeFallback = sliderPieceSizeFallback
 	sliderMaskOpacity        = 0.46
-	sliderPieceBorder        = 0.42
+	sliderPieceBorder        = 0.58
+	sliderBorderRadius       = 4
 	rotateRenderScale        = 2
 	concatMaxMovement        = 160
 )
@@ -938,7 +939,7 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 			}
 			source := rgbaAt(base, x+px, y+py)
 			img.Set(x+px, y+py, sliderBlackMaskPixel(source, alpha, sliderMaskOpacity))
-			border := sliderTemplateEdgeBandStrength(mask, px, py, 2)
+			border := sliderTemplateEdgeBandStrength(mask, px, py, sliderBorderRadius)
 			piecePixel := sliderPieceBorderPixel(source, border)
 			piece.Set(px, py, color.NRGBA{R: piecePixel.R, G: piecePixel.G, B: piecePixel.B, A: alpha})
 		}

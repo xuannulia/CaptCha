@@ -63,7 +63,8 @@ const (
 	sliderPieceSize    = 47
 	slider2PieceSize   = sliderPieceSize
 	sliderMaskOpacity  = 0.46
-	sliderPieceBorder  = 0.42
+	sliderPieceBorder  = 0.58
+	sliderBorderRadius = 4
 	concatMaxMovement  = 160
 	concatPieceWidth   = imageViewWidth + concatMaxMovement
 	jigsawTileCols     = 2
@@ -794,7 +795,7 @@ func drawSliderChallenge(targetX, targetY, size int, mask sliderMaskKind) (image
 			gx, gy := targetX+x, targetY+y
 			source := rgbaAt(base, gx, gy)
 			bg.Set(gx, gy, sliderBlackMaskPixel(source, maskAlpha, sliderMaskOpacity))
-			border := sliderMaskEdgeBandStrength(maskFile, size, x, y, 2)
+			border := sliderMaskEdgeBandStrength(maskFile, size, x, y, sliderBorderRadius)
 			piece.Set(x, y, withAlpha(sliderPieceBorderPixel(source, border), maskAlpha))
 		}
 	}

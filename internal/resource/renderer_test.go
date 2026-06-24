@@ -514,7 +514,7 @@ func TestComposedSliderPieceHasNoOutsideShadow(t *testing.T) {
 		}
 		return colorAlpha(actualMask.At(x, y))
 	}, func(x, y int) float64 {
-		return sliderTemplateEdgeBandStrength(actualMask, x, y, 2)
+		return sliderTemplateEdgeBandStrength(actualMask, x, y, sliderBorderRadius)
 	})
 }
 

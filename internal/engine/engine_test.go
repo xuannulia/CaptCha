@@ -199,7 +199,7 @@ func TestSliderPieceHasNoOutsideShadow(t *testing.T) {
 	assertSliderPieceHasInnerBorder(t, piece, base, target, size, func(x, y int) uint8 {
 		return svgMaskAlpha(maskFile, size, x, y)
 	}, func(x, y int) float64 {
-		return sliderMaskEdgeBandStrength(maskFile, size, x, y, 2)
+		return sliderMaskEdgeBandStrength(maskFile, size, x, y, sliderBorderRadius)
 	})
 }
 
