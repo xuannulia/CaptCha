@@ -74,6 +74,10 @@ type ResourceFormValues = Omit<Resource, "id" | "metadata"> & {
   height?: number;
   mime_type?: string;
   size_bytes?: number;
+  category?: string;
+  label?: string;
+  weight?: number;
+  metadata_json?: string;
 };
 
 type AuditEvent = {
@@ -606,6 +610,14 @@ function Resources() {
     { title: "场景", dataIndex: "scene", render: (value) => value || "-" },
     { title: "标签", dataIndex: "tag" },
     {
+      title: "分类",
+      render: (_, row) => {
+        const category = row.metadata?.category;
+        const label = row.metadata?.label;
+        return category || label ? `${label || category}` : "-";
+      }
+    },
+    {
       title: "规格",
       render: (_, row) => {
         const width = row.metadata?.width;
@@ -632,12 +644,27 @@ function Resources() {
             status: "active"
           }}
           onFinish={async (values: ResourceFormValues) => {
-            const { width, height, mime_type, size_bytes, ...resourceValues } = values;
+            const { width, height, mime_type, size_bytes, category, label, weight, metadata_json, ...resourceValues } = values;
             const metadata: Record<string, unknown> = {};
+            if (metadata_json?.trim()) {
+              try {
+                const parsed = JSON.parse(metadata_json);
+                if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+                  throw new Error("metadata must be an object");
+                }
+                Object.assign(metadata, parsed);
+              } catch {
+                form.setFields([{ name: "metadata_json", errors: ["JSON 格式错误"] }]);
+                return;
+              }
+            }
             if (width !== undefined) metadata.width = width;
             if (height !== undefined) metadata.height = height;
             if (mime_type) metadata.mime_type = mime_type;
             if (size_bytes !== undefined) metadata.size_bytes = size_bytes;
+            if (category) metadata.category = category;
+            if (label) metadata.label = label;
+            if (weight !== undefined) metadata.weight = weight;
             const body = {
               ...resourceValues,
               metadata: Object.keys(metadata).length > 0 ? metadata : undefined
@@ -655,11 +682,17 @@ function Resources() {
           <Form.Item name="uri" label="URI" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="tag" label="标签"><Input /></Form.Item>
           <Space.Compact block>
+            <Form.Item name="category" label="分类" style={{ width: "50%" }}><Input placeholder="car" /></Form.Item>
+            <Form.Item name="label" label="显示名" style={{ width: "50%" }}><Input placeholder="汽车" /></Form.Item>
+          </Space.Compact>
+          <Form.Item name="weight" label="权重"><InputNumber min={1} max={1000} style={{ width: "100%" }} /></Form.Item>
+          <Space.Compact block>
             <Form.Item name="width" label="宽" style={{ width: "50%" }}><InputNumber min={1} max={4096} style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="height" label="高" style={{ width: "50%" }}><InputNumber min={1} max={4096} style={{ width: "100%" }} /></Form.Item>
           </Space.Compact>
           <Form.Item name="mime_type" label="MIME"><Input placeholder="image/png" /></Form.Item>
           <Form.Item name="size_bytes" label="大小"><InputNumber min={1} max={20971520} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="metadata_json" label="扩展 Metadata JSON"><Input.TextArea rows={4} placeholder={'{"category":"car","label":"汽车"}'} /></Form.Item>
           <Form.Item name="checksum" label="SHA-256"><Input /></Form.Item>
           <Form.Item name="status" label="状态"><Select options={selectOptions(["active", "disabled"])} /></Form.Item>
         </Form>

@@ -109,6 +109,61 @@ func TestSelectResourcesPrefersSceneAndRequestedTag(t *testing.T) {
 	}
 }
 
+func TestSelectKeepsScopedLibraryResources(t *testing.T) {
+	t.Parallel()
+
+	resources := []types.CaptchaResource{
+		{
+			ID:           "res_default_background_library",
+			CaptchaType:  types.CaptchaSlider,
+			ResourceType: "background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/default.png",
+			Tag:          "default",
+			Status:       "active",
+		},
+		{
+			ID:           "res_campaign_background_library_a",
+			CaptchaType:  types.CaptchaSlider,
+			ResourceType: "background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/campaign-a.png",
+			Tag:          "campaign",
+			Status:       "active",
+		},
+		{
+			ID:           "res_campaign_background_library_b",
+			CaptchaType:  types.CaptchaSlider,
+			ResourceType: "background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/campaign-b.png",
+			Tag:          "campaign",
+			Status:       "active",
+		},
+		{
+			ID:           "res_slider_template",
+			CaptchaType:  types.CaptchaSlider,
+			ResourceType: "slider_template",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/template.png",
+			Tag:          "campaign",
+			Status:       "active",
+		},
+	}
+
+	selected := Select(resources, types.CaptchaSlider, "", "campaign")
+	if len(selected) != 3 {
+		t.Fatalf("expected two library resources and template, got %+v", selected)
+	}
+	seen := map[string]bool{}
+	for _, item := range selected {
+		seen[item.ID] = true
+	}
+	if !seen["res_campaign_background_library_a"] || !seen["res_campaign_background_library_b"] || seen["res_default_background_library"] {
+		t.Fatalf("expected scoped library resources to be kept, got %+v", selected)
+	}
+}
+
 func TestChooseCaptchaTypeUsesResourceAvailability(t *testing.T) {
 	t.Parallel()
 
@@ -143,6 +198,26 @@ func TestChooseCaptchaTypeUsesResourceAvailability(t *testing.T) {
 	}
 	if SupportsCaptchaType(resources, types.CaptchaSlider, "login", "") {
 		t.Fatalf("slider should require a slider template")
+	}
+}
+
+func TestSupportsGridImageClickWithCategoryLibrary(t *testing.T) {
+	t.Parallel()
+
+	resources := []types.CaptchaResource{
+		{
+			ID:           "res_car",
+			CaptchaType:  types.CaptchaGridImageClick,
+			ResourceType: "grid_category_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/car.png",
+			Metadata:     map[string]any{"category": "car", "label": "汽车"},
+			Status:       "active",
+		},
+	}
+
+	if !SupportsCaptchaType(resources, types.CaptchaGridImageClick, "verify", "") {
+		t.Fatalf("expected grid image click to be supported by category library")
 	}
 }
 

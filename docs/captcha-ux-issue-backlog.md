@@ -184,16 +184,17 @@
   - 错选/漏选失败，正确集合通过。
   - Browser smoke 覆盖正确点选通过和错误点选失败。
 - 当前进展：已新增 `GRID_IMAGE_CLICK`，Demo 展示为 3x3 图片格子二次挑战；服务端生成目标格集合并做顺序无关校验，browser smoke 覆盖正确点选通过和错误点选失败。
-- 2026-06-23 资源补充：后端资源模型新增 `grid_category_library`，图片格子后续按 category 管理目标/非目标图库；Runtime 点选后不自动验证，支持再次点击已选格子取消选择。
+- 2026-06-23 资源补充：后端资源模型新增 `grid_category_library`，图片格子按 category 管理目标/非目标图库；Runtime 点选后不自动验证，支持再次点击已选格子取消选择。
+- 2026-06-24 进展：`grid_category_library` 已接入服务端合成链路，每条资源可通过 metadata 的 `category`/`label` 声明分类；服务端按 session 答案格抽目标分类图片，其它格抽干扰分类图片，不下发目标格索引。
 
 ### UX-010 图库资源模型不能停留在单张内置图
 
 - 验证码类型：全部图片型验证码
 - 优先级：P0
-- 状态：已记录，资源类型已开放登记
+- 状态：部分完成，背景图库和图片格子分类图库已接入生成链路
 - 现象：如果后端长期只依赖内置单图或少量固定背景，脚本可以围绕固定素材建立模板。
 - 期望：后端建立图库模型；图片格子使用分类图库，图标点选使用内置/可扩展 SVG 图标库，其它图片型验证码按背景形态建立背景图库。
-- 当前进展：资源类型已增加 `background_library`、`grid_category_library`、`icon_library`；管理端资源类型选择器和契约检查已同步。下一阶段需要把资源选择和服务端合成从“选单个资源”扩展为“按图库抽样/组合”。
+- 当前进展：资源类型已增加 `background_library`、`grid_category_library`、`icon_library`；管理端资源类型选择器和契约检查已同步。`background_library` 已支持同作用域多资源保留并在服务端合成时随机抽样；`grid_category_library` 已支持按分类生成图片格子挑战；管理端资源表单支持 `category`、`label`、`weight` 和扩展 metadata JSON。`icon_library` 仍是登记能力，外部 SVG 图标图库接入渲染链路待补。
 
 ## 修复顺序建议
 

@@ -36,7 +36,7 @@
 - Challenge session 已按一次性状态机处理：成功验证后的 session 不能再次换票；同一 session 连续失败达到上限后会被置为不可继续刷新或验证。
 - HTTP API 支持通过 `CAPTCHA_ALLOWED_ORIGINS` 配置浏览器 CORS 来源白名单；未配置时默认 `*` 便于本地开发。
 - Engine 支持按验证码类型预生成 challenge，启动时通过 `CAPTCHA_PREGENERATE_SIZE` 控制每类预生成池大小。
-- Challenge payload 会按 `client_id`、`scene`、`captcha_type` 和可选 `resource_tag` 选择 active 资源，并在 `parameters.resources` 下发资源引用；资源登记会校验类型、来源、URI、MIME、尺寸、大小和 checksum 声明。`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图资源可进入服务端 PNG 合成，读取、下载、响应 MIME、实际解码 MIME、声明尺寸、大小、解码或 checksum 校验失败时自动回退内置生成器；`classpath` 只允许从 `CAPTCHA_RESOURCE_CLASSPATH_DIRS` 指定目录或默认 `resources`、`configs/resources` 中读取，禁止绝对路径和 `..` 穿越，远程 URL 与对象存储 endpoint 会拒绝 localhost、私网和链路本地地址。`object_storage` 支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，也支持 `endpoint` / `base_url` + `bucket/key` 拼接，默认 path-style，可用 `addressing_style=virtual_hosted` 切换。`slider_template` 可作为滑块 mask，`rotate_template` 可作为旋转图覆盖层，`concat_template` 支持 JSON/metadata 配置移动上半片与静态下半片的分割线位置和边缘颜色；`font` 支持服务端文字渲染 metadata。
+- Challenge payload 会按 `client_id`、`scene`、`captcha_type` 和可选 `resource_tag` 选择 active 资源，并在 `parameters.resources` 下发资源引用；资源登记会校验类型、来源、URI、MIME、尺寸、大小和 checksum 声明。`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图资源可进入服务端 PNG 合成，读取、下载、响应 MIME、实际解码 MIME、声明尺寸、大小、解码或 checksum 校验失败时自动回退内置生成器；`background_library` 会在同一作用域保留多张候选背景并在服务端合成时抽样，避免长期固定单图；`grid_category_library` 用 metadata 的 `category`/`label` 建立图片格子分类图库，服务端按 session 答案格抽目标分类图片、非目标格抽干扰分类图片，目标格索引仍只保存在服务端。`classpath` 只允许从 `CAPTCHA_RESOURCE_CLASSPATH_DIRS` 指定目录或默认 `resources`、`configs/resources` 中读取，禁止绝对路径和 `..` 穿越，远程 URL 与对象存储 endpoint 会拒绝 localhost、私网和链路本地地址。`object_storage` 支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，也支持 `endpoint` / `base_url` + `bucket/key` 拼接，默认 path-style，可用 `addressing_style=virtual_hosted` 切换。`slider_template` 可作为滑块 mask，`rotate_template` 可作为旋转图覆盖层，`concat_template` 支持 JSON/metadata 配置移动上半片与静态下半片的分割线位置和边缘颜色；`font` 支持服务端文字渲染 metadata；`icon_library` 已开放登记，外部 SVG 图标库渲染链路后续补齐。
 - 管理台已接入后端管理 API，覆盖应用、路由策略、IP 策略、策略模拟、资源、审计、指标、训练特征和模型版本；应用、路由策略、IP 策略、资源、模型版本和训练标签支持操作，策略模拟支持 dry-run 查看命中路由和决策。`GET /api/v1/admin/metrics` 会聚合应用、策略、资源、资源命中/失败分析、近期审计事件、训练样本和模型版本，概览页直接使用该指标摘要；`GET /metrics` 输出 Prometheus 文本指标，可通过 `CAPTCHA_METRICS_TOKEN` 单独启用抓取鉴权。
 - 管理 API 的应用、密钥轮换、路由策略、IP 策略、资源、模型版本和训练标签变更会写入审计事件，记录变更类型、目标上下文和脱敏后的管理端 IP。外部 Event 上报不能控制审计事件 ID 或创建时间，平台会在写入时生成服务端身份字段。
 - 应用状态已进入主链路治理：不存在的应用不能创建 challenge；`disabled` 应用不能创建/获取/刷新/验证 challenge。HTTP/gRPC 策略评估会对 disabled/unknown 应用返回 `block` 决策，ticket 校验返回 `valid=false`，事件上报要求明确 `client_id` 并拒绝 disabled 应用写入。
@@ -264,7 +264,7 @@ GRID_IMAGE_CLICK
 - Tianai `data-captcha-type` 命名作为外部兼容参考；平台内部可使用更清晰的类型名，但必须维护映射关系。
 - 不以 Java SDK 或前端 SDK 为核心，而是以 Runtime + Engine + Policy + Ticket 为核心。
 - 验证码类型只是挑战手段，平台还要提供策略、限流、ticket、审计和 Gateway 决策。
-- 支持背景图、模板图、字体资源、图标资源、拼图资源、扰动模板、按类型配置资源和默认资源。
+- 支持背景图、背景图库、图片格子分类图库、模板图、字体资源、图标资源、拼图资源、扰动模板、按类型配置资源和默认资源。
 - 支持预生成、短 TTL、PostgreSQL 控制面存储、Redis 临时态存储和本地缓存策略。
 - 平台 ticket 机制承担二次验证能力，并强化一次性消费和上下文绑定。
 

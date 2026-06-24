@@ -2,6 +2,7 @@ package resource
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"image/png"
 	"io"
 	"math"
+	"math/big"
 	"mime"
 	"net/http"
 	"net/url"
@@ -47,7 +49,17 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 	if payload.View.Width <= 0 || payload.View.Height <= 0 {
 		return payload
 	}
-	background, ok := loadResourceImageByType(resources, "background_image")
+
+	if payload.Type == types.CaptchaGridImageClick {
+		if composed, label, ok := composeGridImageFromCategoryLibrary(payload, answer, resources); ok {
+			payload.Image = pngDataURL(composed)
+			payload.Prompt = "选择所有包含" + label + "的图片"
+			payload.Words = []string{label}
+			return payload
+		}
+	}
+
+	background, ok := loadBackgroundResourceImage(resources)
 	if !ok {
 		return payload
 	}
@@ -91,16 +103,159 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 }
 
 func loadResourceImageByType(resources []types.CaptchaResource, resourceType string) (image.Image, bool) {
+	items := loadResourceImagesByType(resources, resourceType)
+	if len(items) == 0 {
+		return nil, false
+	}
+	return items[randomIndex(len(items))].Image, true
+}
+
+func loadBackgroundResourceImage(resources []types.CaptchaResource) (image.Image, bool) {
+	if img, ok := loadResourceImageByType(resources, "background_image"); ok {
+		return img, true
+	}
+	return loadResourceImageByType(resources, "background_library")
+}
+
+type loadedImageResource struct {
+	Resource types.CaptchaResource
+	Image    image.Image
+}
+
+func loadResourceImagesByType(resources []types.CaptchaResource, resourceType string) []loadedImageResource {
+	images := make([]loadedImageResource, 0)
 	for _, item := range resources {
 		if item.ResourceType != resourceType || !strings.EqualFold(item.Status, "active") {
 			continue
 		}
 		img, ok := loadStoredResourceImage(item)
 		if ok {
-			return img, true
+			images = append(images, loadedImageResource{Resource: item, Image: img})
 		}
 	}
-	return nil, false
+	return images
+}
+
+func composeGridImageFromCategoryLibrary(payload types.RenderPayload, answer types.Answer, resources []types.CaptchaResource) (image.Image, string, bool) {
+	library := loadResourceImagesByType(resources, "grid_category_library")
+	if len(library) < 2 {
+		return nil, "", false
+	}
+
+	byCategory := make(map[string][]loadedImageResource)
+	labels := make(map[string]string)
+	for _, item := range library {
+		category, label, ok := gridResourceCategory(item.Resource.Metadata)
+		if !ok {
+			continue
+		}
+		byCategory[category] = append(byCategory[category], item)
+		if labels[category] == "" {
+			labels[category] = label
+		}
+	}
+	if len(byCategory) < 2 {
+		return nil, "", false
+	}
+
+	cols := renderParameterInt(payload.Parameters, "tile_cols", 3)
+	rows := renderParameterInt(payload.Parameters, "tile_rows", 3)
+	if cols <= 0 || rows <= 0 {
+		return nil, "", false
+	}
+	tileWidth := renderParameterInt(payload.Parameters, "tile_width", payload.View.Width/cols)
+	tileHeight := renderParameterInt(payload.Parameters, "tile_height", payload.View.Height/rows)
+	if tileWidth <= 0 || tileHeight <= 0 {
+		return nil, "", false
+	}
+	width := cols * tileWidth
+	height := rows * tileHeight
+	targets := gridTargetIndexes(answer.Points, cols, rows, tileWidth, tileHeight)
+	if len(targets) == 0 || len(targets) >= cols*rows {
+		return nil, "", false
+	}
+
+	targetCategory, ok := chooseGridTargetCategory(byCategory)
+	if !ok {
+		return nil, "", false
+	}
+	targetLabel := labels[targetCategory]
+	if targetLabel == "" {
+		targetLabel = targetCategory
+	}
+	decoys := make([]loadedImageResource, 0, len(library))
+	for category, items := range byCategory {
+		if category == targetCategory {
+			continue
+		}
+		decoys = append(decoys, items...)
+	}
+	if len(decoys) == 0 {
+		return nil, "", false
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	fillRect(img, 0, 0, width, height, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	targetImages := byCategory[targetCategory]
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			index := row*cols + col
+			rect := image.Rect(col*tileWidth, row*tileHeight, (col+1)*tileWidth, (row+1)*tileHeight)
+			choices := decoys
+			if _, ok := targets[index]; ok {
+				choices = targetImages
+			}
+			tile := choices[randomIndex(len(choices))]
+			draw.Draw(img, rect, resizeNearest(tile.Image, tileWidth, tileHeight), image.Point{}, draw.Src)
+		}
+	}
+	for x := tileWidth; x < width; x += tileWidth {
+		fillRect(img, x-1, 0, 3, height, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	}
+	for y := tileHeight; y < height; y += tileHeight {
+		fillRect(img, 0, y-1, width, 3, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	}
+	strokeRect(img, 0, 0, width, height, 1, color.RGBA{R: 203, G: 213, B: 225, A: 255})
+	return img, targetLabel, true
+}
+
+func gridResourceCategory(metadata map[string]any) (string, string, bool) {
+	category, ok := metadataString(metadata, "category", "class", "object", "name")
+	if !ok {
+		return "", "", false
+	}
+	category = strings.TrimSpace(category)
+	if category == "" {
+		return "", "", false
+	}
+	label, ok := metadataString(metadata, "label", "title", "display_name")
+	if !ok || strings.TrimSpace(label) == "" {
+		label = category
+	}
+	return strings.ToLower(category), strings.TrimSpace(label), true
+}
+
+func gridTargetIndexes(points []types.Point, cols, rows, tileWidth, tileHeight int) map[int]struct{} {
+	targets := make(map[int]struct{}, len(points))
+	for _, point := range points {
+		col := clamp(point.X/tileWidth, 0, cols-1)
+		row := clamp(point.Y/tileHeight, 0, rows-1)
+		targets[row*cols+col] = struct{}{}
+	}
+	return targets
+}
+
+func chooseGridTargetCategory(byCategory map[string][]loadedImageResource) (string, bool) {
+	candidates := make([]string, 0, len(byCategory))
+	for category, items := range byCategory {
+		if len(items) > 0 {
+			candidates = append(candidates, category)
+		}
+	}
+	if len(candidates) == 0 {
+		return "", false
+	}
+	return candidates[randomIndex(len(candidates))], true
 }
 
 func loadStoredResourceImage(resource types.CaptchaResource) (image.Image, bool) {
@@ -843,10 +998,14 @@ func cloneParameters(parameters map[string]any) map[string]any {
 }
 
 func sliderPieceSize(parameters map[string]any, fallback int) int {
+	return renderParameterInt(parameters, "piece_size", fallback)
+}
+
+func renderParameterInt(parameters map[string]any, key string, fallback int) int {
 	if len(parameters) == 0 {
 		return fallback
 	}
-	value, ok := parameters["piece_size"]
+	value, ok := parameters[key]
 	if !ok {
 		return fallback
 	}
@@ -869,6 +1028,17 @@ func sliderPieceSize(parameters map[string]any, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+func randomIndex(length int) int {
+	if length <= 1 {
+		return 0
+	}
+	index, err := rand.Int(rand.Reader, big.NewInt(int64(length)))
+	if err != nil {
+		return 0
+	}
+	return int(index.Int64())
 }
 
 func concatControlMax(offset, viewWidth, splitX, pieceWidth int) int {

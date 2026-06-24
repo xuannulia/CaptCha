@@ -239,8 +239,8 @@ func AvailableCaptchaTypes(resources []types.CaptchaResource, scene, tag string)
 }
 
 func SupportsCaptchaType(resources []types.CaptchaResource, captchaType types.CaptchaType, scene, tag string) bool {
-	required := requiredResourceTypes(captchaType)
-	if len(required) == 0 {
+	requirements := requiredResourceTypeGroups(captchaType)
+	if len(requirements) == 0 {
 		return false
 	}
 	selected := Select(resources, captchaType, scene, tag)
@@ -248,18 +248,42 @@ func SupportsCaptchaType(resources []types.CaptchaResource, captchaType types.Ca
 	for _, item := range selected {
 		selectedTypes[item.ResourceType] = struct{}{}
 	}
-	for _, resourceType := range required {
-		if _, ok := selectedTypes[resourceType]; !ok {
+	for _, alternatives := range requirements {
+		if !hasAnySelectedResourceType(selectedTypes, alternatives) {
 			return false
 		}
 	}
 	return true
 }
 
+func hasAnySelectedResourceType(selectedTypes map[string]struct{}, alternatives []string) bool {
+	for _, resourceType := range alternatives {
+		if _, ok := selectedTypes[resourceType]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func Select(resources []types.CaptchaResource, captchaType types.CaptchaType, scene, tag string) []types.CaptchaResource {
 	selectedByType := make(map[string]types.CaptchaResource)
+	collectionByType := make(map[string][]types.CaptchaResource)
+	collectionScoreByType := make(map[string]int)
 	for _, item := range resources {
 		if !isActive(item.Status) || !matchesType(item.CaptchaType, captchaType) || !matchesScene(item.Scene, scene) || !matchesTag(item.Tag, tag) || item.ResourceType == "" || item.URI == "" {
+			continue
+		}
+		if isCollectionResourceType(item.ResourceType) {
+			score := resourceScore(item, captchaType, scene, tag)
+			currentScore, ok := collectionScoreByType[item.ResourceType]
+			if !ok || score > currentScore {
+				collectionScoreByType[item.ResourceType] = score
+				collectionByType[item.ResourceType] = []types.CaptchaResource{item}
+				continue
+			}
+			if score == currentScore {
+				collectionByType[item.ResourceType] = append(collectionByType[item.ResourceType], item)
+			}
 			continue
 		}
 		current, ok := selectedByType[item.ResourceType]
@@ -271,6 +295,9 @@ func Select(resources []types.CaptchaResource, captchaType types.CaptchaType, sc
 	for _, item := range selectedByType {
 		selected = append(selected, item)
 	}
+	for _, items := range collectionByType {
+		selected = append(selected, items...)
+	}
 	sort.SliceStable(selected, func(i, j int) bool {
 		if selected[i].ResourceType != selected[j].ResourceType {
 			return selected[i].ResourceType < selected[j].ResourceType
@@ -278,6 +305,15 @@ func Select(resources []types.CaptchaResource, captchaType types.CaptchaType, sc
 		return selected[i].ID < selected[j].ID
 	})
 	return selected
+}
+
+func isCollectionResourceType(resourceType string) bool {
+	switch strings.ToLower(strings.TrimSpace(resourceType)) {
+	case "background_library", "grid_category_library", "icon_library":
+		return true
+	default:
+		return false
+	}
 }
 
 func better(candidate, current types.CaptchaResource, captchaType types.CaptchaType, scene, tag string) bool {
@@ -381,27 +417,40 @@ func isConcreteCaptchaType(captchaType types.CaptchaType) bool {
 }
 
 func requiredResourceTypes(captchaType types.CaptchaType) []string {
+	groups := requiredResourceTypeGroups(captchaType)
+	out := make([]string, 0, len(groups))
+	for _, group := range groups {
+		if len(group) > 0 {
+			out = append(out, group[0])
+		}
+	}
+	return out
+}
+
+func requiredResourceTypeGroups(captchaType types.CaptchaType) [][]string {
 	switch normalizeRequestedCaptchaType(captchaType) {
 	case types.CaptchaProofOfWork:
-		return []string{"pow_challenge"}
+		return [][]string{{"pow_challenge"}}
 	case types.CaptchaGesture:
-		return []string{"background_image", "gesture_template"}
+		return [][]string{{"background_image", "background_library"}, {"gesture_template"}}
 	case types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3:
-		return []string{"background_image", "curve_template"}
+		return [][]string{{"background_image", "background_library"}, {"curve_template"}}
 	case types.CaptchaSlider:
-		return []string{"background_image", "slider_template"}
+		return [][]string{{"background_image", "background_library"}, {"slider_template"}}
 	case types.CaptchaSlider2:
-		return []string{"background_image", "slider_template"}
+		return [][]string{{"background_image", "background_library"}, {"slider_template"}}
 	case types.CaptchaRotate:
-		return []string{"background_image", "rotate_template"}
+		return [][]string{{"background_image", "background_library"}, {"rotate_template"}}
 	case types.CaptchaConcat:
-		return []string{"background_image", "concat_template"}
+		return [][]string{{"background_image", "background_library"}, {"concat_template"}}
 	case types.CaptchaWordImageClick:
-		return []string{"background_image", "font"}
+		return [][]string{{"background_image", "background_library"}, {"font"}}
 	case types.CaptchaImageClick:
-		return []string{"background_image", "icon"}
+		return [][]string{{"background_image", "background_library"}, {"icon", "icon_library"}}
 	case types.CaptchaRotateDegree:
-		return []string{"background_image", "degree_template"}
+		return [][]string{{"background_image", "background_library"}, {"degree_template"}}
+	case types.CaptchaGridImageClick:
+		return [][]string{{"grid_category_library"}}
 	default:
 		return nil
 	}

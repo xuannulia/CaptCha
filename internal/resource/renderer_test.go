@@ -742,6 +742,91 @@ func TestApplyVisualsComposesSupportedCaptchaTypes(t *testing.T) {
 	}
 }
 
+func TestApplyVisualsUsesBackgroundLibrary(t *testing.T) {
+	t.Parallel()
+
+	path, _ := writeTestPNG(t, 40, 30, color.RGBA{R: 10, G: 120, B: 200, A: 255})
+	payload := types.RenderPayload{
+		Type:  types.CaptchaRotate,
+		View:  types.View{Width: 80, Height: 80},
+		Image: "fallback-image",
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{Angle: 90}, []types.CaptchaResource{
+		{
+			ID:           "res_background_library",
+			ResourceType: "background_library",
+			StorageType:  "file",
+			URI:          path,
+			Status:       "active",
+		},
+	})
+
+	if composed.Image == payload.Image {
+		t.Fatalf("expected background library to compose image")
+	}
+	decodePNGDataURL(t, composed.Image)
+}
+
+func TestApplyVisualsUsesGridCategoryLibrary(t *testing.T) {
+	t.Parallel()
+
+	carPath, _ := writeTestPNG(t, 100, 100, color.RGBA{R: 220, G: 40, B: 40, A: 255})
+	busPath, _ := writeTestPNG(t, 100, 100, color.RGBA{R: 40, G: 180, B: 80, A: 255})
+	payload := types.RenderPayload{
+		Type:   types.CaptchaGridImageClick,
+		Prompt: "选择所有包含蓝色圆形的图片",
+		View:   types.View{Width: 300, Height: 300},
+		Image:  "fallback-image",
+		Parameters: map[string]any{
+			"tile_cols":   3,
+			"tile_rows":   3,
+			"tile_width":  100,
+			"tile_height": 100,
+		},
+	}
+	answer := types.Answer{Points: []types.Point{
+		{X: 50, Y: 50},
+		{X: 150, Y: 150},
+		{X: 250, Y: 250},
+	}}
+
+	composed := ApplyVisuals(payload, answer, []types.CaptchaResource{
+		{
+			ID:           "res_grid_car",
+			ResourceType: "grid_category_library",
+			StorageType:  "file",
+			URI:          carPath,
+			Metadata:     map[string]any{"category": "car", "label": "汽车"},
+			Status:       "active",
+		},
+		{
+			ID:           "res_grid_bus",
+			ResourceType: "grid_category_library",
+			StorageType:  "file",
+			URI:          busPath,
+			Metadata:     map[string]any{"category": "bus", "label": "巴士"},
+			Status:       "active",
+		},
+	})
+
+	if composed.Image == payload.Image {
+		t.Fatalf("expected grid category library to compose image")
+	}
+	img := decodePNGDataURL(t, composed.Image)
+	targetColor := color.RGBA{R: 220, G: 40, B: 40, A: 255}
+	decoyColor := color.RGBA{R: 40, G: 180, B: 80, A: 255}
+	if composed.Prompt == "选择所有包含巴士的图片" {
+		targetColor, decoyColor = decoyColor, targetColor
+	} else if composed.Prompt != "选择所有包含汽车的图片" {
+		t.Fatalf("unexpected grid prompt %q", composed.Prompt)
+	}
+	assertPixel(t, img, 50, 50, targetColor)
+	assertPixel(t, img, 150, 150, targetColor)
+	assertPixel(t, img, 250, 250, targetColor)
+	assertPixel(t, img, 250, 50, decoyColor)
+}
+
 func writeTestPNG(t *testing.T, width, height int, c color.RGBA) (string, string) {
 	t.Helper()
 	path := t.TempDir() + "/background.png"
