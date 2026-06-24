@@ -215,7 +215,6 @@ func (e *Engine) Refresh(session types.ChallengeSession) (types.ChallengeSession
 	session.Type = challenge.Type
 	session.Answer = challenge.Answer
 	session.RenderPayload = challenge.RenderPayload
-	session.FailureCount = 0
 	session.Status = types.SessionActive
 	session.ExpiresAt = time.Now().Add(e.sessionTTL)
 	return session, nil

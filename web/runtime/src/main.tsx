@@ -491,22 +491,22 @@ function RuntimeChallenge() {
         window.parent?.postMessage({ type: "CAPTCHA_SUCCESS", ticket: issued, sessionId, route: successRoute, requestNonce: successRequestNonce, returnUrl: successReturnUrl }, "*");
         redirectIfTopLevel(successReturnUrl, issued, sessionId, successRoute, successRequestNonce);
       } else {
-        if (result.decision === "challenge_harder" && result.can_refresh) {
-          setStatus("验证升级中");
-          await refresh();
-        } else {
-          setStatus("验证失败，请重试");
-          notifyParentFailure(result.reason_code || "VERIFY_FAILED");
-          resetAttemptState(challenge);
-        }
+        await refreshAfterFailedVerify(
+          result.reason_code || "VERIFY_FAILED",
+          result.decision === "challenge_harder" ? "验证升级中" : "验证失败，正在刷新"
+        );
       }
     } catch {
-      setStatus("验证失败，请重试");
-      notifyParentFailure("NETWORK_ERROR");
-      resetAttemptState(challenge);
+      await refreshAfterFailedVerify("NETWORK_ERROR", "验证失败，正在刷新");
     } finally {
       verifyInFlight.current = false;
     }
+  }
+
+  async function refreshAfterFailedVerify(reason: string, nextStatus: string) {
+    setStatus(nextStatus);
+    notifyParentFailure(reason);
+    await refresh();
   }
 
   function onPointer(type: TrackPoint["type"], event: PointerEvent) {
@@ -1446,7 +1446,7 @@ function buildAnswer(challenge: Challenge, value: number, points: ChallengePoint
 }
 
 function footerStatus(challenge: Challenge, ticket: string, status: string, pointCount: number) {
-  if (ticket) return "ticket 已签发";
+  if (ticket) return status || "";
   if (status) return status;
   if (isClickCaptcha(challenge) && pointCount > 0) {
     return `已选择 ${pointCount}/${clickTargetCount(challenge)}`;

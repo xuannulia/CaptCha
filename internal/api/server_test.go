@@ -1957,6 +1957,60 @@ func TestChallengeSessionSingleUseAndFailureLimit(t *testing.T) {
 	}
 }
 
+func TestRefreshPreservesFailureCount(t *testing.T) {
+	server, memoryStore, _ := testServer()
+
+	response := request(t, server, http.MethodPost, "/api/v1/challenge/sessions", map[string]any{
+		"client_id":    "demo",
+		"scene":        "login",
+		"captcha_type": "SLIDER",
+	})
+	var created struct {
+		SessionID string `json:"session_id"`
+	}
+	decode(t, response, &created)
+
+	var failed struct {
+		OK         bool           `json:"ok"`
+		Decision   types.Decision `json:"decision"`
+		ReasonCode string         `json:"reason_code"`
+		CanRefresh bool           `json:"can_refresh"`
+	}
+	for i := 0; i < maxSessionFailures; i++ {
+		session, err := memoryStore.GetSession(created.SessionID)
+		if err != nil {
+			t.Fatalf("get session after %d failures: %v", i, err)
+		}
+		wrongX := session.Answer.X + 100 + i
+		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/verify", map[string]any{
+			"answer": map[string]any{"x": wrongX},
+			"track":  trackForX(wrongX),
+		})
+		decode(t, response, &failed)
+		if i == maxSessionFailures-1 {
+			break
+		}
+		if failed.OK || failed.Decision == types.DecisionBlock {
+			t.Fatalf("expected retry before failure limit, got %+v", failed)
+		}
+		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/refresh", nil)
+		var refreshed struct {
+			SessionID string `json:"session_id"`
+		}
+		decode(t, response, &refreshed)
+		session, err = memoryStore.GetSession(created.SessionID)
+		if err != nil {
+			t.Fatalf("get refreshed session after %d failures: %v", i+1, err)
+		}
+		if session.FailureCount != i+1 {
+			t.Fatalf("expected refresh to preserve %d failures, got %d", i+1, session.FailureCount)
+		}
+	}
+	if failed.OK || failed.Decision != types.DecisionBlock || failed.ReasonCode != "TOO_MANY_FAILURES" || failed.CanRefresh {
+		t.Fatalf("expected refreshed failures to hit limit, got %+v", failed)
+	}
+}
+
 func TestVerifyResponsesDoNotExposeScoringDetails(t *testing.T) {
 	server, memoryStore, _ := testServer()
 	forbiddenKeys := []string{
