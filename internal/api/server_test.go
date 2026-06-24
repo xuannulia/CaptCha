@@ -542,14 +542,14 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 			URI:          "https://cdn.example.test/direct-background.png",
 			Status:       "active",
 		})
-		memoryStore.UpsertResource(types.CaptchaResource{
-			ID:           "res_direct_auto_rotate",
-			ClientID:     "direct-auto",
-			CaptchaType:  types.CaptchaRotate,
-			ResourceType: "rotate_template",
-			StorageType:  "url",
-			URI:          "https://cdn.example.test/direct-rotate.png",
-			Status:       "active",
+	memoryStore.UpsertResource(types.CaptchaResource{
+		ID:           "res_direct_auto_rotate",
+		ClientID:     "direct-auto",
+		CaptchaType:  types.CaptchaRotate,
+		ResourceType: "rotate_library",
+		StorageType:  "url",
+		URI:          "https://cdn.example.test/direct-rotate.png",
+		Status:       "active",
 		})
 
 		response := request(t, server, http.MethodPost, "/api/v1/challenge/sessions", map[string]any{

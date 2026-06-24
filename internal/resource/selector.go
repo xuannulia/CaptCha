@@ -309,7 +309,7 @@ func Select(resources []types.CaptchaResource, captchaType types.CaptchaType, sc
 
 func isCollectionResourceType(resourceType string) bool {
 	switch strings.ToLower(strings.TrimSpace(resourceType)) {
-	case "background_library", "grid_category_library", "icon_library":
+	case "background_library", "rotate_library", "grid_category_library", "icon_library":
 		return true
 	default:
 		return false
@@ -440,7 +440,7 @@ func requiredResourceTypeGroups(captchaType types.CaptchaType) [][]string {
 	case types.CaptchaSlider2:
 		return [][]string{{"background_image", "background_library"}, {"slider_template"}}
 	case types.CaptchaRotate:
-		return [][]string{{"background_image", "background_library"}, {"rotate_template"}}
+		return [][]string{{"rotate_library"}}
 	case types.CaptchaConcat:
 		return [][]string{{"background_image", "background_library"}, {"concat_template"}}
 	case types.CaptchaWordImageClick:

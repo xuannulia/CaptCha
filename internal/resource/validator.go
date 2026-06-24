@@ -20,6 +20,7 @@ const (
 var allowedResourceTypes = map[string]struct{}{
 	"background_image":      {},
 	"background_library":    {},
+	"rotate_library":        {},
 	"grid_category_library": {},
 	"slider_template":       {},
 	"rotate_template":       {},

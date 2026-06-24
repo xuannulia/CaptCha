@@ -169,17 +169,9 @@ func TestChooseCaptchaTypeUsesResourceAvailability(t *testing.T) {
 
 	resources := []types.CaptchaResource{
 		{
-			ID:           "res_background",
-			CaptchaType:  types.CaptchaAuto,
-			ResourceType: "background_image",
-			StorageType:  "url",
-			URI:          "https://cdn.example.test/background.png",
-			Status:       "active",
-		},
-		{
-			ID:           "res_rotate_template",
+			ID:           "res_rotate_library",
 			CaptchaType:  types.CaptchaRotate,
-			ResourceType: "rotate_template",
+			ResourceType: "rotate_library",
 			StorageType:  "url",
 			URI:          "https://cdn.example.test/rotate.png",
 			Status:       "active",

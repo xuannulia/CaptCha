@@ -463,7 +463,7 @@ func TestAutoChallengeTypeUsesResourceAvailability(t *testing.T) {
 		ID:           "res_auto_rotate",
 		ClientID:     "auto-client",
 		CaptchaType:  types.CaptchaRotate,
-		ResourceType: "rotate_template",
+		ResourceType: "rotate_library",
 		StorageType:  "url",
 		URI:          "https://cdn.example.test/rotate.png",
 		Status:       "active",

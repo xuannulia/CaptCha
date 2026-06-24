@@ -61,13 +61,13 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		}
 	}
 
-	background, ok := loadBackgroundResourceImage(resources)
-	if !ok {
-		return payload
-	}
-	base := resizeNearest(background, payload.View.Width, payload.View.Height)
 	switch payload.Type {
 	case types.CaptchaSlider:
+		background, ok := loadBackgroundResourceImage(resources)
+		if !ok {
+			return payload
+		}
+		base := resizeNearest(background, payload.View.Width, payload.View.Height)
 		sliderTemplate, _ := loadResourceImageByType(resources, "slider_template")
 		size := sliderPieceSize(payload.Parameters, sliderTemplateSize)
 		composed, piece := composeSlider(base, answer, sliderTemplate, size)
@@ -77,6 +77,11 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		parameters["piece_size"] = size
 		payload.Parameters = parameters
 	case types.CaptchaRotate:
+		rotateSource, ok := loadRotateResourceImage(resources)
+		if !ok {
+			return payload
+		}
+		base := cropCircularRotateImage(rotateSource, payload.View.Width, payload.View.Height)
 		start := ((360-answer.Angle)%360 + 360) % 360
 		rotated := rotateImage(base, start)
 		if rotateTemplate, ok := loadResourceImageByType(resources, "rotate_template"); ok {
@@ -87,6 +92,11 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		delete(parameters, "initial_angle")
 		payload.Parameters = parameters
 	case types.CaptchaConcat:
+		background, ok := loadBackgroundResourceImage(resources)
+		if !ok {
+			return payload
+		}
+		base := resizeNearest(background, payload.View.Width, payload.View.Height)
 		composed, piece, splitY := composeConcat(base, answer.Offset, loadConcatTemplate(resources))
 		payload.Image = pngDataURL(composed)
 		payload.Piece = pngDataURL(piece)
@@ -99,6 +109,11 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		parameters["split_y"] = splitY
 		payload.Parameters = parameters
 	case types.CaptchaWordImageClick:
+		background, ok := loadBackgroundResourceImage(resources)
+		if !ok {
+			return payload
+		}
+		base := resizeNearest(background, payload.View.Width, payload.View.Height)
 		payload.Image = pngDataURL(composeWordImage(base, payload.Words, answer.Points, loadFontOptions(resources)))
 	}
 	return payload
@@ -117,6 +132,13 @@ func loadBackgroundResourceImage(resources []types.CaptchaResource) (image.Image
 		return img, true
 	}
 	return loadResourceImageByType(resources, "background_library")
+}
+
+func loadRotateResourceImage(resources []types.CaptchaResource) (image.Image, bool) {
+	if img, ok := loadResourceImageByType(resources, "rotate_library"); ok {
+		return img, true
+	}
+	return loadBackgroundResourceImage(resources)
 }
 
 type loadedImageResource struct {
@@ -823,6 +845,40 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 func colorAlpha(c color.Color) uint8 {
 	_, _, _, alpha := c.RGBA()
 	return uint8(alpha >> 8)
+}
+
+func cropCircularRotateImage(src image.Image, width, height int) *image.RGBA {
+	if width <= 0 || height <= 0 {
+		return image.NewRGBA(image.Rect(0, 0, max(1, width), max(1, height)))
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	fillRect(dst, 0, 0, width, height, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	diameter := min(width, height)
+	bounds := src.Bounds()
+	srcSize := min(bounds.Dx(), bounds.Dy())
+	if diameter <= 0 || srcSize <= 0 {
+		return dst
+	}
+	srcX0 := bounds.Min.X + (bounds.Dx()-srcSize)/2
+	srcY0 := bounds.Min.Y + (bounds.Dy()-srcSize)/2
+	x0 := (width - diameter) / 2
+	y0 := (height - diameter) / 2
+	radius := float64(diameter) / 2
+	cx := float64(x0) + radius - 0.5
+	cy := float64(y0) + radius - 0.5
+	for y := 0; y < diameter; y++ {
+		dy := float64(y0+y) - cy
+		for x := 0; x < diameter; x++ {
+			dx := float64(x0+x) - cx
+			if math.Hypot(dx, dy) > radius {
+				continue
+			}
+			sx := srcX0 + x*srcSize/diameter
+			sy := srcY0 + y*srcSize/diameter
+			dst.Set(x0+x, y0+y, src.At(sx, sy))
+		}
+	}
+	return dst
 }
 
 func sliderTemplateEdgeBandStrength(mask image.Image, x, y, radius int) float64 {

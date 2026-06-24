@@ -370,6 +370,38 @@ func TestApplyVisualsUsesRotateTemplateOverlay(t *testing.T) {
 	assertPixel(t, image, 0, 0, color.RGBA{R: 250, G: 40, B: 40, A: 255})
 }
 
+func TestApplyVisualsUsesRotateLibraryCircularCrop(t *testing.T) {
+	t.Parallel()
+
+	rotatePath, _ := writeTestPNG(t, 90, 90, color.RGBA{R: 38, G: 100, B: 210, A: 255})
+	payload := types.RenderPayload{
+		Type:       types.CaptchaRotate,
+		View:       types.View{Width: 90, Height: 90},
+		Image:      "fallback-image",
+		Parameters: map[string]any{"initial_angle": 270, "stale": "keep"},
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{Angle: 0}, []types.CaptchaResource{
+		{
+			ID:           "res_rotate_library",
+			ResourceType: "rotate_library",
+			StorageType:  "file",
+			URI:          rotatePath,
+			Status:       "active",
+		},
+	})
+
+	image := decodePNGDataURL(t, composed.Image)
+	assertPixel(t, image, 45, 45, color.RGBA{R: 38, G: 100, B: 210, A: 255})
+	assertPixel(t, image, 0, 0, color.RGBA{R: 248, G: 250, B: 252, A: 255})
+	if _, ok := composed.Parameters["initial_angle"]; ok {
+		t.Fatalf("rotate payload must not expose initial_angle")
+	}
+	if composed.Parameters["stale"] != "keep" {
+		t.Fatalf("expected unrelated rotate parameter to be retained")
+	}
+}
+
 func TestApplyVisualsUsesConcatTemplateJSON(t *testing.T) {
 	t.Parallel()
 
