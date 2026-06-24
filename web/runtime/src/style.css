@@ -50,6 +50,14 @@ header {
   margin-bottom: 8px;
 }
 
+header strong,
+.runtime-curve-captcha .slider-tip span {
+  min-width: 0;
+  color: #0f172a;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 footer {
   min-height: 36px;
   margin-top: 8px;
@@ -76,6 +84,33 @@ button:disabled {
   background: #f8fafc;
   color: #94a3b8;
   cursor: not-allowed;
+}
+
+.runtime-header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
+}
+
+.icon-button img {
+  width: 17px;
+  height: 17px;
+  display: block;
+  opacity: 0.76;
+}
+
+.icon-button:hover img {
+  opacity: 0.95;
 }
 
 .board {
@@ -137,20 +172,14 @@ button:disabled {
 }
 
 .runtime-curve-captcha .slider-tip {
-  min-height: 24px;
+  min-height: 32px;
   margin-bottom: 2px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: #0f172a;
   font-size: 15px;
-  line-height: 24px;
-}
-
-.runtime-curve-captcha .slider-tip span {
-  min-width: 0;
-  font-weight: 700;
+  line-height: 20px;
 }
 
 .runtime-curve-captcha .content {
@@ -205,7 +234,7 @@ button:disabled {
 .runtime-curve-captcha .slider-move {
   position: relative;
   width: 100%;
-  height: 34px;
+  height: 40px;
   margin-top: 6px;
   cursor: pointer;
   touch-action: none;
@@ -213,69 +242,65 @@ button:disabled {
 
 .runtime-curve-captcha .slider-move-track {
   position: relative;
-  width: calc(100% - 2px);
-  height: 32px;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  background: #f5f5f5;
+  width: 100%;
+  height: 40px;
+  border: 1px solid #d7d7d7;
+  border-radius: 2px;
+  background: #e5e5e5;
   overflow: hidden;
 }
 
 .runtime-curve-captcha #tianai-captcha-slider-move-track-mask {
   position: absolute;
-  left: -1px;
-  top: -1px;
-  height: 32px;
-  min-width: 2px;
-  border: 1px solid #0298f8;
-  border-radius: 999px 0 0 999px;
-  background: rgb(137 210 255 / 50%);
+  left: 0;
+  top: 0;
+  height: 100%;
+  max-width: 100%;
+  min-width: 52px;
+  background: #8bc34a;
   pointer-events: none;
 }
 
 .runtime-curve-captcha .slider-move-shadow {
-  position: absolute;
-  right: 10px;
-  top: 0;
-  width: 5px;
-  height: 32px;
-  background: #fff;
-  box-shadow: -8px 0 18px rgb(255 255 255 / 75%);
-  pointer-events: none;
+  display: none;
 }
 
 .runtime-curve-captcha .slider-move-btn {
   position: absolute;
   left: 0;
-  top: -6px;
+  top: 0;
   z-index: 4;
-  width: 63px;
-  height: 45px;
-  border: 1px solid #88949d;
-  border-radius: 4px;
+  width: 52px;
+  height: 40px;
+  border: 1px solid #cfcfcf;
+  border-radius: 2px;
   background: #fff;
-  box-shadow: 0 2px 8px rgb(15 23 42 / 16%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 72%);
   pointer-events: none;
 }
 
 .runtime-curve-captcha .slider-move-btn::before,
-.runtime-curve-captcha .slider-move-btn::after {
+.runtime-curve-captcha .slider-move-btn::after,
+.drag-thumb::before,
+.drag-thumb::after {
   content: "";
   position: absolute;
   top: 50%;
-  width: 12px;
-  height: 12px;
-  border-top: 3px solid #2563eb;
-  border-right: 3px solid #2563eb;
+  width: 10px;
+  height: 10px;
+  border-top: 3px solid #9ca3af;
+  border-right: 3px solid #9ca3af;
   transform: translateY(-50%) rotate(45deg);
 }
 
-.runtime-curve-captcha .slider-move-btn::before {
-  left: 18px;
+.runtime-curve-captcha .slider-move-btn::before,
+.drag-thumb::before {
+  left: 16px;
 }
 
-.runtime-curve-captcha .slider-move-btn::after {
-  left: 30px;
+.runtime-curve-captcha .slider-move-btn::after,
+.drag-thumb::after {
+  left: 27px;
 }
 
 .degree-needle {
@@ -398,11 +423,13 @@ button:disabled {
 .drag-control {
   position: relative;
   width: 100%;
-  height: 34px;
+  height: 40px;
   margin-top: 10px;
-  border-radius: 999px;
-  background: #e8eef7;
+  border: 1px solid #d7d7d7;
+  border-radius: 2px;
+  background: #e5e5e5;
   cursor: pointer;
+  overflow: hidden;
   touch-action: none;
   user-select: none;
 }
@@ -415,20 +442,34 @@ button:disabled {
 .drag-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  border-radius: inherit;
-  background: #2563eb;
+  max-width: 100%;
+  min-width: 52px;
+  background: #8bc34a;
 }
 
 .drag-thumb {
   position: absolute;
-  top: 50%;
-  width: 30px;
-  height: 30px;
-  border: 2px solid #2563eb;
-  border-radius: 50%;
+  top: 0;
+  z-index: 3;
+  width: 52px;
+  height: 100%;
+  border: 1px solid #cfcfcf;
+  border-radius: 2px;
   background: #fff;
-  box-shadow: 0 3px 8px rgb(15 23 42 / 18%);
-  transform: translate(-50%, -50%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 72%);
+}
+
+.drag-track-text {
+  position: absolute;
+  inset: 0 12px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  color: #5f6368;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .mark {
@@ -578,6 +619,21 @@ button:disabled {
   min-height: 476px;
   border: 0;
   background: #fff;
+}
+
+.demo-frame-closed {
+  min-height: 476px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  color: #64748b;
+  background: #fff;
+}
+
+.demo-frame-closed strong {
+  color: #0f172a;
+  font-size: 18px;
 }
 
 .demo-metrics {

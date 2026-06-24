@@ -141,12 +141,29 @@ type TrackPoint = {
 };
 
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8080";
+const refreshIconURL = "/refresh.svg";
+const closeIconURL = "/close.svg";
+const sliderLeadWidth = 52;
+const sliderThumbWidth = 52;
 
 function App() {
   if (window.location.pathname === "/demo") {
     return <DemoPage />;
   }
   return <RuntimeChallenge />;
+}
+
+function RuntimeHeaderActions({ onRefresh, onClose }: { onRefresh: () => void; onClose: () => void }) {
+  return (
+    <div class="runtime-header-actions">
+      <button type="button" class="icon-button" onClick={onRefresh} aria-label="刷新验证码" title="刷新">
+        <img src={refreshIconURL} alt="" aria-hidden="true" />
+      </button>
+      <button type="button" class="icon-button" onClick={onClose} aria-label="关闭验证码" title="关闭">
+        <img src={closeIconURL} alt="" aria-hidden="true" />
+      </button>
+    </div>
+  );
 }
 
 function DemoPage() {
@@ -172,6 +189,7 @@ function DemoPage() {
   const [lastTicket, setLastTicket] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [actualType, setActualType] = useState("");
+  const [frameOpen, setFrameOpen] = useState(true);
   const startedAt = useRef(performance.now());
   const activeItem = captchaTypes.find((item) => item.type === active) || captchaTypes[0];
   const src = challengeFrameURL(activeItem.type, activeItem.scene, nonce);
@@ -189,6 +207,7 @@ function DemoPage() {
         setStatus("待验证");
         setLastTicket("");
         setElapsed(0);
+        setFrameOpen(true);
       }
       if (data?.type === "CAPTCHA_SUCCESS") {
         setStatus("通过");
@@ -199,6 +218,12 @@ function DemoPage() {
         setStatus("失败");
         setLastTicket("");
         setElapsed(Math.max(1, Math.round(performance.now() - startedAt.current)));
+      }
+      if (data?.type === "CAPTCHA_CLOSE") {
+        setStatus("已关闭");
+        setLastTicket("");
+        setElapsed(0);
+        setFrameOpen(false);
       }
     }
     window.addEventListener("message", onMessage);
@@ -212,6 +237,7 @@ function DemoPage() {
     setLastTicket("");
     setElapsed(0);
     setActualType("");
+    setFrameOpen(true);
     startedAt.current = performance.now();
   }
 
@@ -248,12 +274,19 @@ function DemoPage() {
             </span>
             <strong>{status}</strong>
           </div>
-          <iframe
-            key={src}
-            src={src}
-            title="captcha runtime"
-            onLoad={() => setStatus((current) => current === "通过" ? current : "待验证")}
-          />
+          {frameOpen ? (
+            <iframe
+              key={src}
+              src={src}
+              title="captcha runtime"
+              onLoad={() => setStatus((current) => current === "通过" ? current : "待验证")}
+            />
+          ) : (
+            <div class="demo-frame-closed">
+              <strong>验证码已关闭</strong>
+              <button type="button" onClick={() => reload()}>重新打开</button>
+            </div>
+          )}
         </section>
 
         <aside class="demo-metrics" aria-label="校验状态">
@@ -318,7 +351,9 @@ function RuntimeChallenge() {
   const curveBgCanvasRef = useRef<HTMLCanvasElement>(null);
   const curveMoveCanvasRef = useRef<HTMLCanvasElement>(null);
   const sliderBounds = challenge ? rangeBounds(challenge) : { min: 0, max: 360, step: 1 };
-  const sliderProgress = percent(value - sliderBounds.min, Math.max(1, sliderBounds.max - sliderBounds.min));
+  const sliderRatio = sliderRatioFromValue(value, sliderBounds);
+  const sliderFillWidth = sliderFillWidthStyle(sliderRatio);
+  const sliderThumbLeft = sliderThumbLeftStyle(sliderRatio);
 
   useEffect(() => {
     void bootstrap();
@@ -370,6 +405,22 @@ function RuntimeChallenge() {
       resetChallenge(refreshed.challenge);
     } catch {
       setStatus("刷新失败");
+    }
+  }
+
+  function closeCaptcha() {
+    window.parent?.postMessage({ type: "CAPTCHA_CLOSE", sessionId, route, requestNonce, captchaType: challenge?.type }, "*");
+    if (window.parent === window) {
+      window.close();
+      return;
+    }
+    try {
+      const frame = window.frameElement;
+      if (frame instanceof HTMLElement) {
+        frame.style.display = "none";
+      }
+    } catch {
+      // Cross-origin parents can still react to CAPTCHA_CLOSE through postMessage.
     }
   }
 
@@ -627,13 +678,10 @@ function RuntimeChallenge() {
     const rect = controlRef.current.getBoundingClientRect();
     if (rect.width <= 0) return undefined;
     const bounds = rangeBounds(challenge);
-    let raw: number;
-    if (isCurveCaptcha(challenge) && controlDragStart.current) {
-      raw = event.clientX - rect.left - controlDragStart.current.offset;
-    } else {
-      const ratio = clamp((event.clientX - rect.left) / rect.width, 0, 1);
-      raw = bounds.min + ratio * (bounds.max - bounds.min);
-    }
+    const thumbOffset = controlDragStart.current?.offset ?? sliderThumbWidth / 2;
+    const travelWidth = Math.max(1, rect.width - sliderLeadWidth - sliderThumbWidth);
+    const ratio = clamp((event.clientX - rect.left - sliderLeadWidth - thumbOffset) / travelWidth, 0, 1);
+    const raw = bounds.min + ratio * (bounds.max - bounds.min);
     const next = snapValue(raw, bounds.min, bounds.max, bounds.step);
     const trackY = Math.round(clamp(event.clientY - rect.top, 0, rect.height));
     setCurrentValue(next);
@@ -661,8 +709,8 @@ function RuntimeChallenge() {
     if (interactionLocked()) return;
     event.preventDefault();
     rangeTracking.current = true;
-    if (challenge && isCurveCaptcha(challenge)) {
-      controlDragStart.current = curveDragStart(event, valueRef.current);
+    if (challenge) {
+      controlDragStart.current = controlThumbDragStart(event, challenge, valueRef.current);
     }
     trySetPointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
     updateValueFromControl(event, "start");
@@ -848,7 +896,7 @@ function RuntimeChallenge() {
         {(!challenge || !isCurveCaptcha(challenge)) && (
           <header>
             <strong>{challenge?.prompt || "人机验证"}</strong>
-            <button type="button" onClick={refresh} aria-label="刷新">刷新</button>
+            <RuntimeHeaderActions onRefresh={refresh} onClose={closeCaptcha} />
           </header>
         )}
 
@@ -856,7 +904,7 @@ function RuntimeChallenge() {
           <div id="tianai-captcha" class="tianai-captcha-slider runtime-curve-captcha" style={{ transform: "translateX(0px)" }}>
             <div class="slider-tip">
               <span id="tianai-captcha-slider-move-track-font">{challenge.prompt}</span>
-              <button type="button" onClick={refresh} aria-label="刷新">刷新</button>
+              <RuntimeHeaderActions onRefresh={refresh} onClose={closeCaptcha} />
             </div>
             <div class="content">
               <div class="bg-img-div" style={{ aspectRatio: `${challenge.view.width} / ${challenge.view.height}` }}>
@@ -908,13 +956,14 @@ function RuntimeChallenge() {
               onKeyDown={onControlKeyDown}
             >
               <div class="slider-move-track">
-                <div id="tianai-captcha-slider-move-track-mask" style={{ width: `${Math.max(2, value)}px` }} />
+                <div id="tianai-captcha-slider-move-track-mask" style={{ width: sliderFillWidth }} />
+                <span class="drag-track-text">请向右滑动滑块</span>
                 <div class="slider-move-shadow" />
               </div>
               <div
                 class="slider-move-btn"
                 id="tianai-captcha-slider-move-btn"
-                style={{ transform: `translate(${value}px, 0px)` }}
+                style={{ left: sliderThumbLeft }}
               />
             </div>
           </div>
@@ -1020,14 +1069,17 @@ function RuntimeChallenge() {
             onPointerCancel={onControlPointerCancel}
             onKeyDown={onControlKeyDown}
           >
-            <span class="drag-fill" style={{ width: sliderProgress }} />
-            <span class="drag-thumb" style={{ left: sliderProgress }} />
+            <span class="drag-fill" style={{ width: sliderFillWidth }} />
+            <span class="drag-track-text">请向右滑动滑块</span>
+            <span class="drag-thumb" style={{ left: sliderThumbLeft }} />
           </div>
         )}
 
         <footer>
           <span>{challenge ? footerStatus(challenge, ticket, status, points.length) : status}</span>
-          <button type="button" onClick={() => void verify()} disabled={verifyDisabled}>验证</button>
+          {challenge && !usesDragControl(challenge) && (
+            <button type="button" onClick={() => void verify()} disabled={verifyDisabled}>确认</button>
+          )}
         </footer>
       </section>
     </main>
@@ -1074,13 +1126,32 @@ function sliderPieceSize(challenge: Challenge) {
   return numberParam(challenge, "piece_size", 47);
 }
 
-function curveDragStart(event: PointerEvent, currentValue: number) {
+function controlThumbDragStart(event: PointerEvent, challenge: Challenge, currentValue: number) {
   const control = event.currentTarget as HTMLDivElement;
   const rect = control.getBoundingClientRect();
   const relativeX = clamp(event.clientX - rect.left, 0, rect.width);
-  const thumbWidth = control.querySelector<HTMLElement>(".slider-move-btn")?.getBoundingClientRect().width || 63;
-  const nearThumb = relativeX >= currentValue - 8 && relativeX <= currentValue + thumbWidth + 8;
-  return { offset: nearThumb ? relativeX - currentValue : thumbWidth / 2 };
+  const thumbWidth = control.querySelector<HTMLElement>(".slider-move-btn, .drag-thumb")?.getBoundingClientRect().width || sliderThumbWidth;
+  const thumbLeft = sliderThumbLeftPx(sliderRatioFromValue(currentValue, rangeBounds(challenge)), rect.width);
+  const nearThumb = relativeX >= thumbLeft - 8 && relativeX <= thumbLeft + thumbWidth + 8;
+  return { offset: nearThumb ? relativeX - thumbLeft : thumbWidth / 2 };
+}
+
+function sliderRatioFromValue(value: number, bounds: { min: number; max: number }) {
+  return clamp((value - bounds.min) / Math.max(1, bounds.max - bounds.min), 0, 1);
+}
+
+function sliderThumbLeftPx(ratio: number, width: number) {
+  return sliderLeadWidth + ratio * Math.max(1, width - sliderLeadWidth - sliderThumbWidth);
+}
+
+function sliderThumbLeftStyle(ratio: number) {
+  const percentValue = ratio * 100;
+  const pixelOffset = sliderLeadWidth - ratio * (sliderLeadWidth + sliderThumbWidth);
+  return `calc(${percentValue}% + ${pixelOffset}px)`;
+}
+
+function sliderFillWidthStyle(ratio: number) {
+  return sliderThumbLeftStyle(ratio);
 }
 
 function drawCurveCanvases(bgCanvas: HTMLCanvasElement, moveCanvas: HTMLCanvasElement, challenge: Challenge, value: number) {
