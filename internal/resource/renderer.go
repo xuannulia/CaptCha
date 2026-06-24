@@ -40,6 +40,8 @@ const (
 	sliderMaskOpacity        = 0.46
 	sliderPieceBorder        = 0.58
 	sliderBorderRadius       = 4
+	sliderBorderFalloff      = 1.65
+	sliderBorderOutsideAlpha = 8
 	rotateRenderScale        = 2
 	concatMaxMovement        = 160
 )
@@ -1269,15 +1271,20 @@ func sliderTemplateEdgeBandStrength(mask image.Image, x, y, radius int) float64 
 			if distance > float64(radius) || distance >= best {
 				continue
 			}
-			if colorAlpha(mask.At(x+dx, y+dy)) <= 42 {
+			if colorAlpha(mask.At(x+dx, y+dy)) <= sliderBorderOutsideAlpha {
 				best = distance
 			}
 		}
 	}
-	if best > float64(radius) {
+	return sliderInnerBorderStrength(best, radius)
+}
+
+func sliderInnerBorderStrength(distance float64, radius int) float64 {
+	if radius <= 0 || distance > float64(radius) {
 		return 0
 	}
-	return math.Max(0, math.Min(1, (float64(radius)+0.5-best)/float64(radius)))
+	strength := clampFloat((float64(radius)+0.5-distance)/float64(radius), 0, 1)
+	return math.Pow(strength, sliderBorderFalloff)
 }
 
 func rotateImage(src *image.RGBA, angle int) *image.RGBA {

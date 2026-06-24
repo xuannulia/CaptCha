@@ -57,31 +57,33 @@ var captchaIconAssets embed.FS
 var svgMaskCache sync.Map
 
 const (
-	maxTrackPoints     = 256
-	imageViewWidth     = 320
-	imageViewHeight    = 180
-	sliderPieceSize    = 47
-	slider2PieceSize   = sliderPieceSize
-	sliderMaskOpacity  = 0.46
-	sliderPieceBorder  = 0.58
-	sliderBorderRadius = 4
-	concatMaxMovement  = 160
-	concatPieceWidth   = imageViewWidth + concatMaxMovement
-	jigsawTileCols     = 2
-	jigsawTileRows     = 2
-	jigsawViewWidth    = 300
-	jigsawViewHeight   = 180
-	jigsawTileWidth    = jigsawViewWidth / jigsawTileCols
-	jigsawTileHeight   = jigsawViewHeight / jigsawTileRows
-	gridImageCols      = 3
-	gridImageRows      = 3
-	gridImageTileSize  = 100
-	curveViewWidth     = 300
-	curveViewHeight    = 180
-	curveAnswerSlack   = 18
-	curveTrackSlack    = 26
-	wordClickTolerance = 28
-	powMaxNonce        = 120000
+	maxTrackPoints           = 256
+	imageViewWidth           = 320
+	imageViewHeight          = 180
+	sliderPieceSize          = 47
+	slider2PieceSize         = sliderPieceSize
+	sliderMaskOpacity        = 0.46
+	sliderPieceBorder        = 0.58
+	sliderBorderRadius       = 4
+	sliderBorderFalloff      = 1.65
+	sliderBorderOutsideAlpha = 8
+	concatMaxMovement        = 160
+	concatPieceWidth         = imageViewWidth + concatMaxMovement
+	jigsawTileCols           = 2
+	jigsawTileRows           = 2
+	jigsawViewWidth          = 300
+	jigsawViewHeight         = 180
+	jigsawTileWidth          = jigsawViewWidth / jigsawTileCols
+	jigsawTileHeight         = jigsawViewHeight / jigsawTileRows
+	gridImageCols            = 3
+	gridImageRows            = 3
+	gridImageTileSize        = 100
+	curveViewWidth           = 300
+	curveViewHeight          = 180
+	curveAnswerSlack         = 18
+	curveTrackSlack          = 26
+	wordClickTolerance       = 28
+	powMaxNonce              = 120000
 )
 
 type trackAnalysis struct {
@@ -1553,15 +1555,20 @@ func sliderMaskEdgeBandStrength(maskFile string, size, x, y, radius int) float64
 			if distance > float64(radius) || distance >= best {
 				continue
 			}
-			if svgMaskAlpha(maskFile, size, x+dx, y+dy) <= 42 {
+			if svgMaskAlpha(maskFile, size, x+dx, y+dy) <= sliderBorderOutsideAlpha {
 				best = distance
 			}
 		}
 	}
-	if best > float64(radius) {
+	return sliderInnerBorderStrength(best, radius)
+}
+
+func sliderInnerBorderStrength(distance float64, radius int) float64 {
+	if radius <= 0 || distance > float64(radius) {
 		return 0
 	}
-	return math.Max(0, math.Min(1, (float64(radius)+0.5-best)/float64(radius)))
+	strength := clampFloat((float64(radius)+0.5-distance)/float64(radius), 0, 1)
+	return math.Pow(strength, sliderBorderFalloff)
 }
 
 func sliderMaskFile(mask sliderMaskKind) string {
