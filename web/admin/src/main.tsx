@@ -9,7 +9,7 @@ import {
   SafetyOutlined
 } from "@ant-design/icons";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Checkbox, ConfigProvider, Form, Input, InputNumber, Layout, Menu, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
+import { Button, Card, Checkbox, ConfigProvider, Form, Input, InputNumber, Layout, Menu, message, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -44,6 +44,8 @@ type RoutePolicy = {
     max_requests: number;
     strategy?: string;
   };
+  created_at?: string;
+  updated_at?: string;
 };
 
 type IpPolicy = {
@@ -54,6 +56,8 @@ type IpPolicy = {
   action: string;
   reason: string;
   enabled: boolean;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type Resource = {
@@ -190,6 +194,8 @@ type Application = {
   name: string;
   status: string;
   default_fail_policy: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type ListResponse<T> = {
@@ -509,13 +515,38 @@ function Applications() {
   const { data, isLoading } = useList<Application>("applications", "/api/v1/admin/applications");
   const [open, setOpen] = useState(false);
   const [secret, setSecret] = useState("");
+  const [pendingApplicationID, setPendingApplicationID] = useState("");
   const [form] = Form.useForm();
   const mutation = usePost<Application>("applications");
+  const statusMutation = usePost<Application>("applications");
   const secretMutation = usePost<{ client_secret: string; application: Application }>("applications");
   const columns: ColumnsType<Application> = [
     { title: "Client ID", dataIndex: "client_id" },
     { title: "名称", dataIndex: "name" },
-    { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag> },
+    {
+      title: "状态",
+      render: (_, row) => (
+        <Switch
+          checked={row.status === "active"}
+          checkedChildren="启用"
+          unCheckedChildren="停用"
+          loading={statusMutation.isPending && pendingApplicationID === row.id}
+          onChange={async (checked) => {
+            setPendingApplicationID(row.id);
+            try {
+              await statusMutation.mutateAsync({
+                path: "/api/v1/admin/applications",
+                body: { ...row, status: checked ? "active" : "disabled" }
+              });
+            } catch {
+              message.error("状态保存失败");
+            } finally {
+              setPendingApplicationID("");
+            }
+          }}
+        />
+      )
+    },
     { title: "失败策略", render: (_, row) => failPolicyLabel(row.default_fail_policy) },
     {
       title: "密钥",
@@ -572,8 +603,10 @@ function Applications() {
 function Routes() {
   const { data, isLoading } = useList<RoutePolicy>("routes", "/api/v1/admin/route-policies");
   const [open, setOpen] = useState(false);
+  const [pendingRouteID, setPendingRouteID] = useState("");
   const [form] = Form.useForm();
   const mutation = usePost<RoutePolicy>("routes");
+  const toggleMutation = usePost<RoutePolicy>("routes");
   const columns: ColumnsType<RoutePolicy> = [
     { title: "名称", dataIndex: "name" },
     { title: "路径", dataIndex: "path_pattern" },
@@ -584,7 +617,29 @@ function Routes() {
     { title: "模式", render: (_, row) => policyModeLabel(row.mode) },
     { title: "灰度", render: (_, row) => `${row.rollout_percent || 100}%` },
     { title: "风险", render: (_, row) => `${row.risk_observe_score || 0}/${row.risk_challenge_score || 0}/${row.risk_block_score || 0}` },
-    { title: "启用", render: (_, row) => <Switch checked={row.enabled} size="small" /> }
+    {
+      title: "启用",
+      render: (_, row) => (
+        <Switch
+          checked={row.enabled}
+          size="small"
+          loading={toggleMutation.isPending && pendingRouteID === row.id}
+          onChange={async (checked) => {
+            setPendingRouteID(row.id);
+            try {
+              await toggleMutation.mutateAsync({
+                path: "/api/v1/admin/route-policies",
+                body: { ...row, enabled: checked }
+              });
+            } catch {
+              message.error("策略保存失败");
+            } finally {
+              setPendingRouteID("");
+            }
+          }}
+        />
+      )
+    }
   ];
   return (
     <Card title="路由策略" extra={<Button type="primary" onClick={() => setOpen(true)}>新增</Button>}>
@@ -657,14 +712,38 @@ function Routes() {
 function IpPolicies() {
   const { data, isLoading } = useList<IpPolicy>("ip-policies", "/api/v1/admin/ip-policies");
   const [open, setOpen] = useState(false);
+  const [pendingPolicyID, setPendingPolicyID] = useState("");
   const [form] = Form.useForm();
   const mutation = usePost<IpPolicy>("ip-policies");
+  const toggleMutation = usePost<IpPolicy>("ip-policies");
   const columns: ColumnsType<IpPolicy> = [
     { title: "类型", render: (_, row) => ipPolicyTypeLabel(row.type) },
     { title: "CIDR", dataIndex: "cidr" },
     { title: "动作", render: (_, row) => actionLabel(row.action) },
     { title: "原因", dataIndex: "reason" },
-    { title: "启用", render: (_, row) => <Switch checked={row.enabled} size="small" /> }
+    {
+      title: "启用",
+      render: (_, row) => (
+        <Switch
+          checked={row.enabled}
+          size="small"
+          loading={toggleMutation.isPending && pendingPolicyID === row.id}
+          onChange={async (checked) => {
+            setPendingPolicyID(row.id);
+            try {
+              await toggleMutation.mutateAsync({
+                path: "/api/v1/admin/ip-policies",
+                body: { ...row, enabled: checked }
+              });
+            } catch {
+              message.error("策略保存失败");
+            } finally {
+              setPendingPolicyID("");
+            }
+          }}
+        />
+      )
+    }
   ];
   return (
     <Card title="IP 策略" extra={<Button type="primary" onClick={() => setOpen(true)}>新增</Button>}>
