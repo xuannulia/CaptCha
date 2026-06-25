@@ -689,7 +689,7 @@ function AdminShell() {
         <Modal
           title="管理令牌"
           open={authOpen}
-          okText="保存"
+          okText="保存令牌"
           cancelText="取消"
           onOk={saveAdminToken}
           onCancel={() => setAuthOpen(false)}
@@ -2371,7 +2371,7 @@ function RiskModels() {
   return (
     <Card title="模型管理" extra={<Button type="primary" onClick={openCreateModel}>登记模型</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title="登记模型" open={open} onCancel={closeCreateModel} onOk={() => form.submit()} okText="保存">
+      <Modal title="登记模型" open={open} onCancel={closeCreateModel} onOk={() => form.submit()} okText="保存模型">
         <Form
           form={form}
           layout="vertical"
