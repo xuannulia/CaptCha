@@ -2311,6 +2311,7 @@ function RiskModels() {
     { title: "版本", dataIndex: "version" },
     { title: "样本版本", dataIndex: "feature_version" },
     { title: "训练数据", dataIndex: "training_window" },
+    { title: "质量", render: (_, row) => modelQualityText(row) },
     { title: "上线方式", render: (_, row) => <Tag color={row.mode === "enforce" ? "red" : row.mode === "observe" ? "blue" : "default"}>{modelModeLabel(row.mode)}</Tag> },
     { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : row.status === "rolled_back" ? "orange" : "default"}>{modelStatusLabel(row.status)}</Tag> },
     {
@@ -2419,6 +2420,23 @@ function usePost<T>(invalidateKey: string) {
 
 function selectOptions(values: string[]) {
   return values.map((value) => ({ value, label: optionLabels[value] || value }));
+}
+
+function modelQualityText(row: RiskModelVersion) {
+  const accuracy = metricPercent(row.metrics?.auc);
+  const falsePositive = metricPercent(row.metrics?.false_positive_rate);
+  if (!accuracy && !falsePositive) return "-";
+  return [
+    accuracy ? `准确率 ${accuracy}` : "",
+    falsePositive ? `误伤率 ${falsePositive}` : ""
+  ].filter(Boolean).join(" / ");
+}
+
+function metricPercent(value: unknown) {
+  const number = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isFinite(number)) return "";
+  const percent = number <= 1 ? number * 100 : number;
+  return `${percent.toFixed(1)}%`;
 }
 
 async function copyText(value: string) {

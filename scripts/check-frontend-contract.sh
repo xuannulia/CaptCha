@@ -86,6 +86,7 @@ require_pattern web/admin/src/main.tsx 'allowlist: "放行名单"' "IP allowlist
 require_pattern web/admin/src/main.tsx 'blocklist: "拦截名单"' "IP blocklist is localized as an operational block list"
 require_pattern web/admin/src/main.tsx 'function ApplicationCell' "admin tables render application names before identifiers"
 require_pattern web/admin/src/main.tsx 'label="上线方式"' "risk model admin uses release wording"
+require_pattern web/admin/src/main.tsx 'title: "质量"' "risk model admin surfaces model quality metrics"
 require_pattern web/admin/src/main.tsx 'title: "样本版本"' "admin risk training uses sample version wording"
 require_pattern web/admin/src/main.tsx 'label="人工标签"' "admin risk training uses human-review label wording"
 require_pattern web/admin/src/main.tsx 'decisionReasonLabel' "admin maps backend decision reasons to business copy"
