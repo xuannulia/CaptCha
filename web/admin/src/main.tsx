@@ -370,6 +370,56 @@ const rateStrategyLabels: Record<string, string> = {
   sliding_window: "滚动窗口",
   token_bucket: "令牌桶"
 };
+const riskLevelLabels: Record<string, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  critical: "严重"
+};
+const decisionReasonLabels: Record<string, string> = {
+  ALWAYS: "固定验证",
+  RATE_LIMIT: "访问过快",
+  RATE_LIMIT_DRY_RUN: "访问过快",
+  RATE_LIMIT_NOT_CONFIGURED: "频控未配置",
+  UNDER_RATE_LIMIT: "未超过频控",
+  RISK_BASED: "风险验证",
+  RISK_SCORE: "风险分触发",
+  RISK_SCORE_BLOCK: "风险分拦截",
+  RISK_SCORE_OBSERVE: "风险分观察",
+  LOW_RISK_SCORE: "风险较低",
+  LOW_RISK_CONTEXT: "风险上下文正常",
+  NO_ROUTE_POLICY: "未命中策略",
+  UNKNOWN_MODE: "未知触发条件",
+  IP_ALLOWLIST: "IP 白名单",
+  IP_BLOCKLIST: "IP 黑名单",
+  APPLICATION_NOT_FOUND: "应用不存在",
+  APPLICATION_DISABLED: "应用已停用",
+  TICKET_CONSUMED: "票据已消费",
+  CLEARANCE_VALID: "通行态有效",
+  MANUAL_BYPASS: "手动放行",
+  SILENT: "静默观察",
+  OBSERVE: "观察放行",
+  CONFIG_APPLICATION_UPSERT: "应用配置变更",
+  CONFIG_APPLICATION_SECRET_ROTATE: "应用密钥变更",
+  CONFIG_ROUTE_POLICY_UPSERT: "路由策略变更",
+  CONFIG_ROUTE_POLICY_DELETE: "路由策略删除",
+  CONFIG_IP_POLICY_UPSERT: "IP 策略变更",
+  CONFIG_IP_POLICY_DELETE: "IP 策略删除",
+  CONFIG_RESOURCE_UPSERT: "资源变更",
+  CONFIG_RESOURCE_DELETE: "资源删除",
+  CONFIG_RISK_MODEL_UPSERT: "模型登记",
+  CONFIG_RISK_MODEL_ACTIVATE: "模型激活",
+  CONFIG_RISK_MODEL_ROLLBACK: "模型回滚",
+  RISK_FEATURE_LABEL_UPDATE: "训练标注变更"
+};
+const simulationMarkerLabels: Record<string, string> = {
+  no_ticket_consumed: "未消费票据",
+  no_challenge_session_created: "未创建验证码",
+  no_rate_counter_incremented: "未写入频控计数",
+  no_audit_event_written: "未写入审计",
+  rate_limit_counter_not_read_or_incremented: "未读取或写入频控计数",
+  application_gate: "应用状态检查"
+};
 const optionLabels = {
   ...captchaLabels,
   ...resourceTypeLabels,
@@ -640,7 +690,7 @@ function Overview() {
             ) : (
               <>
                 {topScenes.map((item) => <SummaryRow key={`scene-${item.name}`} label={item.name || "-"} value={String(item.count)} muted="场景" />)}
-                {topReasons.map((item) => <SummaryRow key={`reason-${item.name}`} label={compactText(item.name, 24)} value={String(item.count)} muted="原因" />)}
+                {topReasons.map((item) => <SummaryRow key={`reason-${item.name}`} label={compactText(decisionReasonLabel(item.name), 24)} value={String(item.count)} muted="原因" />)}
               </>
             )}
           </div>
@@ -1229,7 +1279,7 @@ function PolicySimulator() {
             <Tag color={simulation.decision.action === "challenge" ? "orange" : simulation.decision.action === "block" ? "red" : simulation.decision.action === "observe" ? "blue" : "green"}>
               {actionLabel(simulation.decision.action)}
             </Tag>
-            <Tag>{simulation.decision.reason}</Tag>
+            <Tag title={simulation.decision.reason}>{decisionReasonLabel(simulation.decision.reason)}</Tag>
             {simulation.decision.challenge_type && <Tag color="purple">{captchaLabel(simulation.decision.challenge_type)}</Tag>}
             <Tag color={simulation.rate_limit_evaluated ? "green" : "default"}>{simulation.rate_limit_evaluated ? "限流已检查" : "限流未触发"}</Tag>
           </Space>
@@ -1239,13 +1289,13 @@ function PolicySimulator() {
             <span>触发</span><strong>{simulation.route?.mode ? policyModeLabel(simulation.route.mode) : "-"}</strong>
             <span>灰度</span><strong>{simulation.route ? `${simulation.route.rollout_percent || 100}%` : "-"}</strong>
             <span>有效期</span><strong>{simulation.decision.ttl_seconds || "-"}</strong>
-            <span>风险</span><strong>{unknownText(simulation.request.risk_score)} / {unknownText(simulation.request.risk_level)}</strong>
-            <span>模型</span><strong>{unknownText(simulation.request.model_score)} / {unknownText(simulation.request.model_mode)}</strong>
+            <span>风险</span><strong>{unknownText(simulation.request.risk_score)} / {riskLevelText(simulation.request.risk_level)}</strong>
+            <span>模型</span><strong>{unknownText(simulation.request.model_score)} / {modelModeText(simulation.request.model_mode)}</strong>
           </div>
           {(simulation.side_effects.length > 0 || (simulation.notes || []).length > 0) && (
             <Space wrap>
-              {simulation.side_effects.map((item) => <Tag key={item}>{item}</Tag>)}
-              {(simulation.notes || []).map((item) => <Tag key={item} color="blue">{item}</Tag>)}
+              {simulation.side_effects.map((item) => <Tag key={item} title={item}>{simulationMarkerLabel(item)}</Tag>)}
+              {(simulation.notes || []).map((item) => <Tag key={item} color="blue" title={item}>{simulationMarkerLabel(item)}</Tag>)}
             </Space>
           )}
         </div>
@@ -1376,6 +1426,26 @@ function modelModeLabel(value: string) {
 
 function modelStatusLabel(value: string) {
   return modelStatusLabels[value] || value;
+}
+
+function decisionReasonLabel(value: string) {
+  return decisionReasonLabels[value] || value || "-";
+}
+
+function simulationMarkerLabel(value: string) {
+  return simulationMarkerLabels[value] || value;
+}
+
+function riskLevelText(value: unknown) {
+  if (value === undefined || value === null || value === "") return "-";
+  const key = String(value);
+  return riskLevelLabels[key] || key;
+}
+
+function modelModeText(value: unknown) {
+  if (value === undefined || value === null || value === "") return "-";
+  const key = String(value);
+  return modelModeLabel(key);
 }
 
 function ratioText(active?: number, total?: number) {
@@ -1847,7 +1917,7 @@ function Audit() {
     { title: "动作", render: (_, row) => actionLabel(row.action) },
     { title: "验证码", render: (_, row) => row.challenge_type ? captchaLabel(row.challenge_type) : "-" },
     { title: "结果", render: (_, row) => resultLabel(row.result) },
-    { title: "原因", render: (_, row) => <span title={row.decision_reason}>{compactText(row.decision_reason, 26)}</span> }
+    { title: "原因", render: (_, row) => <span title={row.decision_reason}>{compactText(decisionReasonLabel(row.decision_reason), 26)}</span> }
   ];
   return (
     <Card title="审计">
