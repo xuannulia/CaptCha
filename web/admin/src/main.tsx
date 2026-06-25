@@ -1704,9 +1704,27 @@ function ResourceFileItem({
 }) {
   const preview = resourcePreviewSrc(row);
   const name = resourceFileName(row);
+  const toggleSelected = () => onSelect(!selected);
   return (
-    <article className={selected ? "resource-file-item selected" : "resource-file-item"}>
-      <Checkbox className="resource-file-check" checked={selected} onChange={(event) => onSelect(event.target.checked)} />
+    <article
+      aria-pressed={selected}
+      className={selected ? "resource-file-item selected" : "resource-file-item"}
+      role="button"
+      tabIndex={0}
+      onClick={toggleSelected}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggleSelected();
+        }
+      }}
+    >
+      <Checkbox
+        className="resource-file-check"
+        checked={selected}
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => onSelect(event.target.checked)}
+      />
       <div className="resource-file-thumb">
         {preview ? <img alt="" src={preview} /> : <span>{resourcePlaceholder(row)}</span>}
       </div>

@@ -98,6 +98,8 @@ require_pattern web/admin/src/main.tsx 'decisionReasonOptions' "admin filters au
 require_pattern web/admin/src/main.tsx 'ANSWER_MISMATCH: "答案不匹配"' "admin localizes captcha answer failure reasons"
 require_pattern web/admin/src/main.tsx 'TRACK_CHALLENGE_HARDER: "轨迹异常升级验证"' "admin localizes captcha track risk reasons"
 require_pattern web/admin/src/main.tsx 'value \? "其他原因" : "-"' "admin avoids rendering unknown backend reason codes as primary copy"
+require_pattern web/admin/src/main.tsx 'role="button"' "resource gallery cards can be selected without targeting a tiny checkbox"
+require_pattern web/admin/src/style.css 'resource-file-item:focus-visible' "resource gallery cards expose keyboard focus"
 require_pattern web/admin/src/main.tsx 'policy-simulator-options' "policy simulator keeps optional context out of the primary form"
 require_dependency_allowlist web/admin/package.json "admin production dependencies stay on the chosen mature stack" "@ant-design/icons" "@tanstack/react-query" "antd" "react" "react-dom" "react-router-dom"
 reject_pattern web/admin/package.json '"(@ant-design/pro-components|@ant-design/pro-layout|@umijs/|umi|next|nuxt|vue|element-plus|echarts|@ant-design/charts)"' "admin package avoids heavier alternate app frameworks and chart stacks"

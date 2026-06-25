@@ -280,11 +280,17 @@ body {
   gap: 12px;
   border-radius: 8px;
   padding: 10px 8px;
+  cursor: pointer;
+  outline: none;
 }
 
 .resource-file-item:hover,
 .resource-file-item.selected {
   background: #f5f8ff;
+}
+
+.resource-file-item:focus-visible {
+  box-shadow: 0 0 0 2px #2563eb;
 }
 
 .resource-file-check {
