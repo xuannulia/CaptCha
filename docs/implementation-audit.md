@@ -8,7 +8,7 @@
 |---|---|
 | `make verify` | Go/Docker 工具链版本一致性检查、CI 工作流契约检查、前端框架契约检查、Docker 交付合约检查、HTTP/gRPC API 文档契约检查、验证码类型契约检查、Browser smoke 路由覆盖契约检查、文档命令契约检查、Go 全量测试、protobuf drift 检查、生产安全闸门 smoke、HTTP/gRPC 平台和 Gateway smoke、workspace 测试、workspace 构建、Runtime gzip 预算检查、Docker Compose 配置校验、构建产物和本地浏览器产物清理 |
 | `make smoke` | 真实进程级平台 HTTP/gRPC、Gateway HTTP/gRPC、challenge payload 脱敏、非法 verify 字段拒绝、生产误配置启动失败 |
-| `make browser-smoke` | 真实浏览器打开 Runtime 和 Admin，验证 `RANDOM` 请求入口以及 `GESTURE`/`CURVE`/`CURVE_V2`/`CURVE_V3`/`SLIDER`/`SLIDER_V2`/`ROTATE`/`CONCAT`/`ROTATE_DEGREE`/`WORD_IMAGE_CLICK`/`IMAGE_CLICK`/`JIGSAW`/`GRID_IMAGE_CLICK` Runtime 渲染和基础反馈、Admin React Router 深链、菜单导航、应用数据以及应用/路由策略/IP 策略/策略模拟/资源/审计/训练样本/模型版本主页面渲染 |
+| `make browser-smoke` | 真实浏览器打开 Runtime 和 Admin，验证 `RANDOM` 请求入口以及 `GESTURE`/`CURVE`/`CURVE_V2`/`CURVE_V3`/`SLIDER`/`SLIDER_V2`/`ROTATE`/`CONCAT`/`ROTATE_DEGREE`/`WORD_IMAGE_CLICK`/`IMAGE_CLICK`/`JIGSAW`/`GRID_IMAGE_CLICK` Runtime 渲染和基础反馈、Admin React Router 深链、菜单导航、应用数据以及应用/路由策略/IP 策略/策略模拟/资源图库/审计/样本复核/模型管理主页面渲染 |
 | `make docker-build` | 构建后端和 Gateway Docker 镜像，需要本机或 CI Docker daemon |
 | `make release-audit` | 发布前检查许可证、安全报告渠道、CI 工作流契约、HTTP/gRPC API 文档契约、验证码类型契约、Browser smoke 路由覆盖契约、文档命令契约、构建产物、本地浏览器产物、git remote、Docker daemon 和常见密钥模式 |
 | `make clean` | 清理前端、集成中间件、本地浏览器 smoke 和输出目录的生成产物 |
@@ -32,7 +32,7 @@
 | PostgreSQL 控制面存储 | `internal/store/postgres.go`、`migrations/postgres`；sqlmock 测试和 migration schema 测试；Docker/真实 PostgreSQL 需要 `make docker-build` 或部署环境验证 |
 | Redis 临时态存储 | `internal/store/redis.go`；Redis transient store 测试覆盖 session、ticket、rate 计数 |
 | 审计日志 | `internal/api/server.go`、`internal/gateway`；配置变更、策略事件、Gateway 事件、训练标签更新、缺失 `client_id` 事件整批拒绝且不部分写入、外部事件 ID/时间戳服务端生成测试 |
-| 风控特征采集和 AI 模型元数据 | `internal/api/risk_model.go`、`internal/store/risk_feature.go`；轨迹特征入池、标签、导出、模型激活/回滚、shadow 评分、外部推理、推理失败降级和特征写入异常不阻塞验证测试 |
+| 风控特征采集和 AI 模型元数据 | `internal/api/risk_model.go`、`internal/store/risk_feature.go`；轨迹特征入池、标签、导出、模型启用/恢复、shadow 评分、外部推理、推理失败降级和特征写入异常不阻塞验证测试 |
 | 轻量管理台 | `web/admin` 使用 React Router、TanStack Query 和 Ant Design；前端契约检查限制 Admin 生产依赖停留在选定成熟栈、Runtime 生产依赖停留在 Preact 轻量栈，并拦截营销/教程式页面文案；Browser smoke 路由覆盖契约要求 Admin 主路由都进入真实浏览器 smoke；构建测试和 `make browser-smoke` 覆盖概览深链、菜单导航、应用页真实数据加载和所有主页面渲染 |
 
 ## 安全要求
@@ -54,7 +54,7 @@
 | 应用状态治理 | `requireActiveApplication`、`applicationPolicyDecision`、`applicationTicketRejection`、Event client 校验；HTTP 和 gRPC 测试覆盖 disabled/unknown 应用在 Runtime、Policy、Ticket、Event、Config 路径上的行为 |
 | Verify 响应不泄露评分细节 | `handleVerifySession`、`recordFailedVerification`；`TestVerifyResponsesDoNotExposeScoringDetails` 和 `make smoke` 确认响应不返回 track bucket、分数、阈值、容差或目标字段 |
 | 验证失败次数限制 | session 状态机；`TestChallengeSessionSingleUseAndFailureLimit` |
-| 训练样本脱敏 | `recordRiskFeatureSnapshot` 和 resource summary；风险特征与资源命中测试确认不写入 URI/metadata/checksum/答案数据 |
+| 入训样本脱敏 | `recordRiskFeatureSnapshot` 和 resource summary；风险特征与资源命中测试确认不写入 URI/metadata/checksum/答案数据 |
 
 ## 发布前仍需外部确认
 

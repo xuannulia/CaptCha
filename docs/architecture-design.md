@@ -36,7 +36,7 @@
 - Challenge session 已按一次性状态机处理：成功验证后的 session 不能再次换票；同一 session 连续失败达到上限后会被置为不可继续刷新或验证。
 - HTTP API 支持通过 `CAPTCHA_ALLOWED_ORIGINS` 配置浏览器 CORS 来源白名单；未配置时默认 `*` 便于本地开发。
 - Engine 支持按验证码类型预生成 challenge，启动时通过 `CAPTCHA_PREGENERATE_SIZE` 控制每类预生成池大小。
-- Challenge payload 会按 `client_id`、`scene`、`captcha_type` 和可选 `resource_tag` 选择 active 资源，并在 `parameters.resources` 下发资源引用；资源登记会校验类型、来源、URI、MIME、尺寸、大小和 checksum 声明。`embedded`、`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图资源可进入服务端 PNG 合成，读取、下载、响应 MIME、实际解码 MIME、声明尺寸、大小或 checksum 校验失败时自动回退内置生成器；`background_library` 会在同一作用域保留多张候选背景并在服务端合成时抽样，避免长期固定单图；开箱 demo 会种子化 `background_library`，使 `GESTURE`、点选和通用图片型验证码能使用背景合成；`concat_background_library` / `jigsaw_background_library` 分别是滑动还原和乱序拼图的独立背景图库，不复用通用背景，便于按图像连续性、切片可辨识度和通过难度筛选素材；`rotate_library` 是 ROTATE 独立图库，服务端会从图片中心裁切圆形旋转图后按随机初始角度生成 PNG；`grid_category_library` 用 metadata 的 `category`/`label` 建立图片格子分类图库，服务端按 session 答案格抽目标分类图片、非目标格抽干扰分类图片，目标格索引仍只保存在服务端。`classpath` 只允许从 `CAPTCHA_RESOURCE_CLASSPATH_DIRS` 指定目录或默认 `resources`、`configs/resources` 中读取，禁止绝对路径和 `..` 穿越，远程 URL 与对象存储 endpoint 会拒绝 localhost、私网和链路本地地址。`object_storage` 支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，也支持 `endpoint` / `base_url` + `bucket/key` 拼接，默认 path-style，可用 `addressing_style=virtual_hosted` 切换。`slider_template` 可作为滑块 mask，`rotate_template` 可作为旋转图覆盖层，`concat_template` 支持 JSON/metadata 配置移动上半片与静态下半片的分割线位置和边缘颜色；`font` 支持服务端文字渲染 metadata；`icon_library` 已开放登记，外部 SVG 图标库渲染链路后续补齐。
+- Challenge payload 会按 `client_id`、`scene`、`captcha_type` 和可选 `resource_tag` 选择 active 资源，并在 `parameters.resources` 下发资源引用；资源登记会校验类型、来源、URI、MIME、尺寸、大小和 checksum 声明。`embedded`、`classpath`、本地 `file`、远程 `url`、`object_storage` 和 `database` base64/data URL 背景图资源可进入服务端 PNG 合成，读取、下载、响应 MIME、实际解码 MIME、声明尺寸、大小或 checksum 校验失败时自动回退内置生成器；`background_library` 会在同一作用域保留多张候选背景并在服务端合成时抽样，避免长期固定单图；开箱 demo 会种子化 `background_library`，使 `GESTURE`、点选和通用图片型验证码能使用背景合成；`concat_background_library` / `jigsaw_background_library` 分别是滑动还原和乱序拼图的独立背景图库，不复用通用背景，便于按图像连续性、切片可辨识度和通过难度筛选素材；`rotate_library` 是 ROTATE 独立图库，服务端会从图片中心裁切圆形旋转图后按随机初始角度生成 PNG；`grid_category_library` 用 metadata 的 `category`/`label` 建立图片格子分类图库，服务端按 session 答案格抽目标分类图片、非目标格抽干扰分类图片，目标格索引仍只保存在服务端。`classpath` 只允许从 `CAPTCHA_RESOURCE_CLASSPATH_DIRS` 指定目录或默认 `resources`、`configs/resources` 中读取，禁止绝对路径和 `..` 穿越，远程 URL 与对象存储 endpoint 会拒绝 localhost、私网和链路本地地址。`object_storage` 支持 metadata 直连 `public_url` / `signed_url` / `presigned_url` / `object_url`，也支持 `endpoint` / `base_url` + `bucket/key` 拼接，默认 path-style，可用 `addressing_style=virtual_hosted` 切换。`slider_template` 可作为滑块 mask，`rotate_template` 可作为旋转图覆盖层，`concat_template` 支持 JSON/metadata 配置移动上半片与静态下半片的分割线位置和边缘颜色；`font` 支持服务端文字渲染 metadata；`icon_library` 可通过管理台上传 SVG 或透明图片，`IMAGE_CLICK` 会在服务端抽样合成图标点选 PNG，并用 metadata 的 `label`、`title`、`display_name`、`category` 或 `name` 生成提示；图标图库不可用时会回退到内置图标或通用标记。
 - 管理台已接入后端管理 API，覆盖应用、路由策略、IP 策略、策略模拟、资源图库、审计、指标、样本复核和模型管理；应用、路由策略、IP 策略、资源图库、模型登记和样本标签支持操作，策略模拟支持 dry-run 查看命中路由和决策。管理台顶部提供当前应用范围选择，概览、路由、IP 策略、资源图库、审计和样本复核会按所选应用过滤，新增策略和上传图片默认落到当前应用，避免多租户数据混杂。应用页以及路由、IP、审计、样本复核等跨页应用列均以应用名称作为主信息，应用标识只作为接入辅助信息展示，避免把 `Client ID` 或 `client_id` 当作后台主语言。路由策略编辑按业务触发条件只展示相关字段，默认只允许新增固定验证、访问过快、风险较高三类运营可理解策略；`risk_based` 额外展示风险阈值和风险验证码，`rate_limit` 额外展示限流窗口、请求上限和计数策略，`observe`、`silent` 和 `manual_bypass` 仅作为历史/内部模式兼容展示，不再作为常规新增选项；保存时清理不属于当前触发条件的旧配置。策略模拟主表单仅保留应用、方法、路径、场景和 IP，账号/设备/请求标识/资源标签/风险输入放入可展开上下文；策略模拟和审计筛选使用浏览器标识、请求标识、账号标识和设备标识等业务化文案，不把 UA、Nonce 或 hash 字段作为后台主语言；策略模拟、概览和审计列表会把策略原因、验证码校验原因、轨迹风险原因、dry-run side effects 与 notes 映射为中文运营原因；未收录原因显示为“其他原因”，原始码仅作为 hover 辅助。IP 策略编辑固定 `allowlist -> allow`、`blocklist -> block`，管理台以“放行名单/拦截名单”和“IP 范围”表达单 IP 或网段，不再重复展示底层动作列，避免类型、动作和底层 CIDR 字段互相干扰。资源图库主界面只保留文件式图库、下拉筛选、多选启停/删除和上传入口，不默认展示系统模板、底层 URI 或明细表。样本复核页使用业务化文案展示候选样本、入训样本和人工标签，不把 JSONL 或特征字段作为主要操作入口。模型管理页用“模型名称、模型版本、上线方式、样本版本、训练时间窗、模型文件、准确率、误伤率”表达模型登记、启用和恢复，登记时不预填 demo 模型名称或样本版本，列表直接展示模型质量指标，不把 shadow/observe/enforce、artifact URI 或 AUC 作为主要操作语言。审计页展示事件时间、路由、IP/账号/设备绑定主体和中文原因，并支持按中文原因下拉、动作、结果、场景和主体筛选；原因筛选提交给后端的仍是稳定 reason code。应用密钥轮换使用确认流程，明文密钥只在轮换成功后一次性展示并支持复制。路由策略、IP 策略和资源图库支持删除，删除操作必须能确定单一应用范围以保持审计归属清晰。`GET /api/v1/admin/metrics` 会聚合应用、策略、素材健康、近期审计事件、样本复核和模型版本，概览页直接使用该指标摘要；`GET /metrics` 输出 Prometheus 文本指标，可通过 `CAPTCHA_METRICS_TOKEN` 单独启用抓取鉴权。
 - 管理台所有应用下拉选择器必须以应用名称为主显示，应用标识只作为二级辅助信息，同时支持按名称和标识搜索，避免在列表和表单中把接入 ID 作为主语言。
 - 应用、路由策略、IP 策略、管理令牌、模型登记等配置页面的主操作和保存按钮必须说明操作对象，例如“新增应用”“新增策略”“添加名单”“保存应用”“保存令牌”“保存模型”，不使用裸“新增/保存”作为主按钮。
@@ -786,7 +786,7 @@ POST /api/v1/events/report
 
 ```text
 GET /api/v1/admin/metrics
-  管理台概览指标，聚合应用、策略、资源、近期审计事件、训练样本、模型版本和资源命中/失败分析。
+  管理台概览指标，聚合应用、策略、素材健康、近期审计事件、样本复核、模型版本和素材命中/失败分析。
 
 GET /api/v1/admin/auth/check
   管理台令牌检查。设置 CAPTCHA_ADMIN_TOKEN 时必须携带管理令牌，用于前端在加载后台数据前确认当前浏览器可访问管理 API。
@@ -1510,7 +1510,7 @@ user slide
 - 滑动当下通常没有可靠标签，只知道通过或失败，不等于人或机器。
 - 攻击者可以制造大量样本进行数据投毒。
 - 实时在线学习容易产生反馈回路，模型越拦越偏。
-- 模型更新需要评估误伤率、漂移和回滚路径。
+- 模型更新需要评估误伤率、漂移和恢复上一版路径。
 
 当前实现：
 
@@ -1519,7 +1519,7 @@ user slide
 - 不保存明文 IP、账号、cookie、完整 header 或业务 payload。
 - 默认 `model_trainable=false`，表示候选样本需要离线清洗或业务反馈后才能进入训练集。
 - 管理 API 和管理台提供样本复核列表，支持按场景、验证码类型、人工标签和样本状态筛选，并支持人工审核或业务反馈后更新标签与 `model_trainable` 状态；管理台对进入入训样本或撤销样本标注的操作使用确认流程，避免误点污染离线训练数据。
-- `GET /api/v1/admin/risk-feature-snapshots/export` 支持按同样过滤条件导出离线训练样本文件，默认只导出 `model_trainable=true` 的明确标签样本；传入 `trainable_only=false` 可导出候选样本用于离线分析，但不代表可直接入训。
+- `GET /api/v1/admin/risk-feature-snapshots/export` 支持按同样过滤条件导出离线入训样本文件，默认只导出 `model_trainable=true` 的明确标签样本；传入 `trainable_only=false` 可导出候选样本用于离线分析，但不代表可直接入训。
 - `model_trainable=true` 只允许搭配 `likely_human`、`likely_bot`、`confirmed_human` 或 `confirmed_bot` 等明确标签；`captcha_pass` / `captcha_retry` 这类单次验证码结果只能作为弱标签候选，不能直接入训。
 - 训练标签更新会写入审计事件，原因码为 `RISK_FEATURE_LABEL_UPDATE`。
 - 管理 API 和管理台支持登记 `RiskModelVersion`，记录模型名称、版本、特征版本、训练窗口、artifact URI、评估指标和 `shadow/observe/enforce` 模式；管理台登记只创建候选版本，启用和恢复上一版必须通过确认操作进入状态流转。
@@ -1625,7 +1625,7 @@ deep sequence model
 - 必须有模型版本号。
 - 必须记录训练数据时间窗口。
 - 必须记录特征版本。
-- 必须支持一键回滚。
+- 必须支持一键恢复上一版。
 - 必须支持 shadow / observe / enforce 三种模式。
 - 模型分数不能直接返回给客户端。
 - 模型分数不能作为唯一阻断条件。
@@ -2002,7 +2002,7 @@ created_at
 - 同一 IP、账号、设备维度都应支持限流。
 - 生产策略阈值、IP 黑白名单、租户密钥和运行时计数不应暴露到前端。
 - 配置变更必须有审计记录；当前实现对应用、应用密钥轮换、路由策略、IP 策略、验证码资源和模型版本的成功变更写入 `CONFIG_*` 审计事件，训练标签更新写入 `RISK_FEATURE_LABEL_UPDATE` 审计事件。
-- 训练样本必须脱敏，AI 模型不能直接使用明文敏感信息。
+- 入训样本必须脱敏，AI 模型不能直接使用明文敏感信息。
 
 ## 19. MVP 范围
 
@@ -2032,7 +2032,7 @@ created_at
 - Redis 存储 challenge、ticket、限流计数。
 - 审计日志。
 - 风控特征采集：轨迹统计特征、策略命中、粗粒度结果标签。
-- 轻量管理台基础页面：应用、路由策略、IP 策略、策略模拟、资源、审计、训练样本。
+- 轻量管理台基础页面：应用、路由策略、IP 策略、策略模拟、资源图库、审计、样本复核。
 
 一期暂不做：
 
@@ -2097,7 +2097,7 @@ created_at
 - AI 离线训练。
 - AI 影子模式评分。
 - AI 灰度参与 risk_score；当前已支持由后端/Gateway/middleware 提供模型分上下文，也支持平台调用可选外部推理服务补充分数，统一由路由阈值使用。
-- 模型版本管理和回滚；当前已实现模型元数据登记、显式激活和回滚，内置模型仍只做异步 shadow 评分，在线推理采用可选外部服务边界。
+- 模型版本管理和恢复上一版；当前已实现模型元数据登记、显式启用和恢复，内置模型仍只做异步 shadow 评分，在线推理采用可选外部服务边界。
 - 更复杂的挑战编排；当前已支持 risk-score challenge 使用 `risk_challenge_type` 覆盖默认验证码类型，也支持验证阶段 `challenge_harder` 按平台配置序列升级下一题类型，并支持 route policy 级 `challenge_escalation` 覆盖。
 
 ## 21. 后续决策与扩展边界

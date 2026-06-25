@@ -191,10 +191,10 @@
 
 - 验证码类型：全部图片型验证码
 - 优先级：P0
-- 状态：部分完成，背景图库和图片格子分类图库已接入生成链路
+- 状态：已自动验收，背景图库、专用图库、图片格子分类图库和图标图库已接入生成链路
 - 现象：如果后端长期只依赖内置单图或少量固定背景，脚本可以围绕固定素材建立模板。
 - 期望：后端建立图库模型；图片格子使用分类图库，图标点选使用内置/可扩展 SVG 图标库，其它图片型验证码按背景形态建立背景图库。
-- 当前进展：资源类型已增加 `background_library`、`concat_background_library`、`jigsaw_background_library`、`grid_category_library`、`icon_library`；管理端资源类型选择器和契约检查已同步。`background_library` 已支持同作用域多资源保留并在服务端合成时随机抽样；`CONCAT` 和 `JIGSAW` 已拆到专用背景图库，不再复用通用背景，便于按图片连续性、切片可辨识度和用户通过难度筛选素材；`grid_category_library` 已支持按分类生成图片格子挑战；管理端资源表单支持 `category`、`label`、`weight` 和扩展 metadata JSON。`icon_library` 仍是登记能力，外部 SVG 图标图库接入渲染链路待补。
+- 当前进展：资源类型已增加 `background_library`、`concat_background_library`、`jigsaw_background_library`、`rotate_library`、`grid_category_library`、`icon_library`；管理端资源图库使用文件式列表、下拉筛选、批量上传图片/ZIP、多选启停和删除。`background_library` 已支持同作用域多资源保留并在服务端合成时随机抽样；`CONCAT` 和 `JIGSAW` 已拆到专用背景图库，不再复用通用背景，便于按图片连续性、切片可辨识度和用户通过难度筛选素材；`rotate_library` 已用于旋转校准独立图库；`grid_category_library` 已支持按分类生成图片格子挑战；`icon_library` 已接入 `IMAGE_CLICK` 服务端合成链路，支持 SVG 或透明图片作为图标点选素材，并按 metadata 标签生成提示。
 
 ## 修复顺序建议
 
