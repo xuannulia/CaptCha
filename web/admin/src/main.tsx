@@ -438,8 +438,8 @@ const decisionReasonLabels: Record<string, string> = {
   CONFIG_ROUTE_POLICY_DELETE: "路由策略删除",
   CONFIG_IP_POLICY_UPSERT: "IP 策略变更",
   CONFIG_IP_POLICY_DELETE: "IP 策略删除",
-  CONFIG_RESOURCE_UPSERT: "资源变更",
-  CONFIG_RESOURCE_DELETE: "资源删除",
+  CONFIG_RESOURCE_UPSERT: "素材变更",
+  CONFIG_RESOURCE_DELETE: "素材删除",
   CONFIG_RISK_MODEL_UPSERT: "模型登记",
   CONFIG_RISK_MODEL_ACTIVATE: "模型激活",
   CONFIG_RISK_MODEL_ROLLBACK: "模型回滚",
@@ -747,7 +747,7 @@ function Overview() {
         <Card loading={isLoading}><Statistic title="验证通过率" value={recent?.pass_rate ?? 0} suffix="%" precision={1} /></Card>
         <Card loading={isLoading}><Statistic title="验证请求" value={recent?.challenge ?? 0} /></Card>
         <Card loading={isLoading}><Statistic title="拦截请求" value={recent?.block ?? 0} /></Card>
-        <Card loading={isLoading}><Statistic title="活跃资源" value={totals?.active_captcha_resources ?? 0} suffix={`/ ${totals?.captcha_resources ?? 0}`} /></Card>
+        <Card loading={isLoading}><Statistic title="启用素材" value={totals?.active_captcha_resources ?? 0} suffix={`/ ${totals?.captcha_resources ?? 0}`} /></Card>
       </div>
       {error instanceof Error && <Card><div className="error-line">{error.message}</div></Card>}
       <div className="overview-panels">
@@ -759,11 +759,11 @@ function Overview() {
             <SummaryRow label="配置变更" value={String(recent?.config_changes ?? 0)} muted="近期" />
           </div>
         </Card>
-        <Card title="资源健康" loading={isLoading}>
+        <Card title="素材健康" loading={isLoading}>
           <div className="summary-list">
             <SummaryRow label="启用素材" value={ratioText(totals?.active_captcha_resources, totals?.captcha_resources)} />
             {topResources.length === 0 ? (
-              <div className="empty-line">暂无资源失败样本</div>
+              <div className="empty-line">暂无素材失败样本</div>
             ) : topResources.map((item) => (
               <SummaryRow
                 key={item.id}

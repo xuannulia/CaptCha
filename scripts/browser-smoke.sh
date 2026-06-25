@@ -1636,7 +1636,7 @@ bash "$PWCLI" snapshot >"$TMP_DIR/admin-applications.yml"
 snapshot_contains "$TMP_DIR/admin-applications.yml" "demo-app"
 snapshot_contains "$TMP_DIR/admin-applications.yml" "异常时放行"
 
-run_smoke_step "admin overview route" open_admin_page "/overview" "overview" "概览" "验证通过率" "防护策略"
+run_smoke_step "admin overview route" open_admin_page "/overview" "overview" "概览" "验证通过率" "素材健康"
 run_smoke_step "admin applications route" open_admin_page "/applications" "applications" "应用" "demo-app" "异常时放行"
 run_smoke_step "admin routes route" open_admin_page "/routes" "routes" "路由策略" "路径" "触发"
 run_smoke_step "admin ip policies route" open_admin_page "/ip-policies" "ip-policies" "IP 策略" "IP 范围" "名单"
