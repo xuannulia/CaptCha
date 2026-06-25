@@ -77,6 +77,7 @@ require_pattern web/admin/src/main.tsx 'from "antd"' "admin code wires Ant Desig
 require_pattern web/admin/src/main.tsx 'captcha-admin-token' "admin console supports runtime admin authorization"
 require_pattern web/admin/src/main.tsx 'captcha-admin-unauthorized' "admin console reacts to backend authorization failures"
 require_pattern web/admin/src/main.tsx 'label="触发条件"' "route policy form uses business trigger wording"
+require_pattern web/admin/src/main.tsx 'function ApplicationCell' "admin tables render application names before identifiers"
 require_dependency_allowlist web/admin/package.json "admin production dependencies stay on the chosen mature stack" "@ant-design/icons" "@tanstack/react-query" "antd" "react" "react-dom" "react-router-dom"
 reject_pattern web/admin/package.json '"(@ant-design/pro-components|@ant-design/pro-layout|@umijs/|umi|next|nuxt|vue|element-plus|echarts|@ant-design/charts)"' "admin package avoids heavier alternate app frameworks and chart stacks"
 reject_pattern web/admin/src/main.tsx '明细列表|系统资源|resource-uri|resource-table-wrap|system-resource-panel' "admin resource gallery avoids raw detail panels"
@@ -85,6 +86,7 @@ reject_pattern web/admin/src/main.tsx '训练特征|导出 JSONL' "admin risk tr
 reject_pattern web/admin/src/main.tsx 'Client ID' "admin application copy avoids raw client-id wording"
 reject_pattern web/admin/src/main.tsx 'Ticket TTL|Nonce|account hash|device hash|\bUA\b' "admin policy and audit copy avoids raw integration wording"
 reject_pattern web/admin/src/main.tsx 'Select options=\{selectOptions\(\["always", "risk_based", "rate_limit", "observe", "silent", "manual_bypass"\]\)\}' "route policy form avoids exposing internal route modes as normal options"
+reject_pattern web/admin/src/main.tsx 'title: "应用", dataIndex: "client_id"|label="CIDR"|title: "CIDR"' "admin tables avoid raw app and CIDR implementation fields"
 
 if rg -n "欢迎使用|三步开始|平台能力介绍|hero|landing page|价值主张|能力清单|快速开始|接入教程|功能介绍|功能亮点|产品优势|为什么选择|使用说明|操作指南|快捷键|请先|你可以|强大|轻松|无需|开箱即用" web/admin/src web/runtime/src >/tmp/captcha-frontend-copy-check.txt; then
 	cat /tmp/captcha-frontend-copy-check.txt >&2

@@ -868,7 +868,7 @@ function Routes() {
     });
   };
   const columns: ColumnsType<RoutePolicy> = [
-    { title: "应用", dataIndex: "client_id", width: 130 },
+    { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
     { title: "名称", dataIndex: "name" },
     { title: "路径", dataIndex: "path_pattern" },
     { title: "方法", dataIndex: "method", width: 90 },
@@ -1054,7 +1054,7 @@ function Routes() {
 }
 
 function IpPolicies() {
-  const { appOptions, selectedClientID, defaultClientID } = useApplicationScope();
+  const { applications, appOptions, selectedClientID, defaultClientID } = useApplicationScope();
   const { data, isLoading } = useList<IpPolicy>("ip-policies", scopedPath("/api/v1/admin/ip-policies", selectedClientID));
   const [open, setOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<IpPolicy | null>(null);
@@ -1086,9 +1086,9 @@ function IpPolicies() {
     });
   };
   const columns: ColumnsType<IpPolicy> = [
-    { title: "应用", dataIndex: "client_id", width: 130 },
+    { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
     { title: "类型", render: (_, row) => ipPolicyTypeLabel(row.type) },
-    { title: "CIDR", dataIndex: "cidr" },
+    { title: "IP 范围", dataIndex: "cidr" },
     { title: "动作", render: (_, row) => actionLabel(row.action) },
     { title: "原因", dataIndex: "reason" },
     {
@@ -1175,7 +1175,7 @@ function IpPolicies() {
             <Select showSearch disabled={Boolean(editingPolicy)} optionFilterProp="label" options={appOptions} />
           </Form.Item>
           <Form.Item name="type" label="类型" rules={[{ required: true }]}><Select options={selectOptions(["allowlist", "blocklist"])} /></Form.Item>
-          <Form.Item name="cidr" label="CIDR" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="cidr" label="IP 范围" rules={[{ required: true }]}><Input placeholder="192.0.2.10 或 192.0.2.0/24" /></Form.Item>
           <Form.Item name="reason" label="原因"><Input /></Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
         </Form>
@@ -1424,6 +1424,17 @@ function applicationOptions(applications?: Application[]) {
     value: item.client_id,
     label: `${item.name} (${item.client_id})`
   }));
+}
+
+function ApplicationCell({ clientID, applications }: { clientID: string; applications?: Application[] }) {
+  const application = applications?.find((item) => item.client_id === clientID);
+  const name = application?.name || clientID || "-";
+  return (
+    <div className="table-primary-cell">
+      <strong>{name}</strong>
+      {clientID && name !== clientID && <span>{clientID}</span>}
+    </div>
+  );
 }
 
 function firstApplicationClientID(applications?: Application[]) {
@@ -1791,7 +1802,7 @@ function Resources() {
 }
 
 function Audit() {
-  const { selectedClientID } = useApplicationScope();
+  const { applications, selectedClientID } = useApplicationScope();
   const [filters, setFilters] = useState({ action: "", result: "", scene: "", decision_reason: "", account_id_hash: "", device_id_hash: "" });
   const [pageState, setPageState] = useState({ page: 1, pageSize: 20 });
   const [form] = Form.useForm();
@@ -1819,7 +1830,7 @@ function Audit() {
   const total = (pageState.page - 1) * pageState.pageSize + rows.length + (data?.has_more ? 1 : 0);
   const columns: ColumnsType<AuditEvent> = [
     { title: "时间", width: 170, render: (_, row) => formatDateTime(row.created_at) },
-    { title: "应用", dataIndex: "client_id", width: 130 },
+    { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
     { title: "路由", render: (_, row) => <span title={row.route || ""}>{compactText(row.route || "", 28)}</span> },
     { title: "场景", dataIndex: "scene" },
     {
@@ -1891,7 +1902,7 @@ function Audit() {
 }
 
 function RiskFeatures() {
-  const { selectedClientID } = useApplicationScope();
+  const { applications, selectedClientID } = useApplicationScope();
   const [filters, setFilters] = useState({ challenge_type: "", label: "", model_trainable: "", scene: "" });
   const [pageState, setPageState] = useState({ page: 1, pageSize: 20 });
   const [exporting, setExporting] = useState(false);
@@ -1982,7 +1993,7 @@ function RiskFeatures() {
     });
   };
   const columns: ColumnsType<RiskFeatureSnapshot> = [
-    { title: "应用", dataIndex: "client_id", width: 130 },
+    { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
     { title: "样本", render: (_, row) => <span title={row.attempt_id}>{compactText(row.attempt_id, 24)}</span> },
     { title: "场景", dataIndex: "scene" },
     { title: "验证码", render: (_, row) => captchaLabel(row.challenge_type) },
