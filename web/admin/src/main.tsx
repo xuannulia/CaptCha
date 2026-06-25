@@ -415,8 +415,8 @@ const adminRoutes = [
   { key: "simulate", path: "/policy-simulate", icon: <SafetyOutlined />, label: "策略模拟", element: <PolicySimulator /> },
   { key: "resources", path: "/resources", icon: <DatabaseOutlined />, label: "资源", element: <Resources /> },
   { key: "audit", path: "/audit", icon: <AuditOutlined />, label: "审计", element: <Audit /> },
-  { key: "features", path: "/risk-features", icon: <ExperimentOutlined />, label: "训练特征", element: <RiskFeatures /> },
-  { key: "models", path: "/risk-models", icon: <ExperimentOutlined />, label: "模型版本", element: <RiskModels /> }
+  { key: "features", path: "/risk-features", icon: <ExperimentOutlined />, label: "训练样本", element: <RiskFeatures /> },
+  { key: "models", path: "/risk-models", icon: <ExperimentOutlined />, label: "模型管理", element: <RiskModels /> }
 ];
 
 function App() {
@@ -560,10 +560,10 @@ function Overview() {
             ))}
           </div>
         </Card>
-        <Card title="风险训练" loading={isLoading}>
+        <Card title="样本与模型" loading={isLoading}>
           <div className="summary-list">
-            <SummaryRow label="可训练样本" value={ratioText(totals?.trainable_risk_features, totals?.risk_feature_snapshots)} />
-            <SummaryRow label="模型版本" value={ratioText(totals?.active_risk_model_versions, totals?.risk_model_versions)} />
+            <SummaryRow label="入训样本" value={ratioText(totals?.trainable_risk_features, totals?.risk_feature_snapshots)} />
+            <SummaryRow label="启用模型" value={ratioText(totals?.active_risk_model_versions, totals?.risk_model_versions)} />
             <SummaryRow label="真人样本" value={String(riskLabels.confirmed_human || 0)} />
             <SummaryRow label="机器样本" value={String(riskLabels.confirmed_bot || 0)} />
           </div>
@@ -1874,7 +1874,7 @@ function RiskFeatures() {
       title: resetting ? "撤销训练标注" : `确认${labelText}`,
       content: (
         <div className="confirm-copy">
-          <p>{row.attempt_id}</p>
+          <p>样本 {compactText(row.attempt_id, 28)}</p>
           <p>{resetting ? "撤销后该样本会回到候选状态，不再进入默认训练导出。" : "确认后该样本会被标记为可训练，后续离线训练导出会默认包含它。"}</p>
         </div>
       ),
@@ -1904,12 +1904,12 @@ function RiskFeatures() {
   };
   const columns: ColumnsType<RiskFeatureSnapshot> = [
     { title: "应用", dataIndex: "client_id", width: 130 },
-    { title: "会话", dataIndex: "attempt_id" },
+    { title: "样本", render: (_, row) => <span title={row.attempt_id}>{compactText(row.attempt_id, 24)}</span> },
     { title: "场景", dataIndex: "scene" },
     { title: "验证码", render: (_, row) => captchaLabel(row.challenge_type) },
     { title: "标签", render: (_, row) => riskLabel(row.label) },
-    { title: "版本", dataIndex: "feature_version" },
-    { title: "训练", render: (_, row) => <Tag color={row.model_trainable ? "green" : "default"}>{row.model_trainable ? "可训练" : "候选"}</Tag> },
+    { title: "特征集", dataIndex: "feature_version" },
+    { title: "状态", render: (_, row) => <Tag color={row.model_trainable ? "green" : "default"}>{row.model_trainable ? "入训样本" : "候选样本"}</Tag> },
     {
       title: "操作",
       render: (_, row) => (
@@ -1922,7 +1922,7 @@ function RiskFeatures() {
     }
   ];
   return (
-    <Card title="训练特征" extra={<Button onClick={exportTrainingData} loading={exporting}>导出 JSONL</Button>}>
+    <Card title="训练样本" extra={<Button onClick={exportTrainingData} loading={exporting}>导出样本</Button>}>
       <Form
         form={form}
         layout="inline"
@@ -1945,7 +1945,7 @@ function RiskFeatures() {
         <Form.Item name="scene" label="场景"><Input placeholder="login" /></Form.Item>
         <Form.Item name="challenge_type" label="验证码"><Select allowClear style={{ width: 170 }} options={selectOptions(captchaTypes)} /></Form.Item>
         <Form.Item name="label" label="标签"><Select allowClear style={{ width: 170 }} options={selectOptions(["unknown", "captcha_pass", "captcha_retry", "likely_human", "likely_bot", "confirmed_human", "confirmed_bot"])} /></Form.Item>
-        <Form.Item name="model_trainable" label="训练"><Select allowClear style={{ width: 130 }} options={[{ value: "true", label: "可训练" }, { value: "false", label: "候选" }]} /></Form.Item>
+        <Form.Item name="model_trainable" label="状态"><Select allowClear style={{ width: 130 }} options={[{ value: "true", label: "入训样本" }, { value: "false", label: "候选样本" }]} /></Form.Item>
         <Button htmlType="submit">查询</Button>
         <Button htmlType="reset">重置</Button>
       </Form>
@@ -1987,7 +1987,7 @@ function RiskModels() {
   const confirmModelAction = (row: RiskModelVersion, action: "activate" | "rollback") => {
     const activating = action === "activate";
     Modal.confirm({
-      title: activating ? "激活模型版本" : "回滚模型版本",
+      title: activating ? "激活模型" : "回滚模型",
       content: (
         <div className="confirm-copy">
           <p>{row.name} / {row.version}</p>
@@ -2014,7 +2014,7 @@ function RiskModels() {
   const columns: ColumnsType<RiskModelVersion> = [
     { title: "名称", dataIndex: "name" },
     { title: "版本", dataIndex: "version" },
-    { title: "特征", dataIndex: "feature_version" },
+    { title: "特征集", dataIndex: "feature_version" },
     { title: "窗口", dataIndex: "training_window" },
     { title: "模式", render: (_, row) => <Tag color={row.mode === "enforce" ? "red" : row.mode === "observe" ? "blue" : "default"}>{modelModeLabel(row.mode)}</Tag> },
     { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : row.status === "rolled_back" ? "orange" : "default"}>{modelStatusLabel(row.status)}</Tag> },
@@ -2029,9 +2029,9 @@ function RiskModels() {
     }
   ];
   return (
-    <Card title="模型版本" extra={<Button type="primary" onClick={openCreateModel}>登记</Button>}>
+    <Card title="模型管理" extra={<Button type="primary" onClick={openCreateModel}>登记模型</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title="登记模型版本" open={open} onCancel={closeCreateModel} onOk={() => form.submit()} okText="保存">
+      <Modal title="登记模型" open={open} onCancel={closeCreateModel} onOk={() => form.submit()} okText="保存">
         <Form
           form={form}
           layout="vertical"
@@ -2051,17 +2051,17 @@ function RiskModels() {
                 body: { ...body, status: "candidate", metrics: Object.keys(metrics).length > 0 ? metrics : undefined }
               });
               closeCreateModel();
-              message.success("模型版本已登记");
+              message.success("模型已登记");
             } catch {
-              message.error("模型版本登记失败");
+              message.error("模型登记失败");
             }
           }}
         >
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="version" label="版本" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="feature_version" label="特征版本" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="feature_version" label="特征集" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="training_window" label="训练窗口" rules={[{ required: true }]}><Input placeholder="2026-06-01/2026-06-20" /></Form.Item>
-          <Form.Item name="artifact_uri" label="模型地址" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="artifact_uri" label="模型包地址" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="mode" label="模式"><Select options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
           <Space.Compact block>
             <Form.Item name="auc" label="AUC" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
@@ -2147,8 +2147,8 @@ function titleFor(key: string) {
     simulate: "策略模拟",
     resources: "资源",
     audit: "审计",
-    features: "训练特征",
-    models: "模型版本"
+    features: "训练样本",
+    models: "模型管理"
   };
   return titles[key] || "概览";
 }
