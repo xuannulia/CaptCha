@@ -361,7 +361,7 @@ const modelStatusLabels: Record<string, string> = {
   candidate: "候选",
   active: "启用",
   retired: "退役",
-  rolled_back: "已回滚"
+  rolled_back: "已恢复"
 };
 const rateStrategyLabels: Record<string, string> = {
   fixed_window: "固定窗口",
@@ -438,9 +438,9 @@ const decisionReasonLabels: Record<string, string> = {
   CONFIG_RESOURCE_UPSERT: "素材变更",
   CONFIG_RESOURCE_DELETE: "素材删除",
   CONFIG_RISK_MODEL_UPSERT: "模型登记",
-  CONFIG_RISK_MODEL_ACTIVATE: "模型激活",
-  CONFIG_RISK_MODEL_ROLLBACK: "模型回滚",
-  RISK_FEATURE_LABEL_UPDATE: "训练标注变更"
+  CONFIG_RISK_MODEL_ACTIVATE: "模型启用",
+  CONFIG_RISK_MODEL_ROLLBACK: "模型恢复",
+  RISK_FEATURE_LABEL_UPDATE: "样本复核变更"
 };
 const decisionReasonOptions = Object.entries(decisionReasonLabels).map(([value, label]) => ({ value, label }));
 const simulationMarkerLabels: Record<string, string> = {
@@ -500,7 +500,7 @@ const adminRoutes = [
   { key: "simulate", path: "/policy-simulate", icon: <SafetyOutlined />, label: "策略模拟", element: <PolicySimulator /> },
   { key: "resources", path: "/resources", icon: <DatabaseOutlined />, label: "资源图库", element: <Resources /> },
   { key: "audit", path: "/audit", icon: <AuditOutlined />, label: "审计", element: <Audit /> },
-  { key: "features", path: "/risk-features", icon: <ExperimentOutlined />, label: "训练样本", element: <RiskFeatures /> },
+  { key: "features", path: "/risk-features", icon: <ExperimentOutlined />, label: "样本复核", element: <RiskFeatures /> },
   { key: "models", path: "/risk-models", icon: <ExperimentOutlined />, label: "模型管理", element: <RiskModels /> }
 ];
 
@@ -1382,7 +1382,7 @@ function PolicySimulator() {
                 <div className="policy-simulator-grid">
                   <Form.Item name="risk_score" label="风险分"><InputNumber min={0} max={100} /></Form.Item>
                   <Form.Item name="risk_level" label="风险级别"><Select allowClear options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高" }]} /></Form.Item>
-                  <Form.Item name="model_score" label="模型分"><InputNumber min={0} max={100} /></Form.Item>
+                  <Form.Item name="model_score" label="模型风险分"><InputNumber min={0} max={100} /></Form.Item>
                   <Form.Item name="model_mode" label="模型状态"><Select allowClear options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
                 </div>
               )
@@ -2163,11 +2163,11 @@ function RiskFeatures() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `captcha-training-samples-${Date.now()}.jsonl`;
+      anchor.download = `captcha-review-samples-${Date.now()}.jsonl`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch {
-      message.error("训练数据导出失败");
+      message.error("样本导出失败");
     } finally {
       setExporting(false);
     }
@@ -2176,14 +2176,14 @@ function RiskFeatures() {
     const resetting = label === "unknown";
     const labelText = riskLabel(label);
     Modal.confirm({
-      title: resetting ? "撤销训练标注" : `确认${labelText}`,
+      title: resetting ? "撤销样本标注" : `标记为${labelText}`,
       content: (
         <div className="confirm-copy">
-          <p>样本编号 {compactText(row.attempt_id, 28)}</p>
-          <p>{resetting ? "撤销后该样本会回到候选状态，不再进入默认训练导出。" : "确认后该样本会被标记为可训练，后续离线训练导出会默认包含它。"}</p>
+          <p>验证记录 {compactText(row.attempt_id, 28)}</p>
+          <p>{resetting ? "撤销后该记录会回到候选状态，不再进入默认样本导出。" : "确认后该记录会进入入训样本，后续离线样本导出会默认包含它。"}</p>
         </div>
       ),
-      okText: resetting ? "确认撤销" : "确认标注",
+      okText: resetting ? "确认撤销" : "确认保存",
       cancelText: "取消",
       okButtonProps: { danger: label === "confirmed_bot" || resetting },
       onOk: async () => {
@@ -2197,9 +2197,9 @@ function RiskFeatures() {
               model_trainable: modelTrainable
             }
           });
-          message.success(resetting ? "训练标注已撤销" : "训练标注已保存");
+          message.success(resetting ? "样本标注已撤销" : "样本标注已保存");
         } catch {
-          message.error(resetting ? "训练标注撤销失败" : "训练标注保存失败");
+          message.error(resetting ? "样本标注撤销失败" : "样本标注保存失败");
           throw new Error("risk feature label update failed");
         } finally {
           setActingFeatureID("");
@@ -2209,12 +2209,12 @@ function RiskFeatures() {
   };
   const columns: ColumnsType<RiskFeatureSnapshot> = [
     { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
-    { title: "样本编号", render: (_, row) => <span title={row.attempt_id}>{compactText(row.attempt_id, 24)}</span> },
+    { title: "验证记录", render: (_, row) => <span title={row.attempt_id}>{compactText(row.attempt_id, 24)}</span> },
     { title: "场景", dataIndex: "scene" },
     { title: "验证码", render: (_, row) => captchaLabel(row.challenge_type) },
     { title: "人工标签", render: (_, row) => riskLabel(row.label) },
     { title: "样本版本", dataIndex: "feature_version" },
-    { title: "状态", render: (_, row) => <Tag color={row.model_trainable ? "green" : "default"}>{row.model_trainable ? "入训样本" : "候选样本"}</Tag> },
+    { title: "样本状态", render: (_, row) => <Tag color={row.model_trainable ? "green" : "default"}>{row.model_trainable ? "入训样本" : "候选样本"}</Tag> },
     {
       title: "操作",
       render: (_, row) => (
@@ -2227,7 +2227,7 @@ function RiskFeatures() {
     }
   ];
   return (
-    <Card title="训练样本" extra={<Button onClick={exportTrainingData} loading={exporting}>导出样本</Button>}>
+    <Card title="样本复核" extra={<Button onClick={exportTrainingData} loading={exporting}>导出入训样本</Button>}>
       <Form
         form={form}
         layout="inline"
@@ -2250,7 +2250,7 @@ function RiskFeatures() {
         <Form.Item name="scene" label="场景"><Input placeholder="输入场景" /></Form.Item>
         <Form.Item name="challenge_type" label="验证码"><Select allowClear style={{ width: 170 }} options={selectOptions(captchaTypes)} /></Form.Item>
         <Form.Item name="label" label="人工标签"><Select allowClear style={{ width: 170 }} options={selectOptions(["unknown", "captcha_pass", "captcha_retry", "likely_human", "likely_bot", "confirmed_human", "confirmed_bot"])} /></Form.Item>
-        <Form.Item name="model_trainable" label="状态"><Select allowClear style={{ width: 130 }} options={[{ value: "true", label: "入训样本" }, { value: "false", label: "候选样本" }]} /></Form.Item>
+        <Form.Item name="model_trainable" label="样本状态"><Select allowClear style={{ width: 130 }} options={[{ value: "true", label: "入训样本" }, { value: "false", label: "候选样本" }]} /></Form.Item>
         <Button htmlType="submit">查询</Button>
         <Button htmlType="reset">重置</Button>
       </Form>
@@ -2292,23 +2292,23 @@ function RiskModels() {
   const confirmModelAction = (row: RiskModelVersion, action: "activate" | "rollback") => {
     const activating = action === "activate";
     Modal.confirm({
-      title: activating ? "激活模型" : "回滚模型",
+      title: activating ? "启用模型" : "恢复上一版",
       content: (
         <div className="confirm-copy">
           <p>{row.name} / {row.version}</p>
-          <p>{activating ? `激活后同名模型的当前启用版本会退役；上线方式为“${modelModeLabel(row.mode)}”时，模型分可能参与风险判断。` : "回滚会停用当前版本，并恢复最近一个退役版本。"}</p>
+          <p>{activating ? `启用后同名模型的当前版本会退役；上线方式为“${modelModeLabel(row.mode)}”时，模型风险分可能参与风险判断。` : "恢复后会停用当前版本，并启用最近一个可恢复版本。"}</p>
         </div>
       ),
-      okText: activating ? "确认激活" : "确认回滚",
+      okText: activating ? "确认启用" : "确认恢复",
       cancelText: "取消",
       okButtonProps: { danger: activating && row.mode === "enforce" },
       onOk: async () => {
         setActingModelID(row.id);
         try {
           await actionMutation.mutateAsync({ path: `/api/v1/admin/risk-model-versions/${row.id}/${action}`, body: {} });
-          message.success(activating ? "模型已激活" : "模型已回滚");
+          message.success(activating ? "模型已启用" : "模型已恢复");
         } catch {
-          message.error(activating ? "模型激活失败" : "模型回滚失败");
+          message.error(activating ? "模型启用失败" : "模型恢复失败");
           throw new Error(activating ? "activate model failed" : "rollback model failed");
         } finally {
           setActingModelID("");
@@ -2328,8 +2328,8 @@ function RiskModels() {
       title: "操作",
       render: (_, row) => (
         <Space>
-          <Button size="small" loading={actingModelID === row.id} disabled={row.status === "active"} onClick={() => confirmModelAction(row, "activate")}>激活</Button>
-          <Button size="small" loading={actingModelID === row.id} disabled={row.status !== "active"} onClick={() => confirmModelAction(row, "rollback")}>回滚</Button>
+          <Button size="small" loading={actingModelID === row.id} disabled={row.status === "active"} onClick={() => confirmModelAction(row, "activate")}>启用</Button>
+          <Button size="small" loading={actingModelID === row.id} disabled={row.status !== "active"} onClick={() => confirmModelAction(row, "rollback")}>恢复</Button>
         </Space>
       )
     }
@@ -2493,7 +2493,7 @@ function titleFor(key: string) {
     simulate: "策略模拟",
     resources: "资源图库",
     audit: "审计",
-    features: "训练样本",
+    features: "样本复核",
     models: "模型管理"
   };
   return titles[key] || "概览";

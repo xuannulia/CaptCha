@@ -1643,7 +1643,7 @@ run_smoke_step "admin ip policies route" open_admin_page "/ip-policies" "ip-poli
 run_smoke_step "admin policy simulate route" open_admin_page "/policy-simulate" "policy-simulate" "策略模拟" "应用" "模拟"
 run_smoke_step "admin resources route" open_admin_page "/resources" "resources" "资源图库" "全部文件" "上传图片"
 run_smoke_step "admin audit route" open_admin_page "/audit" "audit" "审计" "原因" "结果"
-run_smoke_step "admin risk features route" open_admin_page "/risk-features" "risk-features" "训练样本" "导出样本" "人工标签"
+run_smoke_step "admin risk features route" open_admin_page "/risk-features" "risk-features" "样本复核" "导出入训样本" "人工标签"
 run_smoke_step "admin risk models route" open_admin_page "/risk-models" "risk-models" "模型管理" "质量" "登记模型"
 
 echo "browser smoke passed"
