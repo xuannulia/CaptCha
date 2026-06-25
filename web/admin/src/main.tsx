@@ -1899,6 +1899,8 @@ function RiskFeatures() {
       anchor.download = `captcha-risk-features-${Date.now()}.jsonl`;
       anchor.click();
       URL.revokeObjectURL(url);
+    } catch {
+      message.error("训练数据导出失败");
     } finally {
       setExporting(false);
     }
@@ -1983,9 +1985,45 @@ function RiskFeatures() {
 function RiskModels() {
   const { data, isLoading } = useList<RiskModelVersion>("risk-models", "/api/v1/admin/risk-model-versions?limit=100");
   const [open, setOpen] = useState(false);
+  const [actingModelID, setActingModelID] = useState("");
   const [form] = Form.useForm();
   const mutation = usePost<RiskModelVersion>("risk-models");
   const actionMutation = usePost<RiskModelVersion>("risk-models");
+  const openCreateModel = () => {
+    form.resetFields();
+    setOpen(true);
+  };
+  const closeCreateModel = () => {
+    form.resetFields();
+    setOpen(false);
+  };
+  const confirmModelAction = (row: RiskModelVersion, action: "activate" | "rollback") => {
+    const activating = action === "activate";
+    Modal.confirm({
+      title: activating ? "激活模型版本" : "回滚模型版本",
+      content: (
+        <div className="confirm-copy">
+          <p>{row.name} / {row.version}</p>
+          <p>{activating ? "激活后同名模型的当前 active 版本会退役，observe/enforce 模式可能参与风险决策。" : "回滚会将当前 active 标记为已回滚，并恢复最近一个退役版本。"}</p>
+        </div>
+      ),
+      okText: activating ? "确认激活" : "确认回滚",
+      cancelText: "取消",
+      okButtonProps: { danger: activating && row.mode === "enforce" },
+      onOk: async () => {
+        setActingModelID(row.id);
+        try {
+          await actionMutation.mutateAsync({ path: `/api/v1/admin/risk-model-versions/${row.id}/${action}`, body: {} });
+          message.success(activating ? "模型已激活" : "模型已回滚");
+        } catch {
+          message.error(activating ? "模型激活失败" : "模型回滚失败");
+          throw new Error(activating ? "activate model failed" : "rollback model failed");
+        } finally {
+          setActingModelID("");
+        }
+      }
+    });
+  };
   const columns: ColumnsType<RiskModelVersion> = [
     { title: "名称", dataIndex: "name" },
     { title: "版本", dataIndex: "version" },
@@ -1997,36 +2035,39 @@ function RiskModels() {
       title: "操作",
       render: (_, row) => (
         <Space>
-          <Button size="small" disabled={row.status === "active"} onClick={() => actionMutation.mutate({ path: `/api/v1/admin/risk-model-versions/${row.id}/activate`, body: {} })}>激活</Button>
-          <Button size="small" disabled={row.status !== "active"} onClick={() => actionMutation.mutate({ path: `/api/v1/admin/risk-model-versions/${row.id}/rollback`, body: {} })}>回滚</Button>
+          <Button size="small" loading={actingModelID === row.id} disabled={row.status === "active"} onClick={() => confirmModelAction(row, "activate")}>激活</Button>
+          <Button size="small" loading={actingModelID === row.id} disabled={row.status !== "active"} onClick={() => confirmModelAction(row, "rollback")}>回滚</Button>
         </Space>
       )
     }
   ];
   return (
-    <Card title="模型版本" extra={<Button type="primary" onClick={() => setOpen(true)}>登记</Button>}>
+    <Card title="模型版本" extra={<Button type="primary" onClick={openCreateModel}>登记</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title="登记模型版本" open={open} onCancel={() => setOpen(false)} onOk={() => form.submit()} okText="保存">
+      <Modal title="登记模型版本" open={open} onCancel={closeCreateModel} onOk={() => form.submit()} okText="保存">
         <Form
           form={form}
           layout="vertical"
           initialValues={{
             name: "track-baseline",
             feature_version: "track-v1",
-            mode: "shadow",
-            status: "candidate"
+            mode: "shadow"
           }}
           onFinish={async (values) => {
             const metrics: Record<string, unknown> = {};
             if (values.auc !== undefined) metrics.auc = values.auc;
             if (values.false_positive_rate !== undefined) metrics.false_positive_rate = values.false_positive_rate;
             const { auc, false_positive_rate, ...body } = values;
-            await mutation.mutateAsync({
-              path: "/api/v1/admin/risk-model-versions",
-              body: { ...body, metrics: Object.keys(metrics).length > 0 ? metrics : undefined }
-            });
-            form.resetFields();
-            setOpen(false);
+            try {
+              await mutation.mutateAsync({
+                path: "/api/v1/admin/risk-model-versions",
+                body: { ...body, status: "candidate", metrics: Object.keys(metrics).length > 0 ? metrics : undefined }
+              });
+              closeCreateModel();
+              message.success("模型版本已登记");
+            } catch {
+              message.error("模型版本登记失败");
+            }
           }}
         >
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
@@ -2035,7 +2076,6 @@ function RiskModels() {
           <Form.Item name="training_window" label="训练窗口" rules={[{ required: true }]}><Input placeholder="2026-06-01/2026-06-20" /></Form.Item>
           <Form.Item name="artifact_uri" label="模型地址" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="mode" label="模式"><Select options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
-          <Form.Item name="status" label="状态"><Select options={selectOptions(["candidate", "retired", "rolled_back"])} /></Form.Item>
           <Space.Compact block>
             <Form.Item name="auc" label="AUC" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="false_positive_rate" label="误伤率" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>

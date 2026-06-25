@@ -1504,7 +1504,7 @@ user slide
 - `GET /api/v1/admin/risk-feature-snapshots/export` 支持按同样过滤条件导出 JSONL 离线训练样本，默认只导出 `model_trainable=true` 的明确标签样本；传入 `trainable_only=false` 可导出候选样本用于离线分析，但不代表可直接入训。
 - `model_trainable=true` 只允许搭配 `likely_human`、`likely_bot`、`confirmed_human` 或 `confirmed_bot` 等明确标签；`captcha_pass` / `captcha_retry` 这类单次验证码结果只能作为弱标签候选，不能直接入训。
 - 训练标签更新会写入审计事件，原因码为 `RISK_FEATURE_LABEL_UPDATE`。
-- 管理 API 和管理台支持登记 `RiskModelVersion`，记录模型名称、版本、特征版本、训练窗口、artifact URI、评估指标、`shadow/observe/enforce` 模式和状态。
+- 管理 API 和管理台支持登记 `RiskModelVersion`，记录模型名称、版本、特征版本、训练窗口、artifact URI、评估指标和 `shadow/observe/enforce` 模式；管理台登记只创建候选版本，激活和回滚必须通过确认操作进入状态流转。
 - 模型版本支持显式激活；同名模型激活新版本时，旧 active 版本会转为 `retired`。回滚接口会把当前 active 标记为 `rolled_back`，并恢复最近一个 retired 版本。
 - 当 active 模型版本的 `feature_version` 与特征快照匹配时，异步入池任务会写入 `risk_model_shadow` 摘要，包括模型 id、名称、版本、模式、分数、分桶、原因和 `decision_effect=none`。
 - 当前不实时训练，不自动上线，也不把模型分数返回给客户端。PolicyService 支持接收后端/Gateway/middleware 提供的 `model_score` 和 `model_mode`：`shadow` 不影响决策，`observe` / `enforce` 只作为 `risk_score` 输入，并且只有路由显式配置风险阈值时才生效；触发风险挑战时可用 `risk_challenge_type` 升级验证码类型。
