@@ -78,6 +78,7 @@ require_pattern web/admin/src/main.tsx 'captcha-admin-token' "admin console supp
 require_pattern web/admin/src/main.tsx 'captcha-admin-unauthorized' "admin console reacts to backend authorization failures"
 require_pattern web/admin/src/main.tsx '/api/v1/admin/auth/check' "admin console validates authorization before loading data"
 require_pattern web/admin/src/main.tsx 'authState === "authorized"' "admin console gates management pages behind authorization state"
+require_pattern web/admin/src/main.tsx '管理令牌' "admin console presents open-source management access as a simple token"
 require_pattern web/admin/src/main.tsx 'label="触发条件"' "route policy form uses business trigger wording"
 require_pattern web/admin/src/main.tsx 'label="异常处理"' "admin fail policy uses outage handling wording"
 require_pattern web/admin/src/main.tsx 'fail_open: "异常时放行"' "fail-open copy is business readable"
@@ -106,6 +107,7 @@ reject_pattern web/admin/src/main.tsx 'Ticket TTL|Nonce|account hash|device hash
 reject_pattern web/admin/src/main.tsx 'Select options=\{selectOptions\(\["always", "risk_based", "rate_limit", "observe", "silent", "manual_bypass"\]\)\}' "route policy form avoids exposing internal route modes as normal options"
 reject_pattern web/admin/src/main.tsx 'title: "应用", dataIndex: "client_id"|label="CIDR"|title: "CIDR"' "admin tables avoid raw app and CIDR implementation fields"
 reject_pattern web/admin/src/main.tsx 'label="AUC"|模型包地址|observe/enforce 模式|active 版本' "risk model admin avoids raw model implementation wording"
+reject_pattern web/admin/src/main.tsx '管理授权|访问令牌|已授权|未授权|重新授权' "admin token UI avoids complex authorization-system wording"
 reject_pattern web/admin/src/main.tsx '<Tag key=\{item\}>\{item\}</Tag>|label=\{compactText\(item.name, 24\)\}|compactText\(row.decision_reason, 26\)' "admin avoids showing raw reason and dry-run markers"
 reject_pattern web/admin/src/main.tsx 'placeholder="RISK_BASED"|name="decision_reason" label="原因"><Input' "audit reason filter avoids raw backend reason input"
 

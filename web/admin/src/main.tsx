@@ -596,7 +596,7 @@ function AdminShell() {
   const saveAdminToken = async () => {
     const token = adminTokenDraft.trim();
     if (!token) {
-      message.warning("请输入访问令牌");
+      message.warning("请输入管理令牌");
       return;
     }
     setAuthSaving(true);
@@ -605,7 +605,7 @@ function AdminShell() {
     if (!ok) {
       setAuthState("required");
       setHasAdminToken(false);
-      message.error("访问令牌无效");
+      message.error("管理令牌无效");
       return;
     }
     localStorage.setItem(adminTokenStorageKey, token);
@@ -614,7 +614,7 @@ function AdminShell() {
     setAuthOpen(false);
     setAdminTokenDraft("");
     await queryClient.invalidateQueries();
-    message.success("授权已生效");
+    message.success("管理令牌已生效");
   };
 
   const clearAdminToken = async () => {
@@ -629,7 +629,7 @@ function AdminShell() {
     } else {
       queryClient.clear();
     }
-    message.success(ok ? "已清除本机令牌" : "已清除令牌，请重新授权");
+    message.success(ok ? "已清除本机令牌" : "已清除令牌，请重新输入");
   };
 
   const applicationScope = useMemo(() => ({
@@ -667,9 +667,9 @@ function AdminShell() {
                   disabled={!authReady}
                 />
                 {authState === "checking" && <Tag>校验中</Tag>}
-                {authState === "authorized" && hasAdminToken && <Tag color="green">已授权</Tag>}
-                {authState === "required" && <Tag color="red">未授权</Tag>}
-                <Button onClick={() => setAuthOpen(true)}>授权</Button>
+                {authState === "authorized" && hasAdminToken && <Tag color="green">令牌有效</Tag>}
+                {authState === "required" && <Tag color="red">需令牌</Tag>}
+                <Button onClick={() => setAuthOpen(true)}>管理令牌</Button>
                 <span className="header-subtitle">管理控制台</span>
               </Space>
             </Layout.Header>
@@ -687,7 +687,7 @@ function AdminShell() {
           </Layout>
         </Layout>
         <Modal
-          title="管理授权"
+          title="管理令牌"
           open={authOpen}
           okText="保存"
           cancelText="取消"
@@ -696,7 +696,7 @@ function AdminShell() {
           confirmLoading={authSaving}
         >
           <Form layout="vertical" onFinish={saveAdminToken}>
-            <Form.Item label="访问令牌" required>
+            <Form.Item label="管理令牌" required>
               <Input.Password
                 autoComplete="current-password"
                 value={adminTokenDraft}
@@ -713,9 +713,9 @@ function AdminShell() {
 function AdminAuthorizationPanel({ checking, onAuthorize }: { checking: boolean; onAuthorize: () => void }) {
   return (
     <Card className="admin-auth-panel">
-      <strong>{checking ? "正在校验管理授权" : "需要管理授权"}</strong>
-      <span>{checking ? "请稍候" : "输入访问令牌后继续"}</span>
-      {!checking && <Button type="primary" onClick={onAuthorize}>授权</Button>}
+      <strong>{checking ? "正在检查管理令牌" : "需要管理令牌"}</strong>
+      <span>{checking ? "请稍候" : "输入管理令牌后继续"}</span>
+      {!checking && <Button type="primary" onClick={onAuthorize}>输入令牌</Button>}
     </Card>
   );
 }
