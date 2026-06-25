@@ -1087,7 +1087,11 @@ function IpPolicies() {
             try {
               await mutation.mutateAsync({
                 path: "/api/v1/admin/ip-policies",
-                body: editingPolicy ? { ...editingPolicy, ...values } : values
+                body: {
+                  ...(editingPolicy || {}),
+                  ...values,
+                  action: ipPolicyAction(values.type)
+                }
               });
               closePolicyModal();
             } catch {
@@ -1098,9 +1102,8 @@ function IpPolicies() {
           <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
             <Select showSearch disabled={Boolean(editingPolicy)} optionFilterProp="label" options={appOptions} />
           </Form.Item>
-          <Form.Item name="type" label="类型"><Select options={selectOptions(["allowlist", "blocklist"])} /></Form.Item>
+          <Form.Item name="type" label="类型" rules={[{ required: true }]}><Select options={selectOptions(["allowlist", "blocklist"])} /></Form.Item>
           <Form.Item name="cidr" label="CIDR" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="action" label="动作"><Select options={selectOptions(["allow", "block", "challenge"])} /></Form.Item>
           <Form.Item name="reason" label="原因"><Input /></Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
         </Form>
@@ -1282,6 +1285,10 @@ function failPolicyLabel(value: string) {
 
 function ipPolicyTypeLabel(value: string) {
   return ipPolicyTypeLabels[value] || value;
+}
+
+function ipPolicyAction(type: string) {
+  return type === "allowlist" ? "allow" : "block";
 }
 
 function actionLabel(value: string) {
