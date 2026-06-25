@@ -767,7 +767,7 @@ function Overview() {
             ) : topResources.map((item) => (
               <SummaryRow
                 key={item.id}
-                label={compactText(item.id, 28)}
+                label={resourceHealthLabel(item)}
                 value={`${item.failure_rate.toFixed(1)}%`}
                 muted={`${item.attempts} 次`}
                 danger={item.failure_rate >= 50}
@@ -1617,6 +1617,13 @@ function formatDateTime(value?: string) {
 
 function resourceTypeLabel(value: string) {
   return resourceTypeLabels[value] || value;
+}
+
+function resourceHealthLabel(item: ResourceHit) {
+  const captcha = item.captcha_type ? captchaLabel(item.captcha_type) : "通用";
+  const resource = item.resource_type ? resourceTypeLabel(item.resource_type) : "素材";
+  const group = item.tag ? ` · ${item.tag}` : "";
+  return compactText(`${captcha} · ${resource}${group}`, 28);
 }
 
 function statusLabel(value: string) {
