@@ -297,6 +297,69 @@ func TestConcatAndJigsawRequireDedicatedBackgroundLibraries(t *testing.T) {
 	}
 }
 
+func TestAutoChoiceDoesNotUseGenericBackgroundsForSpecializedChallenges(t *testing.T) {
+	t.Parallel()
+
+	resources := []types.CaptchaResource{
+		{
+			ID:           "res_generic_concat_background",
+			CaptchaType:  types.CaptchaConcat,
+			ResourceType: "background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/generic-concat.png",
+			Status:       "active",
+		},
+		{
+			ID:           "res_concat_template",
+			CaptchaType:  types.CaptchaConcat,
+			ResourceType: "concat_template",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/concat-template.json",
+			Status:       "active",
+		},
+		{
+			ID:           "res_generic_jigsaw_background",
+			CaptchaType:  types.CaptchaJigsaw,
+			ResourceType: "background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/generic-jigsaw.png",
+			Status:       "active",
+		},
+		{
+			ID:           "res_slider_background",
+			CaptchaType:  types.CaptchaSlider,
+			ResourceType: "background_library",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/slider.png",
+			Status:       "active",
+		},
+		{
+			ID:           "res_slider_template",
+			CaptchaType:  types.CaptchaSlider,
+			ResourceType: "slider_template",
+			StorageType:  "url",
+			URI:          "https://cdn.example.test/slider-template.png",
+			Status:       "active",
+		},
+	}
+
+	available := AvailableCaptchaTypes(resources, "login", "")
+	if available[types.CaptchaConcat] {
+		t.Fatalf("concat should not become available from generic background resources")
+	}
+	if available[types.CaptchaJigsaw] {
+		t.Fatalf("jigsaw should not become available from generic background resources")
+	}
+	chosen := ChooseCaptchaType(resources, types.CaptchaAuto, "login", "", []types.CaptchaType{
+		types.CaptchaConcat,
+		types.CaptchaJigsaw,
+		types.CaptchaSlider,
+	})
+	if chosen != types.CaptchaSlider {
+		t.Fatalf("expected auto choice to skip specialized challenges without dedicated galleries, got %s", chosen)
+	}
+}
+
 func TestChooseCaptchaTypeRespectsExplicitType(t *testing.T) {
 	t.Parallel()
 

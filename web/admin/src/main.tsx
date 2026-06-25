@@ -276,9 +276,9 @@ const resourceTypeLabels: Record<string, string> = {
   background_image: "单张背景",
   background_library: "背景图库",
   concat_background_image: "滑动还原单张背景",
-  concat_background_library: "滑动还原图库",
+  concat_background_library: "滑动还原专用图库",
   jigsaw_background_image: "乱序拼图单张背景",
-  jigsaw_background_library: "乱序拼图图库",
+  jigsaw_background_library: "乱序拼图专用图库",
   rotate_library: "旋转校准图库",
   grid_category_library: "图片格子分类图库",
   slider_template: "滑块模板",
@@ -370,8 +370,8 @@ const optionLabels = {
 };
 const resourceLibraryTitles: Record<string, string> = {
   background: "背景图库",
-  concatBackground: "滑动还原图库",
-  jigsawBackground: "乱序拼图图库",
+  concatBackground: "滑动还原专用图库",
+  jigsawBackground: "乱序拼图专用图库",
   rotate: "旋转校准图库",
   grid: "图片格子图库",
   icon: "图标图库",
@@ -381,16 +381,16 @@ const resourceLibraryTitles: Record<string, string> = {
 const resourceFileFilters = [
   { key: "all", label: "全部文件" },
   { key: "background", label: "背景图库" },
-  { key: "concatBackground", label: "滑动还原图库" },
-  { key: "jigsawBackground", label: "乱序拼图图库" },
+  { key: "concatBackground", label: "滑动还原专用图库" },
+  { key: "jigsawBackground", label: "乱序拼图专用图库" },
   { key: "rotate", label: "旋转校准图库" },
   { key: "grid", label: "图片格子图库" },
   { key: "icon", label: "图标图库" }
 ];
 const galleryUploadTypes = [
   { value: "background", label: "背景图库" },
-  { value: "concatBackground", label: "滑动还原图库" },
-  { value: "jigsawBackground", label: "乱序拼图图库" },
+  { value: "concatBackground", label: "滑动还原专用图库" },
+  { value: "jigsawBackground", label: "乱序拼图专用图库" },
   { value: "rotate", label: "旋转校准图库" },
   { value: "grid", label: "图片格子图库" },
   { value: "icon", label: "图标图库" }
@@ -402,8 +402,8 @@ const resourceDifficultyOptions = [
 ];
 const galleryUploadNotes: Record<string, string> = {
   background: "通用背景会用于滑块、点选、手势和曲线类验证码，避免主体过暗、过花或文字密集。",
-  concatBackground: "滑动还原需要横向连续结构，上下分片后仍能靠纹理自然对齐；避免纯色、重复条纹、文字密集和主体只在一侧的图片。",
-  jigsawBackground: "乱序拼图需要每个 2x2 / 3x3 切片都有局部特征；避免大面积纯色、重复格纹和主体集中在单个角落的图片。",
+  concatBackground: "滑动还原只使用本专用图库。素材需要横向连续结构，上下分片后仍能靠纹理自然对齐；避免纯色、重复条纹、文字密集和主体只在一侧的图片。",
+  jigsawBackground: "乱序拼图只使用本专用图库。素材需要每个 2x2 / 3x3 切片都有局部特征；避免大面积纯色、重复格纹和主体集中在单个角落的图片。",
   rotate: "旋转校准适合中心主体明显、圆形裁切后仍容易辨认方向的图片。",
   grid: "图片格子图库需要按分类上传，同一分类应保持目标对象清晰且背景差异足够。",
   icon: "图标图库适合轮廓清晰、尺寸接近、含义明确的 SVG 或透明图片。"
