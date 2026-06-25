@@ -780,6 +780,7 @@ function Routes() {
   const toggleMutation = usePost<RoutePolicy>("routes");
   const deleteMutation = usePost<{ deleted: number }>("routes");
   const routeMode = Form.useWatch("mode", form) || "always";
+  const showChallengeFields = routeIssuesChallenge(routeMode);
   const showRiskFields = routeMode === "risk_based";
   const showRateLimitFields = routeMode === "rate_limit";
   const deleteRoutePolicy = (row: RoutePolicy) => {
@@ -810,8 +811,8 @@ function Routes() {
     { title: "路径", dataIndex: "path_pattern" },
     { title: "方法", dataIndex: "method", width: 90 },
     { title: "场景", dataIndex: "scene" },
-    { title: "验证码", render: (_, row) => row.mode === "risk_based" && row.risk_challenge_type ? `${captchaLabel(row.challenge_type)} / ${captchaLabel(row.risk_challenge_type)}` : captchaLabel(row.challenge_type) },
-    { title: "升级", render: (_, row) => row.challenge_escalation?.length ? row.challenge_escalation.map(captchaLabel).join(" > ") : "-" },
+    { title: "验证码", render: (_, row) => routeIssuesChallenge(row.mode) ? routeChallengeLabel(row) : "-" },
+    { title: "升级", render: (_, row) => routeIssuesChallenge(row.mode) && row.challenge_escalation?.length ? row.challenge_escalation.map(captchaLabel).join(" > ") : "-" },
     { title: "模式", render: (_, row) => policyModeLabel(row.mode) },
     { title: "灰度", render: (_, row) => `${row.rollout_percent || 100}%` },
     { title: "参数", render: (_, row) => routePolicyParameter(row) },
@@ -918,6 +919,7 @@ function Routes() {
             rate_strategy: "fixed_window"
           }}
           onFinish={async (values) => {
+            const issuesChallenge = routeIssuesChallenge(values.mode);
             const body = {
               ...(editingRoute || {}),
               ...values,
@@ -930,6 +932,10 @@ function Routes() {
               body.risk_observe_score = 0;
               body.risk_challenge_score = 0;
               body.risk_block_score = 0;
+            }
+            if (!issuesChallenge) {
+              body.risk_challenge_type = undefined;
+              body.challenge_escalation = [];
             }
             if (!body.challenge_escalation?.length) {
               delete body.challenge_escalation;
@@ -953,13 +959,17 @@ function Routes() {
           <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
           <Form.Item name="scene" label="场景" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="mode" label="模式"><Select options={selectOptions(["always", "risk_based", "rate_limit", "observe", "silent", "manual_bypass"])} /></Form.Item>
-          <Form.Item name="challenge_type" label="验证码"><Select options={selectOptions(captchaTypes)} /></Form.Item>
-          {showRiskFields && <Form.Item name="risk_challenge_type" label="风险验证码"><Select allowClear options={selectOptions(captchaTypes)} /></Form.Item>}
-          <Form.Item name="challenge_escalation" label="升级序列"><Select mode="multiple" allowClear options={selectOptions(captchaTypes)} /></Form.Item>
-          <Form.Item name="fail_policy" label="失败策略"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
+          {showChallengeFields && (
+            <>
+              <Form.Item name="challenge_type" label="验证码"><Select options={selectOptions(captchaTypes)} /></Form.Item>
+              {showRiskFields && <Form.Item name="risk_challenge_type" label="风险验证码"><Select allowClear options={selectOptions(captchaTypes)} /></Form.Item>}
+              <Form.Item name="challenge_escalation" label="升级序列"><Select mode="multiple" allowClear options={selectOptions(captchaTypes)} /></Form.Item>
+              <Form.Item name="fail_policy" label="失败策略"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
+              <Form.Item name="token_ttl_seconds" label="Ticket TTL"><InputNumber className="field-number" /></Form.Item>
+            </>
+          )}
           <Form.Item name="priority" label="优先级"><InputNumber className="field-number" /></Form.Item>
           <Form.Item name="rollout_percent" label="灰度比例"><InputNumber className="field-number" min={1} max={100} addonAfter="%" /></Form.Item>
-          <Form.Item name="token_ttl_seconds" label="Ticket TTL"><InputNumber className="field-number" /></Form.Item>
           {showRiskFields && (
             <Space.Compact block>
               <Form.Item name="risk_observe_score" label="观察分" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
@@ -1267,6 +1277,17 @@ function captchaLabel(value: string) {
 
 function policyModeLabel(value: string) {
   return policyModeLabels[value] || value;
+}
+
+function routeIssuesChallenge(mode: string) {
+  return ["always", "risk_based", "rate_limit"].includes(mode);
+}
+
+function routeChallengeLabel(row: RoutePolicy) {
+  if (row.mode === "risk_based" && row.risk_challenge_type) {
+    return `${captchaLabel(row.challenge_type)} / ${captchaLabel(row.risk_challenge_type)}`;
+  }
+  return captchaLabel(row.challenge_type);
 }
 
 function routePolicyParameter(row: RoutePolicy) {
