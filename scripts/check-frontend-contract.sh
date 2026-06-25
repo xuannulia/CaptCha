@@ -118,6 +118,7 @@ reject_pattern web/admin/src/main.tsx 'title: "应用", dataIndex: "client_id"|l
 reject_pattern web/admin/src/main.tsx 'label="AUC"|模型包地址|observe/enforce 模式|active 版本' "risk model admin avoids raw model implementation wording"
 reject_pattern web/admin/src/main.tsx 'name: "track-baseline"|feature_version: "track-v1"' "risk model registration avoids demo defaults"
 reject_pattern web/admin/src/main.tsx 'label="标签"|placeholder="default"|placeholder="car"' "resource upload avoids raw default tags and English category examples"
+reject_pattern web/admin/src/main.tsx 'setFieldsValue\(\{[^}]*tag: "default"|initialValues=\{\{[^}]*tag: "default"' "resource upload avoids visible default material groups"
 reject_pattern web/admin/src/main.tsx 'label=\{compactText\(item.id, 28\)\}' "overview resource health avoids raw resource ids as primary labels"
 reject_pattern web/admin/src/main.tsx 'item\.tag \? ` · \$\{item\.tag\}`' "overview resource health avoids raw backend resource groups"
 reject_pattern web/admin/src/main.tsx '管理授权|访问令牌|已授权|未授权|重新授权' "admin token UI avoids complex authorization-system wording"

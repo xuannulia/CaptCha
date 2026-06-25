@@ -1851,7 +1851,7 @@ function Resources() {
     form.setFieldsValue({
       client_id: defaultClientID,
       scene: "",
-      tag: "default",
+      tag: "",
       gallery_type: "background",
       category: "",
       label: "",
@@ -1940,7 +1940,7 @@ function Resources() {
           initialValues={{
             client_id: defaultClientID,
             scene: "",
-            tag: "default",
+            tag: "",
             gallery_type: "background",
             category: "",
             label: "",
