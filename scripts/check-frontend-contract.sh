@@ -76,6 +76,8 @@ require_pattern web/admin/src/main.tsx '@tanstack/react-query' "admin code wires
 require_pattern web/admin/src/main.tsx 'from "antd"' "admin code wires Ant Design"
 require_dependency_allowlist web/admin/package.json "admin production dependencies stay on the chosen mature stack" "@ant-design/icons" "@tanstack/react-query" "antd" "react" "react-dom" "react-router-dom"
 reject_pattern web/admin/package.json '"(@ant-design/pro-components|@ant-design/pro-layout|@umijs/|umi|next|nuxt|vue|element-plus|echarts|@ant-design/charts)"' "admin package avoids heavier alternate app frameworks and chart stacks"
+reject_pattern web/admin/src/main.tsx '明细列表|系统资源|resource-uri|resource-table-wrap|system-resource-panel' "admin resource gallery avoids raw detail panels"
+reject_pattern web/admin/src/style.css 'resource-uri|resource-table-wrap|system-resource-panel' "admin resource gallery styles avoid raw detail panels"
 
 if rg -n "欢迎使用|三步开始|平台能力介绍|hero|landing page|价值主张|能力清单|快速开始|接入教程|功能介绍|功能亮点|产品优势|为什么选择|使用说明|操作指南|快捷键|请先|你可以|强大|轻松|无需|开箱即用" web/admin/src web/runtime/src >/tmp/captcha-frontend-copy-check.txt; then
 	cat /tmp/captcha-frontend-copy-check.txt >&2

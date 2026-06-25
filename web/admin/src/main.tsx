@@ -377,16 +377,6 @@ const optionLabels = {
   ...modelStatusLabels,
   ...rateStrategyLabels
 };
-const resourceLibraryTitles: Record<string, string> = {
-  background: "背景图库",
-  concatBackground: "滑动还原专用图库",
-  jigsawBackground: "乱序拼图专用图库",
-  rotate: "旋转校准图库",
-  grid: "图片格子图库",
-  icon: "图标图库",
-  template: "系统模板",
-  single: "单图资源"
-};
 const resourceFileFilters = [
   { key: "all", label: "全部文件" },
   { key: "background", label: "背景图库" },
@@ -1204,26 +1194,6 @@ function resourceLibraryKey(row: Resource) {
   return "single";
 }
 
-function groupGalleryResources(resources: Resource[]) {
-  const groups = new Map<string, { key: string; title: string; items: Resource[] }>();
-  for (const row of resources) {
-    const library = resourceLibraryKey(row);
-    const category = resourceCategory(row);
-    const title = library === "grid" && category
-      ? `图片格子 / ${category}`
-      : `${resourceLibraryTitle(library)} / ${captchaLabel(row.captcha_type || "AUTO")}`;
-    const key = `${library}:${row.captcha_type || "AUTO"}:${category || row.tag || "default"}`;
-    const group = groups.get(key) || { key, title, items: [] };
-    group.items.push(row);
-    groups.set(key, group);
-  }
-  return Array.from(groups.values()).sort((a, b) => a.title.localeCompare(b.title, "zh-Hans-CN"));
-}
-
-function resourceLibraryTitle(key: string) {
-  return resourceLibraryTitles[key] || "资源";
-}
-
 function isPrimaryGalleryResource(row: Resource) {
   const key = resourceLibraryKey(row);
   return key === "background" || key === "concatBackground" || key === "jigsawBackground" || key === "rotate" || key === "grid" || key === "icon";
@@ -1265,10 +1235,6 @@ function galleryUploadDefaults(galleryType?: string) {
 
 function usesMaterialDifficulty(galleryType?: string) {
   return galleryType === "concatBackground" || galleryType === "jigsawBackground";
-}
-
-function difficultyLabel(value: string) {
-  return resourceDifficultyOptions.find((item) => item.value === value)?.label || value;
 }
 
 function captchaLabel(value: string) {
@@ -1365,10 +1331,6 @@ function resourceTypeLabel(value: string) {
   return resourceTypeLabels[value] || value;
 }
 
-function storageLabel(value: string) {
-  return storageLabels[value] || value;
-}
-
 function statusLabel(value: string) {
   return statusLabels[value] || value;
 }
@@ -1401,17 +1363,6 @@ function resourceTitle(row: Resource) {
   return resourceCategory(row) || resourceTypeLabel(row.resource_type);
 }
 
-function resourceDimensions(row: Resource) {
-  const width = metadataText(row, "width");
-  const height = metadataText(row, "height");
-  return width && height ? `${width}x${height}` : "未声明尺寸";
-}
-
-function resourceDifficulty(row: Resource) {
-  const value = metadataText(row, "difficulty");
-  return value ? difficultyLabel(value) : "-";
-}
-
 function resourcePlaceholder(row: Resource) {
   const title = resourceCategory(row) || resourceTypeLabel(row.resource_type);
   return title.slice(0, 4);
@@ -1424,12 +1375,6 @@ function resourceFileName(row: Resource) {
   const cleanURI = uri.split("?")[0].split("#")[0];
   const basename = cleanURI.split("/").filter(Boolean).pop();
   return basename || resourceTitle(row);
-}
-
-function compactURI(uri: string) {
-  if (!uri) return "-";
-  if (uri.length <= 42) return uri;
-  return `${uri.slice(0, 24)}...${uri.slice(-12)}`;
 }
 
 function resourcePreviewSrc(row: Resource) {
@@ -1447,34 +1392,6 @@ function metadataText(row: Resource, ...keys: string[]) {
     if (typeof value === "number") return String(value);
   }
   return "";
-}
-
-function ResourceTile({ row }: { row: Resource }) {
-  const preview = resourcePreviewSrc(row);
-  return (
-    <article className="resource-tile">
-      <div className="resource-thumb">
-        {preview ? <img alt="" src={preview} /> : <span>{resourcePlaceholder(row)}</span>}
-      </div>
-      <div className="resource-tile-body">
-        <div className="resource-tile-title">
-          <strong>{resourceTitle(row)}</strong>
-          <Tag color={row.status === "active" ? "green" : "default"}>{statusLabel(row.status)}</Tag>
-        </div>
-        <div className="resource-tile-meta">
-          <span>{captchaLabel(row.captcha_type || "AUTO")}</span>
-          <span>{storageLabel(row.storage_type)}</span>
-          <span>{resourceDimensions(row)}</span>
-          {metadataText(row, "difficulty") && <span>{resourceDifficulty(row)}</span>}
-        </div>
-        <div className="resource-tile-meta">
-          <span>{row.scene || "全场景"}</span>
-          <span>{row.tag || "default"}</span>
-        </div>
-        <div className="resource-uri" title={row.uri}>{compactURI(row.uri)}</div>
-      </div>
-    </article>
-  );
 }
 
 function ResourceFileItem({
@@ -1555,7 +1472,6 @@ function Resources() {
     [fileFilter, galleryResources]
   );
   const fileFilterCounts = useMemo(() => countResourceFileFilters(galleryResources), [galleryResources]);
-  const systemResources = useMemo(() => resources.filter((item) => !isPrimaryGalleryResource(item)), [resources]);
   const visibleResourceIDs = useMemo(() => new Set(visibleGalleryResources.map((item) => item.id)), [visibleGalleryResources]);
   const selectedGalleryResources = useMemo(
     () => galleryResources.filter((item) => selectedResourceIds.includes(item.id)),
@@ -1612,41 +1528,6 @@ function Resources() {
     });
     setOpen(true);
   };
-  const columns: ColumnsType<Resource> = [
-    { title: "应用", dataIndex: "client_id" },
-    { title: "图库", render: (_, row) => resourceTypeLabel(row.resource_type) },
-    { title: "验证码类别", render: (_, row) => captchaLabel(row.captcha_type || "AUTO") },
-    { title: "来源", render: (_, row) => storageLabel(row.storage_type) },
-    { title: "场景", dataIndex: "scene", render: (value) => value || "-" },
-    { title: "标签", dataIndex: "tag" },
-    {
-      title: "分类",
-      render: (_, row) => {
-        const category = row.metadata?.category;
-        const label = row.metadata?.label;
-        return category || label ? `${label || category}` : "-";
-      }
-    },
-    { title: "难度", render: (_, row) => resourceDifficulty(row) },
-    {
-      title: "规格",
-      render: (_, row) => {
-        const width = row.metadata?.width;
-        const height = row.metadata?.height;
-        return width && height ? `${width}x${height}` : "-";
-      }
-    },
-    {
-      title: "状态",
-      render: (_, row) => (
-        <Switch
-          checked={row.status === "active"}
-          size="small"
-          onChange={(checked) => statusMutation.mutate({ items: [row], status: checked ? "active" : "disabled" })}
-        />
-      )
-    }
-  ];
   return (
     <Card
       title="资源图库"
@@ -1697,35 +1578,6 @@ function Resources() {
           ))}
         </div>
       )}
-      <details className="system-resource-panel">
-        <summary>
-          <span>系统资源</span>
-          <strong>{systemResources.length} 条</strong>
-        </summary>
-        {isLoading ? (
-          <div className="resource-gallery-empty">加载中</div>
-        ) : systemResources.length === 0 ? (
-          <div className="resource-gallery-empty">暂无系统资源</div>
-        ) : (
-          <div className="resource-gallery">
-            {groupGalleryResources(systemResources).map((group) => (
-              <section className="resource-library-section" key={group.key}>
-                <div className="resource-library-heading">
-                  <h3>{group.title}</h3>
-                  <span>{group.items.length} 张</span>
-                </div>
-                <div className="resource-gallery-grid">
-                  {group.items.map((row) => <ResourceTile key={row.id} row={row} />)}
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
-      </details>
-      <details className="resource-table-wrap">
-        <summary>明细列表</summary>
-        <Table rowKey="id" loading={isLoading} columns={columns} dataSource={resources} pagination={false} size="small" />
-      </details>
       <Modal
         title={`删除 ${selectedGalleryCount} 个资源？`}
         open={deleteOpen}
