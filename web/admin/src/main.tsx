@@ -737,14 +737,14 @@ function Overview() {
             <SummaryRow label="应用" value={ratioText(totals?.active_applications, totals?.applications)} />
             <SummaryRow label="路由策略" value={ratioText(totals?.enabled_route_policies, totals?.route_policies)} />
             <SummaryRow label="IP 策略" value={ratioText(totals?.enabled_ip_policies, totals?.ip_policies)} />
-            <SummaryRow label="配置变更" value={String(recent?.config_changes ?? 0)} muted="近期" />
+            <SummaryRow label="近期变更" value={String(recent?.config_changes ?? 0)} />
           </div>
         </Card>
         <Card title="素材健康" loading={isLoading}>
           <div className="summary-list">
             <SummaryRow label="启用素材" value={ratioText(totals?.active_captcha_resources, totals?.captcha_resources)} />
             {topResources.length === 0 ? (
-              <div className="empty-line">暂无素材失败样本</div>
+              <div className="empty-line">暂无异常素材</div>
             ) : topResources.map((item) => (
               <SummaryRow
                 key={item.id}
