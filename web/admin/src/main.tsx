@@ -1023,11 +1023,11 @@ function Routes() {
     { title: "路径", dataIndex: "path_pattern" },
     { title: "方法", dataIndex: "method", width: 90 },
     { title: "场景", dataIndex: "scene" },
-    { title: "验证码", render: (_, row) => routeIssuesChallenge(row.mode) ? routeChallengeLabel(row) : "-" },
-    { title: "升级", render: (_, row) => routeIssuesChallenge(row.mode) && row.challenge_escalation?.length ? row.challenge_escalation.map(captchaLabel).join(" > ") : "-" },
-    { title: "触发", render: (_, row) => policyModeLabel(row.mode) },
-    { title: "灰度", render: (_, row) => `${row.rollout_percent || 100}%` },
-    { title: "规则", render: (_, row) => routePolicyParameter(row) },
+    { title: "验证方式", render: (_, row) => routeIssuesChallenge(row.mode) ? routeChallengeLabel(row) : "-" },
+    { title: "失败后升级", render: (_, row) => routeIssuesChallenge(row.mode) && row.challenge_escalation?.length ? row.challenge_escalation.map(captchaLabel).join(" > ") : "-" },
+    { title: "触发条件", render: (_, row) => policyModeLabel(row.mode) },
+    { title: "生效范围", render: (_, row) => `${row.rollout_percent || 100}%` },
+    { title: "触发规则", render: (_, row) => routePolicyParameter(row) },
     {
       title: "启用",
       render: (_, row) => (
@@ -1173,15 +1173,15 @@ function Routes() {
           <Form.Item name="mode" label="触发条件"><Select options={routeModeOptions(routeMode)} /></Form.Item>
           {showChallengeFields && (
             <>
-              <Form.Item name="challenge_type" label="默认验证码"><Select options={selectOptions(captchaTypes)} /></Form.Item>
-              {showRiskFields && <Form.Item name="risk_challenge_type" label="风险验证码"><Select allowClear options={selectOptions(captchaTypes)} /></Form.Item>}
-              <Form.Item name="challenge_escalation" label="升级序列"><Select mode="multiple" allowClear options={selectOptions(captchaTypes)} /></Form.Item>
+              <Form.Item name="challenge_type" label="验证方式"><Select options={selectOptions(captchaTypes)} /></Form.Item>
+              {showRiskFields && <Form.Item name="risk_challenge_type" label="风险验证方式"><Select allowClear options={selectOptions(captchaTypes)} /></Form.Item>}
+              <Form.Item name="challenge_escalation" label="失败后升级"><Select mode="multiple" allowClear options={selectOptions(captchaTypes)} /></Form.Item>
               <Form.Item name="fail_policy" label="异常处理"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
               <Form.Item name="token_ttl_seconds" label="通行有效期"><InputNumber className="field-number" addonAfter="秒" /></Form.Item>
             </>
           )}
           <Form.Item name="priority" label="优先级"><InputNumber className="field-number" /></Form.Item>
-          <Form.Item name="rollout_percent" label="灰度比例"><InputNumber className="field-number" min={1} max={100} addonAfter="%" /></Form.Item>
+          <Form.Item name="rollout_percent" label="生效范围"><InputNumber className="field-number" min={1} max={100} addonAfter="%" /></Form.Item>
           {showRiskFields && (
             <Space.Compact block>
               <Form.Item name="risk_observe_score" label="观察阈值" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
