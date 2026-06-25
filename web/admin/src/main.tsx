@@ -1091,6 +1091,7 @@ function PolicySimulator() {
 
   useEffect(() => {
     form.setFieldValue("client_id", defaultClientID);
+    mutation.reset();
   }, [defaultClientID, form]);
 
   return (
@@ -1109,9 +1110,15 @@ function PolicySimulator() {
         <Form.Item name="path" label="路径" rules={[{ required: true }]}><Input style={{ width: 180 }} /></Form.Item>
         <Form.Item name="scene" label="场景"><Input style={{ width: 120 }} /></Form.Item>
         <Form.Item name="ip" label="IP"><Input style={{ width: 150 }} /></Form.Item>
+        <Form.Item name="user_agent" label="UA"><Input style={{ width: 180 }} /></Form.Item>
         <Form.Item name="account_id_hash" label="账号"><Input style={{ width: 150 }} /></Form.Item>
         <Form.Item name="device_id_hash" label="设备"><Input style={{ width: 150 }} /></Form.Item>
+        <Form.Item name="request_nonce" label="Nonce"><Input style={{ width: 150 }} /></Form.Item>
         <Form.Item name="resource_tag" label="资源"><Input style={{ width: 120 }} /></Form.Item>
+        <Form.Item name="risk_score" label="风险分"><InputNumber min={0} max={100} style={{ width: 110 }} /></Form.Item>
+        <Form.Item name="risk_level" label="风险级别"><Select allowClear style={{ width: 120 }} options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高" }]} /></Form.Item>
+        <Form.Item name="model_score" label="模型分"><InputNumber min={0} max={100} style={{ width: 110 }} /></Form.Item>
+        <Form.Item name="model_mode" label="模型模式"><Select allowClear style={{ width: 120 }} options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
         <Button type="primary" htmlType="submit" loading={mutation.isPending}>模拟</Button>
       </Form>
       {mutation.error instanceof Error && <div className="error-line">{mutation.error.message}</div>}
@@ -1131,11 +1138,15 @@ function PolicySimulator() {
             <span>模式</span><strong>{simulation.route?.mode ? policyModeLabel(simulation.route.mode) : "-"}</strong>
             <span>灰度</span><strong>{simulation.route ? `${simulation.route.rollout_percent || 100}%` : "-"}</strong>
             <span>TTL</span><strong>{simulation.decision.ttl_seconds || "-"}</strong>
+            <span>风险</span><strong>{unknownText(simulation.request.risk_score)} / {unknownText(simulation.request.risk_level)}</strong>
+            <span>模型</span><strong>{unknownText(simulation.request.model_score)} / {unknownText(simulation.request.model_mode)}</strong>
           </div>
-          <Space wrap>
-            {simulation.side_effects.map((item) => <Tag key={item}>{item}</Tag>)}
-            {(simulation.notes || []).map((item) => <Tag key={item} color="blue">{item}</Tag>)}
-          </Space>
+          {(simulation.side_effects.length > 0 || (simulation.notes || []).length > 0) && (
+            <Space wrap>
+              {simulation.side_effects.map((item) => <Tag key={item}>{item}</Tag>)}
+              {(simulation.notes || []).map((item) => <Tag key={item} color="blue">{item}</Tag>)}
+            </Space>
+          )}
         </div>
       )}
     </Card>
@@ -1264,6 +1275,11 @@ function ratioText(active?: number, total?: number) {
 function compactText(value: string, maxLength: number) {
   if (!value || value.length <= maxLength) return value || "-";
   return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function unknownText(value: unknown) {
+  if (value === undefined || value === null || value === "") return "-";
+  return String(value);
 }
 
 function resourceTypeLabel(value: string) {

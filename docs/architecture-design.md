@@ -788,7 +788,7 @@ POST /api/v1/admin/ip-policies/delete
 
 POST /api/v1/admin/policy/simulate
   管理端策略 dry-run。
-  输入 PolicyEvaluateRequest 形态的 client_id、path、method、ip、scene、account_id_hash、device_id_hash、resource_tag 等上下文。
+  输入 PolicyEvaluateRequest 形态的 client_id、path、method、ip、user_agent、scene、account_id_hash、device_id_hash、request_nonce、resource_tag、risk_score、risk_level、model_score、model_mode 等上下文。
   输出 dry_run、decision、命中的 route、rate_limit_evaluated、side_effects 和 notes。
   不消费 ticket，不创建 challenge session，不递增限流计数，不写审计事件。
 
