@@ -1500,7 +1500,7 @@ user slide
 - 特征包含轨迹统计摘要、验证结果、验证码类型、场景和弱标签；轨迹摘要覆盖 `duration_ms`、`point_count`、`path_length`、`straightness`、速度/加速度/jerk 方差、`direction_changes`、`micro_corrections`、`pause_count`、`perfect_line`、`constant_velocity`、`synthetic_curve`、`teleport` 等字段。
 - 不保存明文 IP、账号、cookie、完整 header 或业务 payload。
 - 默认 `model_trainable=false`，表示候选样本需要离线清洗或业务反馈后才能进入训练集。
-- 管理 API 和管理台提供训练特征列表，支持按场景、验证码类型、标签和可训练状态筛选，并支持人工审核或业务反馈后更新标签与 `model_trainable` 状态。
+- 管理 API 和管理台提供训练特征列表，支持按场景、验证码类型、标签和可训练状态筛选，并支持人工审核或业务反馈后更新标签与 `model_trainable` 状态；管理台对进入训练集或撤销训练标注的操作使用确认流程，避免误点污染离线训练数据。
 - `GET /api/v1/admin/risk-feature-snapshots/export` 支持按同样过滤条件导出 JSONL 离线训练样本，默认只导出 `model_trainable=true` 的明确标签样本；传入 `trainable_only=false` 可导出候选样本用于离线分析，但不代表可直接入训。
 - `model_trainable=true` 只允许搭配 `likely_human`、`likely_bot`、`confirmed_human` 或 `confirmed_bot` 等明确标签；`captcha_pass` / `captcha_retry` 这类单次验证码结果只能作为弱标签候选，不能直接入训。
 - 训练标签更新会写入审计事件，原因码为 `RISK_FEATURE_LABEL_UPDATE`。

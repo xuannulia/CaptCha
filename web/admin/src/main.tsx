@@ -1855,6 +1855,7 @@ function RiskFeatures() {
   const [filters, setFilters] = useState({ challenge_type: "", label: "", model_trainable: "", scene: "" });
   const [pageState, setPageState] = useState({ page: 1, pageSize: 20 });
   const [exporting, setExporting] = useState(false);
+  const [actingFeatureID, setActingFeatureID] = useState("");
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -1905,13 +1906,38 @@ function RiskFeatures() {
       setExporting(false);
     }
   };
-  const updateLabel = (row: RiskFeatureSnapshot, label: string, modelTrainable: boolean) => {
-    mutation.mutate({
-      path: `/api/v1/admin/risk-feature-snapshots/${row.id}/label`,
-      body: {
-        label,
-        label_source: label === "unknown" ? "" : "manual_review",
-        model_trainable: modelTrainable
+  const confirmLabelUpdate = (row: RiskFeatureSnapshot, label: string, modelTrainable: boolean) => {
+    const resetting = label === "unknown";
+    const labelText = riskLabel(label);
+    Modal.confirm({
+      title: resetting ? "撤销训练标注" : `确认${labelText}`,
+      content: (
+        <div className="confirm-copy">
+          <p>{row.attempt_id}</p>
+          <p>{resetting ? "撤销后该样本会回到候选状态，不再进入默认训练导出。" : "确认后该样本会被标记为可训练，后续离线训练导出会默认包含它。"}</p>
+        </div>
+      ),
+      okText: resetting ? "确认撤销" : "确认标注",
+      cancelText: "取消",
+      okButtonProps: { danger: label === "confirmed_bot" || resetting },
+      onOk: async () => {
+        setActingFeatureID(row.id);
+        try {
+          await mutation.mutateAsync({
+            path: `/api/v1/admin/risk-feature-snapshots/${row.id}/label`,
+            body: {
+              label,
+              label_source: resetting ? "" : "manual_review",
+              model_trainable: modelTrainable
+            }
+          });
+          message.success(resetting ? "训练标注已撤销" : "训练标注已保存");
+        } catch {
+          message.error(resetting ? "训练标注撤销失败" : "训练标注保存失败");
+          throw new Error("risk feature label update failed");
+        } finally {
+          setActingFeatureID("");
+        }
       }
     });
   };
@@ -1927,9 +1953,9 @@ function RiskFeatures() {
       title: "操作",
       render: (_, row) => (
         <Space>
-          <Button size="small" onClick={() => updateLabel(row, "confirmed_human", true)}>标人</Button>
-          <Button size="small" onClick={() => updateLabel(row, "confirmed_bot", true)}>标机</Button>
-          <Button size="small" onClick={() => updateLabel(row, "unknown", false)}>重置</Button>
+          <Button size="small" loading={actingFeatureID === row.id} disabled={row.label === "confirmed_human" && row.model_trainable} onClick={() => confirmLabelUpdate(row, "confirmed_human", true)}>真人</Button>
+          <Button size="small" danger loading={actingFeatureID === row.id} disabled={row.label === "confirmed_bot" && row.model_trainable} onClick={() => confirmLabelUpdate(row, "confirmed_bot", true)}>机器</Button>
+          <Button size="small" loading={actingFeatureID === row.id} disabled={row.label === "unknown" && !row.model_trainable} onClick={() => confirmLabelUpdate(row, "unknown", false)}>撤销</Button>
         </Space>
       )
     }
