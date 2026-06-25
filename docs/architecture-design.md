@@ -52,7 +52,7 @@
 - 资源上传弹窗不预填底层默认分组；用户留空时由提交逻辑写入后端默认分组。
 - 策略模拟、审计和样本复核筛选不预填 `/api/login` 或 `login` 这类 demo 示例；需要用户按当前应用实际路径和场景输入。
 - 策略模拟的可展开区域使用“识别信息”和“风险信号”表达，不把请求上下文、风险输入、模型上线等调试式字段名作为主界面文案。
-- 管理 API 的应用、密钥轮换、路由策略、IP 策略、资源、模型版本和训练标签变更会写入审计事件，记录变更类型、目标上下文和脱敏后的管理端 IP。外部 Event 上报不能控制审计事件 ID 或创建时间，平台会在写入时生成服务端身份字段。
+- 管理 API 的应用、密钥轮换、路由策略、IP 策略、资源、模型版本和样本复核标签变更会写入审计事件，记录变更类型、目标上下文和脱敏后的管理端 IP。外部 Event 上报不能控制审计事件 ID 或创建时间，平台会在写入时生成服务端身份字段。
 - 应用状态已进入主链路治理：不存在的应用不能创建 challenge；`disabled` 应用不能创建/获取/刷新/验证 challenge。HTTP/gRPC 策略评估会对 disabled/unknown 应用返回 `block` 决策，ticket 校验返回 `valid=false`，事件上报要求明确 `client_id` 并拒绝 disabled 应用写入。
 - 应用密钥支持后端生成和轮换；明文 client secret 只在轮换响应中返回一次，服务端仅保存 PBKDF2-SHA256 hash。应用一旦配置 secret，HTTP 后端接入 API 和 gRPC Policy/Ticket/Config/Event 服务都会校验 `X-Captcha-Client-Secret` 或 Bearer token。
 - 管理 API 支持开源版轻量 Bearer token 保护；设置 `CAPTCHA_ADMIN_TOKEN` 后，所有 `/api/v1/admin/*` 请求必须带管理 token。管理台启动时会先调用令牌检查接口，检查通过后才加载应用、策略、资源、审计和模型数据；令牌保存在当前浏览器并随 Admin API 请求发送，接口返回 401 时会要求重新输入管理令牌。
@@ -1521,7 +1521,7 @@ user slide
 - 管理 API 和管理台提供样本复核列表，支持按场景、验证码类型、人工标签和样本状态筛选，并支持人工审核或业务反馈后更新标签与 `model_trainable` 状态；管理台对进入入训样本或撤销样本标注的操作使用确认流程，避免误点污染离线训练数据。
 - `GET /api/v1/admin/risk-feature-snapshots/export` 支持按同样过滤条件导出离线入训样本文件，默认只导出 `model_trainable=true` 的明确标签样本；传入 `trainable_only=false` 可导出候选样本用于离线分析，但不代表可直接入训。
 - `model_trainable=true` 只允许搭配 `likely_human`、`likely_bot`、`confirmed_human` 或 `confirmed_bot` 等明确标签；`captcha_pass` / `captcha_retry` 这类单次验证码结果只能作为弱标签候选，不能直接入训。
-- 训练标签更新会写入审计事件，原因码为 `RISK_FEATURE_LABEL_UPDATE`。
+- 样本复核标签更新会写入审计事件，原因码为 `RISK_FEATURE_LABEL_UPDATE`。
 - 管理 API 和管理台支持登记 `RiskModelVersion`，记录模型名称、版本、特征版本、训练窗口、artifact URI、评估指标和 `shadow/observe/enforce` 模式；管理台登记只创建候选版本，启用和恢复上一版必须通过确认操作进入状态流转。
 - 模型版本支持显式启用；同名模型启用新版本时，旧 active 版本会转为 `retired`。恢复接口会把当前 active 标记为 `rolled_back`，并恢复最近一个 retired 版本。
 - 当 active 模型版本的 `feature_version` 与特征快照匹配时，异步入池任务会写入 `risk_model_shadow` 摘要，包括模型 id、名称、版本、模式、分数、分桶、原因和 `decision_effect=none`。
@@ -2001,7 +2001,7 @@ created_at
 - 验证失败次数应有限制；当前实现对单个 challenge session 设置失败上限，达到上限后返回 `TOO_MANY_FAILURES` 并停止复用该 session。
 - 同一 IP、账号、设备维度都应支持限流。
 - 生产策略阈值、IP 黑白名单、租户密钥和运行时计数不应暴露到前端。
-- 配置变更必须有审计记录；当前实现对应用、应用密钥轮换、路由策略、IP 策略、验证码资源和模型版本的成功变更写入 `CONFIG_*` 审计事件，训练标签更新写入 `RISK_FEATURE_LABEL_UPDATE` 审计事件。
+- 配置变更必须有审计记录；当前实现对应用、应用密钥轮换、路由策略、IP 策略、验证码资源和模型版本的成功变更写入 `CONFIG_*` 审计事件，样本复核标签更新写入 `RISK_FEATURE_LABEL_UPDATE` 审计事件。
 - 入训样本必须脱敏，AI 模型不能直接使用明文敏感信息。
 
 ## 19. MVP 范围

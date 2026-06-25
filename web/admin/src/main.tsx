@@ -340,7 +340,7 @@ const resultLabels: Record<string, string> = {
   retry: "重试",
   block: "拦截",
   config_changed: "配置变更",
-  training_feedback: "训练反馈"
+  training_feedback: "样本反馈"
 };
 const riskLabelLabels: Record<string, string> = {
   unknown: "未标注",

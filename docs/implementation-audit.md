@@ -31,7 +31,7 @@
 | 参考 Gateway 反向代理 | `cmd/captcha-gateway`、`internal/gateway`；Gateway 单元测试和 `make smoke` 覆盖 HTTP/gRPC 策略路径、配置缓存、本地决策、事件批量上报和事件队列回压降级 |
 | PostgreSQL 控制面存储 | `internal/store/postgres.go`、`migrations/postgres`；sqlmock 测试和 migration schema 测试；Docker/真实 PostgreSQL 需要 `make docker-build` 或部署环境验证 |
 | Redis 临时态存储 | `internal/store/redis.go`；Redis transient store 测试覆盖 session、ticket、rate 计数 |
-| 审计日志 | `internal/api/server.go`、`internal/gateway`；配置变更、策略事件、Gateway 事件、训练标签更新、缺失 `client_id` 事件整批拒绝且不部分写入、外部事件 ID/时间戳服务端生成测试 |
+| 审计日志 | `internal/api/server.go`、`internal/gateway`；配置变更、策略事件、Gateway 事件、样本复核标签更新、缺失 `client_id` 事件整批拒绝且不部分写入、外部事件 ID/时间戳服务端生成测试 |
 | 风控特征采集和 AI 模型元数据 | `internal/api/risk_model.go`、`internal/store/risk_feature.go`；轨迹特征入池、标签、导出、模型启用/恢复、shadow 评分、外部推理、推理失败降级和特征写入异常不阻塞验证测试 |
 | 轻量管理台 | `web/admin` 使用 React Router、TanStack Query 和 Ant Design；前端契约检查限制 Admin 生产依赖停留在选定成熟栈、Runtime 生产依赖停留在 Preact 轻量栈，并拦截营销/教程式页面文案；Browser smoke 路由覆盖契约要求 Admin 主路由都进入真实浏览器 smoke；构建测试和 `make browser-smoke` 覆盖概览深链、菜单导航、应用页真实数据加载和所有主页面渲染 |
 
