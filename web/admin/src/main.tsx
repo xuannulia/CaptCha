@@ -1514,12 +1514,24 @@ function routeChallengeLabel(row: RoutePolicy) {
 
 function routePolicyParameter(row: RoutePolicy) {
   if (row.mode === "risk_based") {
-    return `观察/验证/拦截 ${row.risk_observe_score || 0}/${row.risk_challenge_score || 0}/${row.risk_block_score || 0}`;
+    return riskThresholdSummary(row);
   }
   if (row.mode === "rate_limit" && row.rate_limit) {
-    return `${row.rate_limit.max_requests} 次 / ${row.rate_limit.window_seconds} 秒 ${optionLabels[row.rate_limit.strategy || "fixed_window"] || row.rate_limit.strategy || ""}`.trim();
+    const strategy = optionLabels[row.rate_limit.strategy || "fixed_window"] || row.rate_limit.strategy || "";
+    return `每 ${row.rate_limit.window_seconds} 秒最多 ${row.rate_limit.max_requests} 次${strategy ? ` · ${strategy}` : ""}`;
   }
   return "-";
+}
+
+function riskThresholdSummary(row: RoutePolicy) {
+  const observeScore = Number(row.risk_observe_score || 0);
+  const challengeScore = Number(row.risk_challenge_score || 0);
+  const blockScore = Number(row.risk_block_score || 0);
+  const parts = [];
+  if (observeScore > 0) parts.push(`≥${observeScore} 观察`);
+  if (challengeScore > 0) parts.push(`≥${challengeScore} 验证`);
+  if (blockScore > 0) parts.push(`≥${blockScore} 拦截`);
+  return parts.length ? `风险分 ${parts.join(" / ")}` : "按风险分判断";
 }
 
 function failPolicyLabel(value: string) {
