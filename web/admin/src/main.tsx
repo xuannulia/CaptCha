@@ -316,12 +316,12 @@ const statusLabels: Record<string, string> = {
   disabled: "停用"
 };
 const policyModeLabels: Record<string, string> = {
-  always: "总是验证",
-  risk_based: "风险触发",
-  rate_limit: "频率触发",
-  observe: "观察",
-  silent: "静默",
-  manual_bypass: "人工放行"
+  always: "固定验证",
+  risk_based: "风险较高",
+  rate_limit: "访问过快",
+  observe: "观察放行",
+  silent: "静默观察",
+  manual_bypass: "手动放行"
 };
 const failPolicyLabels: Record<string, string> = {
   fail_open: "失败放行",
@@ -394,6 +394,7 @@ const resourceFileFilters = [
   { key: "grid", label: "图片格子图库" },
   { key: "icon", label: "图标图库" }
 ];
+const routeTriggerModes = ["always", "rate_limit", "risk_based"];
 const galleryUploadTypes = [
   { value: "background", label: "背景图库" },
   { value: "concatBackground", label: "滑动还原专用图库" },
@@ -874,9 +875,9 @@ function Routes() {
     { title: "场景", dataIndex: "scene" },
     { title: "验证码", render: (_, row) => routeIssuesChallenge(row.mode) ? routeChallengeLabel(row) : "-" },
     { title: "升级", render: (_, row) => routeIssuesChallenge(row.mode) && row.challenge_escalation?.length ? row.challenge_escalation.map(captchaLabel).join(" > ") : "-" },
-    { title: "模式", render: (_, row) => policyModeLabel(row.mode) },
+    { title: "触发", render: (_, row) => policyModeLabel(row.mode) },
     { title: "灰度", render: (_, row) => `${row.rollout_percent || 100}%` },
-    { title: "参数", render: (_, row) => routePolicyParameter(row) },
+    { title: "规则", render: (_, row) => routePolicyParameter(row) },
     {
       title: "启用",
       render: (_, row) => (
@@ -1019,10 +1020,10 @@ function Routes() {
           <Form.Item name="path_pattern" label="路径" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
           <Form.Item name="scene" label="场景" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="mode" label="模式"><Select options={selectOptions(["always", "risk_based", "rate_limit", "observe", "silent", "manual_bypass"])} /></Form.Item>
+          <Form.Item name="mode" label="触发条件"><Select options={routeModeOptions(routeMode)} /></Form.Item>
           {showChallengeFields && (
             <>
-              <Form.Item name="challenge_type" label="验证码"><Select options={selectOptions(captchaTypes)} /></Form.Item>
+              <Form.Item name="challenge_type" label="默认验证码"><Select options={selectOptions(captchaTypes)} /></Form.Item>
               {showRiskFields && <Form.Item name="risk_challenge_type" label="风险验证码"><Select allowClear options={selectOptions(captchaTypes)} /></Form.Item>}
               <Form.Item name="challenge_escalation" label="升级序列"><Select mode="multiple" allowClear options={selectOptions(captchaTypes)} /></Form.Item>
               <Form.Item name="fail_policy" label="失败策略"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
@@ -1033,9 +1034,9 @@ function Routes() {
           <Form.Item name="rollout_percent" label="灰度比例"><InputNumber className="field-number" min={1} max={100} addonAfter="%" /></Form.Item>
           {showRiskFields && (
             <Space.Compact block>
-              <Form.Item name="risk_observe_score" label="观察分" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
-              <Form.Item name="risk_challenge_score" label="挑战分" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
-              <Form.Item name="risk_block_score" label="阻断分" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
+              <Form.Item name="risk_observe_score" label="观察阈值" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
+              <Form.Item name="risk_challenge_score" label="验证阈值" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
+              <Form.Item name="risk_block_score" label="拦截阈值" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
             </Space.Compact>
           )}
           {showRateLimitFields && (
@@ -1235,7 +1236,7 @@ function PolicySimulator() {
           <div className="kv-grid">
             <span>路由</span><strong>{simulation.route?.name || simulation.route?.id || "-"}</strong>
             <span>场景</span><strong>{simulation.decision.scene || simulation.route?.scene || "-"}</strong>
-            <span>模式</span><strong>{simulation.route?.mode ? policyModeLabel(simulation.route.mode) : "-"}</strong>
+            <span>触发</span><strong>{simulation.route?.mode ? policyModeLabel(simulation.route.mode) : "-"}</strong>
             <span>灰度</span><strong>{simulation.route ? `${simulation.route.rollout_percent || 100}%` : "-"}</strong>
             <span>有效期</span><strong>{simulation.decision.ttl_seconds || "-"}</strong>
             <span>风险</span><strong>{unknownText(simulation.request.risk_score)} / {unknownText(simulation.request.risk_level)}</strong>
@@ -1316,6 +1317,14 @@ function policyModeLabel(value: string) {
   return policyModeLabels[value] || value;
 }
 
+function routeModeOptions(currentMode?: string) {
+  const values = [...routeTriggerModes];
+  if (currentMode && !values.includes(currentMode)) {
+    values.push(currentMode);
+  }
+  return selectOptions(values);
+}
+
 function routeIssuesChallenge(mode: string) {
   return ["always", "risk_based", "rate_limit"].includes(mode);
 }
@@ -1329,10 +1338,10 @@ function routeChallengeLabel(row: RoutePolicy) {
 
 function routePolicyParameter(row: RoutePolicy) {
   if (row.mode === "risk_based") {
-    return `${row.risk_observe_score || 0}/${row.risk_challenge_score || 0}/${row.risk_block_score || 0}`;
+    return `观察/验证/拦截 ${row.risk_observe_score || 0}/${row.risk_challenge_score || 0}/${row.risk_block_score || 0}`;
   }
   if (row.mode === "rate_limit" && row.rate_limit) {
-    return `${row.rate_limit.max_requests}/${row.rate_limit.window_seconds}s ${optionLabels[row.rate_limit.strategy || "fixed_window"] || row.rate_limit.strategy || ""}`.trim();
+    return `${row.rate_limit.max_requests} 次 / ${row.rate_limit.window_seconds} 秒 ${optionLabels[row.rate_limit.strategy || "fixed_window"] || row.rate_limit.strategy || ""}`.trim();
   }
   return "-";
 }
