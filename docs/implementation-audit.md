@@ -8,7 +8,7 @@
 |---|---|
 | `make verify` | Go/Docker 工具链版本一致性检查、CI 工作流契约检查、前端框架契约检查、Docker 交付合约检查、HTTP/gRPC API 文档契约检查、验证码类型契约检查、Browser smoke 路由覆盖契约检查、文档命令契约检查、Go 全量测试、protobuf drift 检查、生产安全闸门 smoke、HTTP/gRPC 平台和 Gateway smoke、workspace 测试、workspace 构建、Runtime gzip 预算检查、Docker Compose 配置校验、构建产物和本地浏览器产物清理 |
 | `make smoke` | 真实进程级平台 HTTP/gRPC、Gateway HTTP/gRPC、challenge payload 脱敏、非法 verify 字段拒绝、生产误配置启动失败 |
-| `make browser-smoke` | 真实浏览器打开 Runtime 和 Admin，验证 `RANDOM` 请求入口以及 `GESTURE`/`CURVE`/`CURVE_V2`/`CURVE_V3`/`SLIDER`/`SLIDER_V2`/`ROTATE`/`CONCAT`/`ROTATE_DEGREE`/`WORD_IMAGE_CLICK`/`IMAGE_CLICK`/`JIGSAW`/`GRID_IMAGE_CLICK` Runtime 渲染和基础反馈、Admin React Router 深链、菜单导航、应用数据以及应用/路由策略/IP 策略/策略模拟/资源/审计/训练特征/模型版本主页面渲染 |
+| `make browser-smoke` | 真实浏览器打开 Runtime 和 Admin，验证 `RANDOM` 请求入口以及 `GESTURE`/`CURVE`/`CURVE_V2`/`CURVE_V3`/`SLIDER`/`SLIDER_V2`/`ROTATE`/`CONCAT`/`ROTATE_DEGREE`/`WORD_IMAGE_CLICK`/`IMAGE_CLICK`/`JIGSAW`/`GRID_IMAGE_CLICK` Runtime 渲染和基础反馈、Admin React Router 深链、菜单导航、应用数据以及应用/路由策略/IP 策略/策略模拟/资源/审计/训练样本/模型版本主页面渲染 |
 | `make docker-build` | 构建后端和 Gateway Docker 镜像，需要本机或 CI Docker daemon |
 | `make release-audit` | 发布前检查许可证、安全报告渠道、CI 工作流契约、HTTP/gRPC API 文档契约、验证码类型契约、Browser smoke 路由覆盖契约、文档命令契约、构建产物、本地浏览器产物、git remote、Docker daemon 和常见密钥模式 |
 | `make clean` | 清理前端、集成中间件、本地浏览器 smoke 和输出目录的生成产物 |
