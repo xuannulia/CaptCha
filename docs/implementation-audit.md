@@ -48,7 +48,7 @@
 | 管理 API 令牌保护 | `CAPTCHA_ADMIN_TOKEN`、`withAdminAuth`、`GET /api/v1/admin/auth/check`；`TestAdminTokenAuth` |
 | gRPC 平台 token 和应用 secret 鉴权 | `internal/grpcserver` interceptors；`TestGRPCPlatformTokenAuth`、`TestGRPCClientSecretAuth` 覆盖 Policy、Ticket、Config 和 Event 服务，Event 同时拒绝缺失 `client_id` 的匿名写入 |
 | 中间件/Gateway header allowlist | `collectAllowedHeaders`、Express middleware；Gateway 和 middleware 测试确认默认不信任/不转发敏感头 |
-| 远程调用 deadline 与故障降级 | Gateway `context.WithTimeout`/HTTP client timeout、Express `AbortController` timeout、风险推理 HTTP/gRPC 入口降级、训练特征异步写入异常恢复、Gateway 事件队列回压降级；Gateway、middleware、策略评估和验证接口测试覆盖 fail-open/fail-close、熔断、超时、外部推理失败、特征采集失败和事件队列满不阻塞主链路 |
+| 远程调用 deadline 与故障降级 | Gateway `context.WithTimeout`/HTTP client timeout、Express `AbortController` timeout、风险推理 HTTP/gRPC 入口降级、样本快照异步写入异常恢复、Gateway 事件队列回压降级；Gateway、middleware、策略评估和验证接口测试覆盖 fail-open/fail-close、熔断、超时、外部推理失败、样本采集失败和事件队列满不阻塞主链路 |
 | CORS 和 return_url allowlist | `withCORS`、`normalizeReturnURL`；CORS 和 return URL 测试 |
 | 生产误配置拒绝启动 | `productionSecurityErrors`；单元测试和 `make smoke` 真实进程级检查 |
 | 应用状态治理 | `requireActiveApplication`、`applicationPolicyDecision`、`applicationTicketRejection`、Event client 校验；HTTP 和 gRPC 测试覆盖 disabled/unknown 应用在 Runtime、Policy、Ticket、Event、Config 路径上的行为 |
