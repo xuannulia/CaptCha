@@ -506,7 +506,7 @@ const adminRoutes = [
   { key: "routes", path: "/routes", icon: <ApiOutlined />, label: "路由策略", element: <Routes /> },
   { key: "ip", path: "/ip-policies", icon: <SafetyOutlined />, label: "IP 策略", element: <IpPolicies /> },
   { key: "simulate", path: "/policy-simulate", icon: <SafetyOutlined />, label: "策略模拟", element: <PolicySimulator /> },
-  { key: "resources", path: "/resources", icon: <DatabaseOutlined />, label: "资源", element: <Resources /> },
+  { key: "resources", path: "/resources", icon: <DatabaseOutlined />, label: "资源图库", element: <Resources /> },
   { key: "audit", path: "/audit", icon: <AuditOutlined />, label: "审计", element: <Audit /> },
   { key: "features", path: "/risk-features", icon: <ExperimentOutlined />, label: "训练样本", element: <RiskFeatures /> },
   { key: "models", path: "/risk-models", icon: <ExperimentOutlined />, label: "模型管理", element: <RiskModels /> }
@@ -2525,7 +2525,7 @@ function titleFor(key: string) {
     routes: "路由策略",
     ip: "IP 策略",
     simulate: "策略模拟",
-    resources: "资源",
+    resources: "资源图库",
     audit: "审计",
     features: "训练样本",
     models: "模型管理"
