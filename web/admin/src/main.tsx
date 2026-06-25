@@ -144,8 +144,6 @@ type PolicySimulation = {
   decision: PolicyDecision;
   route?: RoutePolicy;
   rate_limit_evaluated: boolean;
-  side_effects: string[];
-  notes?: string[];
 };
 
 type MetricCount = {
@@ -444,14 +442,6 @@ const decisionReasonLabels: Record<string, string> = {
   RISK_FEATURE_LABEL_UPDATE: "样本复核变更"
 };
 const decisionReasonOptions = Object.entries(decisionReasonLabels).map(([value, label]) => ({ value, label }));
-const simulationMarkerLabels: Record<string, string> = {
-  no_ticket_consumed: "未消费票据",
-  no_challenge_session_created: "未创建验证码",
-  no_rate_counter_incremented: "未写入频控计数",
-  no_audit_event_written: "未写入审计",
-  rate_limit_counter_not_read_or_incremented: "未读取或写入频控计数",
-  application_gate: "应用状态检查"
-};
 const optionLabels = {
   ...captchaLabels,
   ...resourceTypeLabels,
@@ -1409,12 +1399,6 @@ function PolicySimulator() {
             <span>风险</span><strong>{unknownText(simulation.request.risk_score)} / {riskLevelText(simulation.request.risk_level)}</strong>
             <span>模型</span><strong>{unknownText(simulation.request.model_score)} / {modelModeText(simulation.request.model_mode)}</strong>
           </div>
-          {(simulation.side_effects.length > 0 || (simulation.notes || []).length > 0) && (
-            <Space wrap>
-              {simulation.side_effects.map((item) => <Tag key={item} title={item}>{simulationMarkerLabel(item)}</Tag>)}
-              {(simulation.notes || []).map((item) => <Tag key={item} color="blue" title={item}>{simulationMarkerLabel(item)}</Tag>)}
-            </Space>
-          )}
         </div>
       )}
     </Card>
@@ -1555,10 +1539,6 @@ function modelStatusLabel(value: string) {
 
 function decisionReasonLabel(value: string) {
   return decisionReasonLabels[value] || (value ? "其他原因" : "-");
-}
-
-function simulationMarkerLabel(value: string) {
-  return simulationMarkerLabels[value] || value;
 }
 
 function riskLevelText(value: unknown) {

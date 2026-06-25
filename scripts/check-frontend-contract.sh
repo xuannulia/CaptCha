@@ -155,6 +155,7 @@ reject_pattern web/admin/src/main.tsx '训练特征|导出 JSONL|特征集|captc
 reject_pattern web/admin/src/main.tsx 'Client ID' "admin application copy avoids raw client-id wording"
 reject_pattern web/admin/src/main.tsx 'Ticket TTL|Nonce|account hash|device hash|\bUA\b' "admin policy and audit copy avoids raw integration wording"
 reject_pattern web/admin/src/main.tsx 'label: "请求上下文"|label: "风险输入"|label="模型评分"|label="模型上线"' "policy simulator avoids debugging-panel wording"
+reject_pattern web/admin/src/main.tsx 'simulation\.side_effects|simulation\.notes|simulationMarkerLabel|no_ticket_consumed|no_challenge_session_created|no_rate_counter_incremented|no_audit_event_written' "policy simulator hides dry-run internals"
 reject_pattern web/admin/src/main.tsx 'Select options=\{selectOptions\(\["always", "risk_based", "rate_limit", "observe", "silent", "manual_bypass"\]\)\}' "route policy form avoids exposing internal route modes as normal options"
 reject_pattern web/admin/src/main.tsx 'title: "应用", dataIndex: "client_id"|label="CIDR"|title: "CIDR"' "admin tables avoid raw app and CIDR implementation fields"
 reject_pattern web/admin/src/main.tsx 'label="AUC"|模型包地址|observe/enforce 模式|active 版本' "risk model admin avoids raw model implementation wording"
