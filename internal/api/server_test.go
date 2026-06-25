@@ -2080,7 +2080,6 @@ func TestChallengeSessionSingleUseAndFailureLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get limited session: %v", err)
 	}
-	wrongX := session.Answer.X + 100
 	var failed struct {
 		OK         bool           `json:"ok"`
 		Decision   types.Decision `json:"decision"`
@@ -2088,6 +2087,14 @@ func TestChallengeSessionSingleUseAndFailureLimit(t *testing.T) {
 		CanRefresh bool           `json:"can_refresh"`
 	}
 	for i := 0; i < maxSessionFailures; i++ {
+		current, err := memoryStore.GetSession(limited.SessionID)
+		if err != nil {
+			t.Fatalf("get limited session before failure %d: %v", i, err)
+		}
+		wrongX := current.Answer.X + 150
+		if wrongX > current.RenderPayload.View.Width {
+			wrongX = current.Answer.X - 150
+		}
 		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+limited.SessionID+"/verify", map[string]any{
 			"answer": map[string]any{"x": wrongX},
 			"track":  trackForX(wrongX),
@@ -2771,7 +2778,7 @@ func TestAdminMetricsSummarizesOperationalState(t *testing.T) {
 	if metrics.Totals.RoutePolicies != 3 || metrics.Totals.EnabledRoutePolicies != 3 {
 		t.Fatalf("expected seeded route policy totals, got %+v", metrics.Totals)
 	}
-	if metrics.Totals.CaptchaResources != 3 || metrics.Totals.ActiveCaptchaResources != 3 {
+	if metrics.Totals.CaptchaResources != 6 || metrics.Totals.ActiveCaptchaResources != 6 {
 		t.Fatalf("expected seeded resource totals, got %+v", metrics.Totals)
 	}
 	if metrics.Totals.RiskFeatureSnapshots != 1 || metrics.Totals.TrainableRiskFeatures != 1 {
@@ -2789,7 +2796,7 @@ func TestAdminMetricsSummarizesOperationalState(t *testing.T) {
 	if metrics.ByChallengeType[string(types.CaptchaSlider)] != 2 || metrics.ByChallengeType[string(types.CaptchaRotate)] != 1 {
 		t.Fatalf("unexpected captcha type counts: %+v", metrics.ByChallengeType)
 	}
-	if metrics.RiskLabels["confirmed_bot"] != 1 || metrics.ResourceStatuses["active"] != 3 {
+	if metrics.RiskLabels["confirmed_bot"] != 1 || metrics.ResourceStatuses["active"] != 6 {
 		t.Fatalf("unexpected label/status counts: labels=%+v statuses=%+v", metrics.RiskLabels, metrics.ResourceStatuses)
 	}
 	if len(metrics.TopScenes) == 0 || metrics.TopScenes[0].Name != "login" || metrics.TopScenes[0].Count != 3 {

@@ -744,7 +744,7 @@ func TestPointClickCaptchasUseSeparatedTargets(t *testing.T) {
 func TestWordClickBankIsLargeAndDrawable(t *testing.T) {
 	t.Parallel()
 
-	if len(wordClickWordBank) < 40 {
+	if len(wordClickWordBank) < 80 {
 		t.Fatalf("word click bank should be large enough for random prompts, got %d", len(wordClickWordBank))
 	}
 	seen := make(map[string]struct{}, len(wordClickWordBank))
@@ -758,6 +758,26 @@ func TestWordClickBankIsLargeAndDrawable(t *testing.T) {
 		seen[word] = struct{}{}
 		if _, ok := glyphs.Pattern(word); !ok {
 			t.Fatalf("word click glyph %q has no drawable pattern", word)
+		}
+	}
+}
+
+func TestWordClickChallengeUsesLimitedDecoys(t *testing.T) {
+	t.Parallel()
+
+	for i := 0; i < 40; i++ {
+		words, points, decoyWords, decoyPoints := wordClickChallenge()
+		if len(words) < 3 || len(words) > 4 {
+			t.Fatalf("expected 3-4 target words, got %d", len(words))
+		}
+		if len(points) != len(words) {
+			t.Fatalf("target points should match target words: points=%d words=%d", len(points), len(words))
+		}
+		if len(decoyWords) < 1 || len(decoyWords) > 2 {
+			t.Fatalf("expected 1-2 decoy words, got %d", len(decoyWords))
+		}
+		if len(decoyPoints) != len(decoyWords) {
+			t.Fatalf("decoy points should match decoy words: points=%d words=%d", len(decoyPoints), len(decoyWords))
 		}
 	}
 }

@@ -31,6 +31,7 @@ type MemoryStore struct {
 	routes       map[string]types.RoutePolicy
 	ipPolicies   map[string]types.IPPolicy
 	resources    map[string]types.CaptchaResource
+	deletedSeeds map[string]struct{}
 	resourcePath string
 	auditEvents  []types.AuditEvent
 	features     []types.RiskFeatureSnapshot
@@ -64,6 +65,7 @@ func newMemoryStore(resourcePath string) *MemoryStore {
 		routes:       make(map[string]types.RoutePolicy),
 		ipPolicies:   make(map[string]types.IPPolicy),
 		resources:    make(map[string]types.CaptchaResource),
+		deletedSeeds: make(map[string]struct{}),
 		auditEvents:  make([]types.AuditEvent, 0, 64),
 		features:     make([]types.RiskFeatureSnapshot, 0, 128),
 		models:       make(map[string]types.RiskModelVersion),
@@ -349,6 +351,7 @@ func (s *MemoryStore) UpsertResource(resource types.CaptchaResource) types.Captc
 		resource.CreatedAt = now
 	}
 	resource.UpdatedAt = now
+	delete(s.deletedSeeds, resource.ID)
 	s.resources[resource.ID] = resource
 	s.persistResourcesLocked()
 	return resource
@@ -367,6 +370,9 @@ func (s *MemoryStore) DeleteResources(clientID string, ids []string) int {
 			continue
 		}
 		delete(s.resources, id)
+		if isSeedResourceID(id) {
+			s.deletedSeeds[id] = struct{}{}
+		}
 		deleted++
 	}
 	if deleted > 0 {
@@ -376,7 +382,22 @@ func (s *MemoryStore) DeleteResources(clientID string, ids []string) int {
 }
 
 type memoryResourceState struct {
-	Resources []types.CaptchaResource `json:"resources"`
+	Resources      []types.CaptchaResource `json:"resources"`
+	DeletedSeedIDs []string                `json:"deleted_seed_ids,omitempty"`
+}
+
+func isSeedResourceID(id string) bool {
+	switch id {
+	case "res_background",
+		"res_slider",
+		"res_concat_background",
+		"res_concat_template",
+		"res_jigsaw_background",
+		"res_font":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *MemoryStore) loadResourcesFromDisk() {
@@ -391,14 +412,20 @@ func (s *MemoryStore) loadResourcesFromDisk() {
 	if json.Unmarshal(data, &state) != nil {
 		return
 	}
-	resources := make(map[string]types.CaptchaResource, len(state.Resources))
+	for _, id := range state.DeletedSeedIDs {
+		if id == "" {
+			continue
+		}
+		s.deletedSeeds[id] = struct{}{}
+		delete(s.resources, id)
+	}
 	for _, resource := range state.Resources {
 		if resource.ID == "" {
 			continue
 		}
-		resources[resource.ID] = resource
+		delete(s.deletedSeeds, resource.ID)
+		s.resources[resource.ID] = resource
 	}
-	s.resources = resources
 }
 
 func (s *MemoryStore) persistResourcesLocked() {
@@ -412,7 +439,12 @@ func (s *MemoryStore) persistResourcesLocked() {
 	sort.SliceStable(resources, func(i, j int) bool {
 		return resources[i].ID < resources[j].ID
 	})
-	data, err := json.MarshalIndent(memoryResourceState{Resources: resources}, "", "  ")
+	deletedSeedIDs := make([]string, 0, len(s.deletedSeeds))
+	for id := range s.deletedSeeds {
+		deletedSeedIDs = append(deletedSeedIDs, id)
+	}
+	sort.Strings(deletedSeedIDs)
+	data, err := json.MarshalIndent(memoryResourceState{Resources: resources, DeletedSeedIDs: deletedSeedIDs}, "", "  ")
 	if err != nil {
 		return
 	}
@@ -861,9 +893,45 @@ func (s *MemoryStore) seed(now time.Time) {
 		ID:           "res_background",
 		ClientID:     "demo",
 		CaptchaType:  types.CaptchaAuto,
-		ResourceType: "background_image",
+		ResourceType: "background_library",
 		StorageType:  "embedded",
 		URI:          "embedded://default-backgrounds",
+		Tag:          "default",
+		Status:       "active",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	s.resources["res_concat_background"] = types.CaptchaResource{
+		ID:           "res_concat_background",
+		ClientID:     "demo",
+		CaptchaType:  types.CaptchaConcat,
+		ResourceType: "concat_background_library",
+		StorageType:  "embedded",
+		URI:          "embedded://concat-backgrounds",
+		Tag:          "default",
+		Status:       "active",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	s.resources["res_concat_template"] = types.CaptchaResource{
+		ID:           "res_concat_template",
+		ClientID:     "demo",
+		CaptchaType:  types.CaptchaConcat,
+		ResourceType: "concat_template",
+		StorageType:  "embedded",
+		URI:          "embedded://concat-template",
+		Tag:          "default",
+		Status:       "active",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	s.resources["res_jigsaw_background"] = types.CaptchaResource{
+		ID:           "res_jigsaw_background",
+		ClientID:     "demo",
+		CaptchaType:  types.CaptchaJigsaw,
+		ResourceType: "jigsaw_background_library",
+		StorageType:  "embedded",
+		URI:          "embedded://jigsaw-backgrounds",
 		Tag:          "default",
 		Status:       "active",
 		CreatedAt:    now,

@@ -61,4 +61,17 @@ for resource_type in background_library concat_background_library jigsaw_backgro
 		fail "admin resource type selector must expose $resource_type"
 done
 
+grep -Fq 'case "embedded":' internal/resource/renderer.go ||
+	fail "resource renderer must load embedded demo resources"
+grep -Fq 'ResourceType: "background_library"' internal/store/memory.go ||
+	fail "memory seed must provide a background library for gesture and point-click captchas"
+grep -Fq 'ResourceType: "concat_background_library"' internal/store/memory.go ||
+	fail "memory seed must provide a dedicated concat background library"
+grep -Fq 'ResourceType: "jigsaw_background_library"' internal/store/memory.go ||
+	fail "memory seed must provide a dedicated jigsaw background library"
+grep -Fq 'len(wordClickWordBank) < 80' internal/engine/engine_test.go ||
+	fail "word-click tests must require an expanded built-in glyph bank"
+grep -Fq 'decoyCount := mustRandomInt(1, 2)' internal/engine/engine.go ||
+	fail "word-click generator must keep decoy glyphs to 1-2"
+
 echo "PASS: captcha type contract is aligned"

@@ -1055,8 +1055,11 @@ ON CONFLICT (id) DO NOTHING`,
 	}
 
 	resources := []types.CaptchaResource{
-		{ID: "res_background", ClientID: "demo", CaptchaType: types.CaptchaAuto, ResourceType: "background_image", StorageType: "embedded", URI: "embedded://default-backgrounds", Tag: "default", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "res_background", ClientID: "demo", CaptchaType: types.CaptchaAuto, ResourceType: "background_library", StorageType: "embedded", URI: "embedded://default-backgrounds", Tag: "default", Status: "active", CreatedAt: now, UpdatedAt: now},
 		{ID: "res_slider", ClientID: "demo", CaptchaType: types.CaptchaSlider, ResourceType: "slider_template", StorageType: "embedded", URI: "embedded://slider-template", Tag: "default", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "res_concat_background", ClientID: "demo", CaptchaType: types.CaptchaConcat, ResourceType: "concat_background_library", StorageType: "embedded", URI: "embedded://concat-backgrounds", Tag: "default", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "res_concat_template", ClientID: "demo", CaptchaType: types.CaptchaConcat, ResourceType: "concat_template", StorageType: "embedded", URI: "embedded://concat-template", Tag: "default", Status: "active", CreatedAt: now, UpdatedAt: now},
+		{ID: "res_jigsaw_background", ClientID: "demo", CaptchaType: types.CaptchaJigsaw, ResourceType: "jigsaw_background_library", StorageType: "embedded", URI: "embedded://jigsaw-backgrounds", Tag: "default", Status: "active", CreatedAt: now, UpdatedAt: now},
 		{ID: "res_font", ClientID: "demo", CaptchaType: types.CaptchaWordImageClick, ResourceType: "font", StorageType: "embedded", URI: "embedded://default-font", Tag: "word", Status: "active", CreatedAt: now, UpdatedAt: now},
 	}
 	for _, resource := range resources {

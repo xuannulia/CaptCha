@@ -213,6 +213,29 @@ func TestSupportsGridImageClickWithCategoryLibrary(t *testing.T) {
 	}
 }
 
+func TestGestureSupportsGenericBackgroundLibrary(t *testing.T) {
+	t.Parallel()
+
+	resources := []types.CaptchaResource{
+		{
+			ID:           "res_background_library",
+			CaptchaType:  types.CaptchaAuto,
+			ResourceType: "background_library",
+			StorageType:  "embedded",
+			URI:          "embedded://default-backgrounds",
+			Status:       "active",
+		},
+	}
+
+	if !SupportsCaptchaType(resources, types.CaptchaGesture, "verify", "") {
+		t.Fatalf("expected gesture to be supported by generic background library")
+	}
+	selected := Select(resources, types.CaptchaGesture, "verify", "")
+	if !hasSelectedResource(selected, "background_library", "res_background_library") {
+		t.Fatalf("expected gesture to select generic background library, got %+v", selected)
+	}
+}
+
 func TestConcatAndJigsawRequireDedicatedBackgroundLibraries(t *testing.T) {
 	t.Parallel()
 

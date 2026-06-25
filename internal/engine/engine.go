@@ -1697,7 +1697,7 @@ func (icon clickIcon) SVGFile() string {
 
 func wordClickChallenge() ([]string, []types.Point, []string, []types.Point) {
 	targetCount := mustRandomInt(3, 4)
-	decoyCount := mustRandomInt(2, 4)
+	decoyCount := mustRandomInt(1, 2)
 	words := randomStrings(wordClickWordBank, targetCount)
 	excluded := make(map[string]struct{}, len(words))
 	for _, word := range words {

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -33,6 +35,35 @@ func TestMemoryStorePersistsCaptchaResources(t *testing.T) {
 	t.Fatalf("expected persisted resource %s after memory store restart, got %+v", resource.ID, resources)
 }
 
+func TestMemoryStoreMergesNewSeedResourcesIntoExistingState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "resource-state.json")
+	uploaded := types.CaptchaResource{
+		ID:           "res_uploaded_background",
+		ClientID:     "demo",
+		CaptchaType:  types.CaptchaSlider,
+		ResourceType: "background_library",
+		StorageType:  "file",
+		URI:          "file:///tmp/background.png",
+		Status:       "active",
+	}
+	data, err := json.Marshal(memoryResourceState{Resources: []types.CaptchaResource{uploaded}})
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+
+	store := NewMemoryStoreWithResourcePersistence(path)
+	resources := store.ListResources("demo")
+	if !hasResourceID(resources, uploaded.ID) {
+		t.Fatalf("expected uploaded resource to survive loading state, got %+v", resources)
+	}
+	if !hasResourceID(resources, "res_concat_background") || !hasResourceID(resources, "res_jigsaw_background") {
+		t.Fatalf("expected new seed background libraries to be merged into existing state, got %+v", resources)
+	}
+}
+
 func TestMemoryStorePersistsResourceDeletion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "resource-state.json")
 	first := NewMemoryStoreWithResourcePersistence(path)
@@ -44,4 +75,13 @@ func TestMemoryStorePersistsResourceDeletion(t *testing.T) {
 			t.Fatalf("expected deleted seed resource to stay deleted after restart, got %+v", item)
 		}
 	}
+}
+
+func hasResourceID(resources []types.CaptchaResource, id string) bool {
+	for _, resource := range resources {
+		if resource.ID == id {
+			return true
+		}
+	}
+	return false
 }

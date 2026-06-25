@@ -804,6 +804,56 @@ func TestApplyVisualsUsesDedicatedJigsawBackground(t *testing.T) {
 	assertPixel(t, image, 5, 5, color.RGBA{R: 80, G: 170, B: 70, A: 255})
 }
 
+func TestApplyVisualsUsesEmbeddedDedicatedBackgrounds(t *testing.T) {
+	t.Parallel()
+
+	concatPayload := types.RenderPayload{
+		Type:  types.CaptchaConcat,
+		View:  types.View{Width: 120, Height: 80},
+		Image: "fallback-image",
+		Piece: "fallback-piece",
+	}
+	concat := ApplyVisuals(concatPayload, types.Answer{Offset: 20}, []types.CaptchaResource{
+		{
+			ID:           "res_concat_background",
+			ResourceType: "concat_background_library",
+			StorageType:  "embedded",
+			URI:          "embedded://concat-backgrounds",
+			Status:       "active",
+		},
+	})
+	if concat.Image == concatPayload.Image || concat.Piece == concatPayload.Piece {
+		t.Fatalf("expected embedded concat background to compose image and piece")
+	}
+	decodePNGDataURL(t, concat.Image)
+	decodePNGDataURL(t, concat.Piece)
+
+	jigsawPayload := types.RenderPayload{
+		Type:  types.CaptchaJigsaw,
+		View:  types.View{Width: 120, Height: 80},
+		Image: "fallback-image",
+		Parameters: map[string]any{
+			"tile_cols":   2,
+			"tile_rows":   2,
+			"tile_width":  60,
+			"tile_height": 40,
+		},
+	}
+	jigsaw := ApplyVisuals(jigsawPayload, types.Answer{}, []types.CaptchaResource{
+		{
+			ID:           "res_jigsaw_background",
+			ResourceType: "jigsaw_background_library",
+			StorageType:  "embedded",
+			URI:          "embedded://jigsaw-backgrounds",
+			Status:       "active",
+		},
+	})
+	if jigsaw.Image == jigsawPayload.Image {
+		t.Fatalf("expected embedded jigsaw background to compose image")
+	}
+	decodePNGDataURL(t, jigsaw.Image)
+}
+
 func TestApplyVisualsUsesFontMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -908,6 +958,39 @@ func TestApplyVisualsComposesGestureOnBackground(t *testing.T) {
 	image := decodePNGDataURL(t, composed.Image)
 	assertPixel(t, image, 5, 5, background)
 	assertRegionChanged(t, image, 45, 30, 30, 25, background)
+}
+
+func TestApplyVisualsUsesEmbeddedDefaultBackgroundForGesture(t *testing.T) {
+	t.Parallel()
+
+	payload := types.RenderPayload{
+		Type:  types.CaptchaGesture,
+		View:  types.View{Width: 120, Height: 80},
+		Image: "fallback-image",
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{Points: []types.Point{
+		{X: 20, Y: 30},
+		{X: 60, Y: 45},
+		{X: 100, Y: 32},
+	}}, []types.CaptchaResource{
+		{
+			ID:           "res_embedded_background",
+			ResourceType: "background_library",
+			StorageType:  "embedded",
+			URI:          "embedded://default-backgrounds",
+			Status:       "active",
+		},
+	})
+
+	if composed.Image == payload.Image {
+		t.Fatal("expected embedded background library to replace generated gesture image")
+	}
+	image := decodePNGDataURL(t, composed.Image)
+	if image.Bounds().Dx() != payload.View.Width || image.Bounds().Dy() != payload.View.Height {
+		t.Fatalf("unexpected embedded gesture image size: %s", image.Bounds())
+	}
+	assertRegionChanged(t, image, 45, 30, 30, 25, color.RGBA{R: 0, G: 0, B: 0, A: 0})
 }
 
 func TestApplyVisualsRejectsClasspathTraversal(t *testing.T) {

@@ -372,6 +372,9 @@ func chooseGridTargetCategory(byCategory map[string][]loadedImageResource) (stri
 }
 
 func loadStoredResourceImage(resource types.CaptchaResource) (image.Image, bool) {
+	if strings.EqualFold(strings.TrimSpace(resource.StorageType), "embedded") {
+		return loadEmbeddedResourceImage(resource)
+	}
 	data, contentType, ok := loadStoredResourceBytes(resource)
 	if !ok {
 		return nil, false
@@ -381,6 +384,8 @@ func loadStoredResourceImage(resource types.CaptchaResource) (image.Image, bool)
 
 func loadStoredResourceBytes(resource types.CaptchaResource) ([]byte, string, bool) {
 	switch strings.ToLower(strings.TrimSpace(resource.StorageType)) {
+	case "embedded":
+		return loadEmbeddedResourceBytes(resource)
 	case "file":
 		return loadFileResourceBytes(resource)
 	case "classpath":
@@ -394,6 +399,193 @@ func loadStoredResourceBytes(resource types.CaptchaResource) ([]byte, string, bo
 	default:
 		return nil, "", false
 	}
+}
+
+func loadEmbeddedResourceImage(resource types.CaptchaResource) (image.Image, bool) {
+	name, ok := embeddedResourceName(resource.URI)
+	if !ok {
+		return nil, false
+	}
+	width, height := embeddedResourceSize(resource)
+	switch name {
+	case "default-backgrounds", "backgrounds":
+		return drawEmbeddedDefaultBackground(width, height), true
+	case "concat-backgrounds":
+		return drawEmbeddedConcatBackground(width, height), true
+	case "jigsaw-backgrounds":
+		return drawEmbeddedJigsawBackground(width, height), true
+	case "rotate-backgrounds":
+		size := min(width, height)
+		return drawEmbeddedRotateBackground(size), true
+	case "slider-template":
+		return defaultSliderTemplateFactory(min(width, height)), true
+	default:
+		return nil, false
+	}
+}
+
+func loadEmbeddedResourceBytes(resource types.CaptchaResource) ([]byte, string, bool) {
+	name, ok := embeddedResourceName(resource.URI)
+	if !ok {
+		return nil, "", false
+	}
+	if name == "concat-template" {
+		return []byte(`{"split_ratio":0.5,"gap_color":"#e2e8f0","border_color":"#6366f1"}`), "application/json", true
+	}
+	img, ok := loadEmbeddedResourceImage(resource)
+	if !ok {
+		return nil, "", false
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, "", false
+	}
+	return buf.Bytes(), "image/png", true
+}
+
+func embeddedResourceName(uri string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(uri))
+	if err != nil || !strings.EqualFold(parsed.Scheme, "embedded") || parsed.User != nil {
+		return "", false
+	}
+	parts := make([]string, 0, 2)
+	if parsed.Host != "" {
+		parts = append(parts, parsed.Host)
+	}
+	if path := strings.Trim(strings.TrimPrefix(parsed.Path, "/"), "/"); path != "" {
+		parts = append(parts, path)
+	}
+	if len(parts) == 0 {
+		return "", false
+	}
+	return strings.ToLower(strings.Join(parts, "/")), true
+}
+
+func embeddedResourceSize(resource types.CaptchaResource) (int, int) {
+	width := 0
+	height := 0
+	if value, ok, err := metadataInt(cloneMetadata(resource.Metadata), "width"); err == nil && ok {
+		width = int(value)
+	}
+	if value, ok, err := metadataInt(cloneMetadata(resource.Metadata), "height"); err == nil && ok {
+		height = int(value)
+	}
+	if width > 0 && height > 0 {
+		return clamp(width, 32, 1024), clamp(height, 32, 1024)
+	}
+	switch strings.ToLower(strings.TrimSpace(resource.ResourceType)) {
+	case "rotate_library":
+		return 220, 220
+	case "slider_template":
+		return 96, 96
+	case "grid_category_library":
+		return 120, 120
+	default:
+		return 320, 180
+	}
+}
+
+func drawEmbeddedDefaultBackground(width, height int) *image.RGBA {
+	img := gradientCanvas(width, height, color.RGBA{R: 75, G: 97, B: 176, A: 255}, color.RGBA{R: 247, G: 209, B: 151, A: 255})
+	drawCircleOver(img, int(float64(width)*0.78), int(float64(height)*0.30), max(8, width/18), color.RGBA{R: 255, G: 234, B: 156, A: 230})
+	fillPolygonOver(img, []image.Point{
+		{X: 0, Y: int(float64(height) * 0.70)},
+		{X: int(float64(width) * 0.30), Y: int(float64(height) * 0.42)},
+		{X: int(float64(width) * 0.60), Y: int(float64(height) * 0.73)},
+		{X: width, Y: int(float64(height) * 0.48)},
+		{X: width, Y: height},
+		{X: 0, Y: height},
+	}, color.RGBA{R: 39, G: 56, B: 112, A: 210})
+	fillPolygonOver(img, []image.Point{
+		{X: 0, Y: int(float64(height) * 0.82)},
+		{X: int(float64(width) * 0.42), Y: int(float64(height) * 0.58)},
+		{X: int(float64(width) * 0.74), Y: int(float64(height) * 0.80)},
+		{X: width, Y: int(float64(height) * 0.68)},
+		{X: width, Y: height},
+		{X: 0, Y: height},
+	}, color.RGBA{R: 21, G: 31, B: 62, A: 205})
+	for i := 0; i < 26; i++ {
+		x := randomIndex(max(1, width))
+		y := randomIndex(max(1, int(float64(height)*0.58)))
+		drawCircleOver(img, x, y, max(1, width/180), color.RGBA{R: 255, G: 255, B: 255, A: uint8(90 + randomIndex(120))})
+	}
+	return img
+}
+
+func drawEmbeddedConcatBackground(width, height int) *image.RGBA {
+	img := gradientCanvas(width, height, color.RGBA{R: 236, G: 246, B: 255, A: 255}, color.RGBA{R: 210, G: 229, B: 247, A: 255})
+	horizon := int(float64(height) * 0.56)
+	fillPolygonOver(img, []image.Point{
+		{X: 0, Y: horizon + height/12},
+		{X: width / 5, Y: horizon - height/8},
+		{X: width / 2, Y: horizon + height/10},
+		{X: width * 3 / 4, Y: horizon - height/7},
+		{X: width, Y: horizon + height/12},
+		{X: width, Y: height},
+		{X: 0, Y: height},
+	}, color.RGBA{R: 116, G: 136, B: 164, A: 95})
+	drawPolylineOver(img, smoothWave(width, horizon, height/13, 12), max(3, height/30), color.RGBA{R: 67, G: 92, B: 124, A: 135})
+	drawPolylineOver(img, smoothWave(width, horizon+height/12, height/16, 10), max(2, height/42), color.RGBA{R: 255, G: 255, B: 255, A: 180})
+	drawCircleOver(img, width*72/100, horizon-height/8, max(8, height/9), color.RGBA{R: 246, G: 173, B: 85, A: 175})
+	for i := 0; i < 7; i++ {
+		x := width * (10 + i*13) / 100
+		fillRectOver(img, x, 0, max(1, width/90), height, color.RGBA{R: 255, G: 255, B: 255, A: 36})
+	}
+	return img
+}
+
+func drawEmbeddedJigsawBackground(width, height int) *image.RGBA {
+	img := gradientCanvas(width, height, color.RGBA{R: 241, G: 245, B: 249, A: 255}, color.RGBA{R: 219, G: 234, B: 254, A: 255})
+	palette := []color.RGBA{
+		{R: 37, G: 99, B: 235, A: 180},
+		{R: 20, G: 184, B: 166, A: 172},
+		{R: 245, G: 158, B: 11, A: 176},
+		{R: 225, G: 29, B: 72, A: 160},
+		{R: 126, G: 34, B: 206, A: 156},
+	}
+	drawCircleOver(img, width/5, height/3, max(12, height/8), palette[0])
+	fillRectOver(img, width*3/5, height/7, width/5, height/4, palette[1])
+	fillPolygonOver(img, []image.Point{{X: width * 3 / 10, Y: height * 3 / 4}, {X: width / 2, Y: height / 2}, {X: width * 7 / 10, Y: height * 3 / 4}}, palette[2])
+	drawPolylineOver(img, []image.Point{{X: width / 12, Y: height * 5 / 6}, {X: width / 4, Y: height * 2 / 3}, {X: width * 2 / 5, Y: height * 7 / 8}, {X: width * 5 / 6, Y: height * 3 / 5}}, max(5, height/18), palette[3])
+	drawCircleOutlineOver(img, width*83/100, height*70/100, max(14, height/7), max(3, height/45), palette[4])
+	for i := 0; i < 16; i++ {
+		drawCircleOver(img, randomIndex(max(1, width)), randomIndex(max(1, height)), max(1, height/80), color.RGBA{R: 15, G: 23, B: 42, A: 55})
+	}
+	return img
+}
+
+func drawEmbeddedRotateBackground(size int) *image.RGBA {
+	img := gradientCanvas(size, size, color.RGBA{R: 234, G: 249, B: 255, A: 255}, color.RGBA{R: 255, G: 237, B: 213, A: 255})
+	cx, cy := size/2, size/2
+	drawCircleOver(img, cx, cy, size*38/100, color.RGBA{R: 255, G: 255, B: 255, A: 150})
+	drawPolylineOver(img, []image.Point{{X: cx - size/5, Y: cy + size/4}, {X: cx, Y: cy - size/3}, {X: cx + size/4, Y: cy + size/5}}, max(6, size/28), color.RGBA{R: 37, G: 99, B: 235, A: 220})
+	drawCircleOver(img, cx+size/8, cy-size/12, max(8, size/12), color.RGBA{R: 245, G: 158, B: 11, A: 220})
+	fillPolygonOver(img, []image.Point{{X: cx - size/9, Y: cy - size/7}, {X: cx + size/3, Y: cy}, {X: cx - size/12, Y: cy + size/6}}, color.RGBA{R: 20, G: 184, B: 166, A: 190})
+	return img
+}
+
+func gradientCanvas(width, height int, top, bottom color.RGBA) *image.RGBA {
+	width = max(1, width)
+	height = max(1, height)
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	denom := max(1, height-1)
+	for y := 0; y < height; y++ {
+		ratio := float64(y) / float64(denom)
+		c := mixRGBA(top, bottom, ratio)
+		fillRect(img, 0, y, width, 1, c)
+	}
+	return img
+}
+
+func smoothWave(width, centerY, amplitude, steps int) []image.Point {
+	steps = max(2, steps)
+	points := make([]image.Point, 0, steps+1)
+	for i := 0; i <= steps; i++ {
+		x := width * i / steps
+		y := centerY + int(math.Round(math.Sin(float64(i)*math.Pi*2/float64(steps))*float64(amplitude)))
+		points = append(points, image.Point{X: x, Y: y})
+	}
+	return points
 }
 
 func loadFileResourceBytes(resource types.CaptchaResource) ([]byte, string, bool) {
