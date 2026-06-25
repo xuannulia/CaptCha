@@ -80,6 +80,7 @@ require_pattern web/admin/src/main.tsx 'label="触发条件"' "route policy form
 require_pattern web/admin/src/main.tsx 'function ApplicationCell' "admin tables render application names before identifiers"
 require_pattern web/admin/src/main.tsx 'label="上线方式"' "risk model admin uses release wording"
 require_pattern web/admin/src/main.tsx 'decisionReasonLabel' "admin maps backend decision reasons to business copy"
+require_pattern web/admin/src/main.tsx 'policy-simulator-options' "policy simulator keeps optional context out of the primary form"
 require_dependency_allowlist web/admin/package.json "admin production dependencies stay on the chosen mature stack" "@ant-design/icons" "@tanstack/react-query" "antd" "react" "react-dom" "react-router-dom"
 reject_pattern web/admin/package.json '"(@ant-design/pro-components|@ant-design/pro-layout|@umijs/|umi|next|nuxt|vue|element-plus|echarts|@ant-design/charts)"' "admin package avoids heavier alternate app frameworks and chart stacks"
 reject_pattern web/admin/src/main.tsx '明细列表|系统资源|resource-uri|resource-table-wrap|system-resource-panel' "admin resource gallery avoids raw detail panels"

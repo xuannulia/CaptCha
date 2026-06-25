@@ -9,7 +9,7 @@ import {
   SafetyOutlined
 } from "@ant-design/icons";
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Checkbox, ConfigProvider, Form, Input, InputNumber, Layout, Menu, message, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
+import { Button, Card, Checkbox, Collapse, ConfigProvider, Form, Input, InputNumber, Layout, Menu, message, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -1249,28 +1249,55 @@ function PolicySimulator() {
     <Card title="策略模拟">
       <Form
         form={form}
-        layout="inline"
-        className="filters"
+        layout="vertical"
+        className="policy-simulator-form"
         initialValues={{ client_id: defaultClientID, method: "POST", path: "/api/login" }}
         onFinish={(values) => mutation.mutate({ path: "/api/v1/admin/policy/simulate", body: values })}
       >
-        <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
-          <Select showSearch style={{ width: 180 }} optionFilterProp="label" options={appOptions} />
-        </Form.Item>
-        <Form.Item name="method" label="方法"><Select style={{ width: 110 }} options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
-        <Form.Item name="path" label="路径" rules={[{ required: true }]}><Input style={{ width: 180 }} /></Form.Item>
-        <Form.Item name="scene" label="场景"><Input style={{ width: 120 }} /></Form.Item>
-        <Form.Item name="ip" label="IP"><Input style={{ width: 150 }} /></Form.Item>
-        <Form.Item name="user_agent" label="浏览器标识"><Input style={{ width: 180 }} /></Form.Item>
-        <Form.Item name="account_id_hash" label="账号"><Input style={{ width: 150 }} /></Form.Item>
-        <Form.Item name="device_id_hash" label="设备"><Input style={{ width: 150 }} /></Form.Item>
-        <Form.Item name="request_nonce" label="请求标识"><Input style={{ width: 150 }} /></Form.Item>
-        <Form.Item name="resource_tag" label="资源"><Input style={{ width: 120 }} /></Form.Item>
-        <Form.Item name="risk_score" label="风险分"><InputNumber min={0} max={100} style={{ width: 110 }} /></Form.Item>
-        <Form.Item name="risk_level" label="风险级别"><Select allowClear style={{ width: 120 }} options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高" }]} /></Form.Item>
-        <Form.Item name="model_score" label="模型分"><InputNumber min={0} max={100} style={{ width: 110 }} /></Form.Item>
-        <Form.Item name="model_mode" label="模型模式"><Select allowClear style={{ width: 120 }} options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
-        <Button type="primary" htmlType="submit" loading={mutation.isPending}>模拟</Button>
+        <div className="policy-simulator-grid policy-simulator-primary">
+          <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
+            <Select showSearch optionFilterProp="label" options={appOptions} />
+          </Form.Item>
+          <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
+          <Form.Item name="path" label="路径" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="scene" label="场景"><Input /></Form.Item>
+          <Form.Item name="ip" label="IP"><Input /></Form.Item>
+          <Form.Item className="policy-simulator-submit">
+            <Button type="primary" htmlType="submit" loading={mutation.isPending}>模拟</Button>
+          </Form.Item>
+        </div>
+        <Collapse
+          ghost
+          size="small"
+          className="policy-simulator-options"
+          items={[
+            {
+              key: "context",
+              label: "请求上下文",
+              children: (
+                <div className="policy-simulator-grid">
+                  <Form.Item name="user_agent" label="浏览器标识"><Input /></Form.Item>
+                  <Form.Item name="account_id_hash" label="账号"><Input /></Form.Item>
+                  <Form.Item name="device_id_hash" label="设备"><Input /></Form.Item>
+                  <Form.Item name="request_nonce" label="请求标识"><Input /></Form.Item>
+                  <Form.Item name="resource_tag" label="资源标签"><Input /></Form.Item>
+                </div>
+              )
+            },
+            {
+              key: "risk",
+              label: "风险输入",
+              children: (
+                <div className="policy-simulator-grid">
+                  <Form.Item name="risk_score" label="风险分"><InputNumber min={0} max={100} /></Form.Item>
+                  <Form.Item name="risk_level" label="风险级别"><Select allowClear options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高" }]} /></Form.Item>
+                  <Form.Item name="model_score" label="模型评分"><InputNumber min={0} max={100} /></Form.Item>
+                  <Form.Item name="model_mode" label="模型上线"><Select allowClear options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
+                </div>
+              )
+            }
+          ]}
+        />
       </Form>
       {mutation.error instanceof Error && <div className="error-line">{mutation.error.message}</div>}
       {simulation && (

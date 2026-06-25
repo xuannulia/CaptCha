@@ -74,6 +74,38 @@ body {
   margin-bottom: 16px;
 }
 
+.policy-simulator-form {
+  margin-bottom: 16px;
+}
+
+.policy-simulator-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.policy-simulator-primary {
+  grid-template-columns: minmax(180px, 1.2fr) minmax(110px, 0.7fr) minmax(180px, 1.2fr) minmax(140px, 0.8fr) minmax(150px, 0.8fr) max-content;
+}
+
+.policy-simulator-form .ant-form-item {
+  margin-bottom: 0;
+}
+
+.policy-simulator-form .ant-select,
+.policy-simulator-form .ant-input-number {
+  width: 100%;
+}
+
+.policy-simulator-submit {
+  justify-self: end;
+}
+
+.policy-simulator-options {
+  margin-top: 8px;
+}
+
 .field-number {
   width: 100%;
 }
@@ -368,6 +400,15 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .policy-simulator-grid,
+  .policy-simulator-primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .policy-simulator-submit {
+    justify-self: start;
+  }
+
   .kv-grid {
     grid-template-columns: repeat(2, max-content minmax(90px, 1fr));
   }
@@ -386,6 +427,11 @@ body {
 
   .kv-grid {
     grid-template-columns: max-content minmax(90px, 1fr);
+  }
+
+  .policy-simulator-grid,
+  .policy-simulator-primary {
+    grid-template-columns: 1fr;
   }
 
   .resource-file-bar {
