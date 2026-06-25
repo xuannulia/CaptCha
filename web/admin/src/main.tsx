@@ -925,7 +925,7 @@ function Applications() {
     form.resetFields();
   };
   return (
-    <Card title="应用" extra={<Button type="primary" onClick={openCreateApplication}>新增</Button>}>
+    <Card title="应用" extra={<Button type="primary" onClick={openCreateApplication}>新增应用</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
       <Modal
         title="应用密钥"
@@ -952,7 +952,7 @@ function Applications() {
         open={open}
         onCancel={closeApplicationModal}
         onOk={() => form.submit()}
-        okText="保存"
+        okText="保存应用"
         confirmLoading={mutation.isPending}
       >
         <Form
@@ -1107,9 +1107,9 @@ function Routes() {
     form.resetFields();
   };
   return (
-    <Card title="路由策略" extra={<Button type="primary" onClick={openCreateRoute}>新增</Button>}>
+    <Card title="路由策略" extra={<Button type="primary" onClick={openCreateRoute}>新增策略</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title={editingRoute ? "编辑路由策略" : "新增路由策略"} open={open} onCancel={closeRouteModal} onOk={() => form.submit()} okText="保存" confirmLoading={mutation.isPending}>
+      <Modal title={editingRoute ? "编辑路由策略" : "新增路由策略"} open={open} onCancel={closeRouteModal} onOk={() => form.submit()} okText="保存策略" confirmLoading={mutation.isPending}>
         <Form
           form={form}
           layout="vertical"
@@ -1297,9 +1297,9 @@ function IpPolicies() {
     form.resetFields();
   };
   return (
-    <Card title="IP 策略" extra={<Button type="primary" onClick={openCreatePolicy}>新增</Button>}>
+    <Card title="IP 策略" extra={<Button type="primary" onClick={openCreatePolicy}>添加名单</Button>}>
       <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
-      <Modal title={editingPolicy ? "编辑 IP 策略" : "新增 IP 策略"} open={open} onCancel={closePolicyModal} onOk={() => form.submit()} okText="保存" confirmLoading={mutation.isPending}>
+      <Modal title={editingPolicy ? "编辑 IP 名单" : "添加 IP 名单"} open={open} onCancel={closePolicyModal} onOk={() => form.submit()} okText="保存名单" confirmLoading={mutation.isPending}>
         <Form
           form={form}
           layout="vertical"
