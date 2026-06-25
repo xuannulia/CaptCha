@@ -1641,7 +1641,7 @@ run_smoke_step "admin applications route" open_admin_page "/applications" "appli
 run_smoke_step "admin routes route" open_admin_page "/routes" "routes" "路由策略" "路径" "触发"
 run_smoke_step "admin ip policies route" open_admin_page "/ip-policies" "ip-policies" "IP 策略" "IP 范围" "名单"
 run_smoke_step "admin policy simulate route" open_admin_page "/policy-simulate" "policy-simulate" "策略模拟" "应用" "模拟"
-run_smoke_step "admin resources route" open_admin_page "/resources" "resources" "资源图库" "全部文件" "新增"
+run_smoke_step "admin resources route" open_admin_page "/resources" "resources" "资源图库" "全部文件" "上传图片"
 run_smoke_step "admin audit route" open_admin_page "/audit" "audit" "审计" "原因" "结果"
 run_smoke_step "admin risk features route" open_admin_page "/risk-features" "risk-features" "训练样本" "导出样本" "人工标签"
 run_smoke_step "admin risk models route" open_admin_page "/risk-models" "risk-models" "模型管理" "质量" "上线方式"

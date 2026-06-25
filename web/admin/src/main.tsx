@@ -1793,7 +1793,7 @@ function Resources() {
       await queryClient.invalidateQueries({ queryKey: ["metrics"] });
     },
     onError: () => {
-      message.error("资源状态保存失败");
+      message.error("素材状态保存失败");
     }
   });
   const resources = data || [];
@@ -1863,7 +1863,7 @@ function Resources() {
     <Card
       title="资源图库"
       extra={(
-        <Button icon={<PlusOutlined />} type="primary" onClick={() => openCreate()}>新增</Button>
+        <Button icon={<PlusOutlined />} type="primary" onClick={() => openCreate()}>上传图片</Button>
       )}
     >
       <div className="resource-file-bar">
@@ -1891,10 +1891,10 @@ function Resources() {
         <div className="resource-gallery-empty">加载中</div>
       ) : visibleGalleryResources.length === 0 ? (
         <div className="resource-file-empty">
-          <strong>还没有上传图库资源</strong>
+          <strong>还没有上传图片素材</strong>
           <p>上传背景、图片格子或图标素材后，这里会像文件夹一样显示图片缩略图。</p>
           <Space wrap>
-            <Button icon={<PlusOutlined />} type="primary" onClick={() => openCreate()}>新增</Button>
+            <Button icon={<PlusOutlined />} type="primary" onClick={() => openCreate()}>上传图片</Button>
           </Space>
         </div>
       ) : (
@@ -1910,7 +1910,7 @@ function Resources() {
         </div>
       )}
       <Modal
-        title={`删除 ${selectedGalleryCount} 个资源？`}
+        title={`删除 ${selectedGalleryCount} 个图片素材？`}
         open={deleteOpen}
         onCancel={() => setDeleteOpen(false)}
         onOk={() => deleteMutation.mutateAsync(selectedResourceIds)}
@@ -1922,7 +1922,7 @@ function Resources() {
         <p>删除后这些图库素材不会再被验证码抽样使用。</p>
       </Modal>
       <Modal
-        title="新增图片"
+        title="上传图片素材"
         open={open}
         onCancel={() => {
           setOpen(false);
@@ -1931,7 +1931,7 @@ function Resources() {
           setUploadError("");
         }}
         onOk={() => form.submit()}
-        okText="保存资源"
+        okText="保存图片"
         cancelText="取消"
       >
         <Form
