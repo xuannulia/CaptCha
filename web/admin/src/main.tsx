@@ -2154,7 +2154,7 @@ function RiskFeatures() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `captcha-risk-features-${Date.now()}.jsonl`;
+      anchor.download = `captcha-training-samples-${Date.now()}.jsonl`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -2170,7 +2170,7 @@ function RiskFeatures() {
       title: resetting ? "撤销训练标注" : `确认${labelText}`,
       content: (
         <div className="confirm-copy">
-          <p>样本 {compactText(row.attempt_id, 28)}</p>
+          <p>样本编号 {compactText(row.attempt_id, 28)}</p>
           <p>{resetting ? "撤销后该样本会回到候选状态，不再进入默认训练导出。" : "确认后该样本会被标记为可训练，后续离线训练导出会默认包含它。"}</p>
         </div>
       ),
@@ -2200,11 +2200,11 @@ function RiskFeatures() {
   };
   const columns: ColumnsType<RiskFeatureSnapshot> = [
     { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
-    { title: "样本", render: (_, row) => <span title={row.attempt_id}>{compactText(row.attempt_id, 24)}</span> },
+    { title: "样本编号", render: (_, row) => <span title={row.attempt_id}>{compactText(row.attempt_id, 24)}</span> },
     { title: "场景", dataIndex: "scene" },
     { title: "验证码", render: (_, row) => captchaLabel(row.challenge_type) },
-    { title: "标签", render: (_, row) => riskLabel(row.label) },
-    { title: "特征集", dataIndex: "feature_version" },
+    { title: "人工标签", render: (_, row) => riskLabel(row.label) },
+    { title: "样本版本", dataIndex: "feature_version" },
     { title: "状态", render: (_, row) => <Tag color={row.model_trainable ? "green" : "default"}>{row.model_trainable ? "入训样本" : "候选样本"}</Tag> },
     {
       title: "操作",
@@ -2240,7 +2240,7 @@ function RiskFeatures() {
       >
         <Form.Item name="scene" label="场景"><Input placeholder="login" /></Form.Item>
         <Form.Item name="challenge_type" label="验证码"><Select allowClear style={{ width: 170 }} options={selectOptions(captchaTypes)} /></Form.Item>
-        <Form.Item name="label" label="标签"><Select allowClear style={{ width: 170 }} options={selectOptions(["unknown", "captcha_pass", "captcha_retry", "likely_human", "likely_bot", "confirmed_human", "confirmed_bot"])} /></Form.Item>
+        <Form.Item name="label" label="人工标签"><Select allowClear style={{ width: 170 }} options={selectOptions(["unknown", "captcha_pass", "captcha_retry", "likely_human", "likely_bot", "confirmed_human", "confirmed_bot"])} /></Form.Item>
         <Form.Item name="model_trainable" label="状态"><Select allowClear style={{ width: 130 }} options={[{ value: "true", label: "入训样本" }, { value: "false", label: "候选样本" }]} /></Form.Item>
         <Button htmlType="submit">查询</Button>
         <Button htmlType="reset">重置</Button>
