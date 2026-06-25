@@ -861,9 +861,12 @@ function RuntimeChallenge() {
       suppressNextBoardClick.current = false;
       return;
     }
-    if (isJigsawCaptcha(challenge)) return;
     const point = challengePointFromEvent(event, challenge, boardRef.current);
     const nextTrack = appendTrack("end", point.x, point.y);
+    if (isJigsawCaptcha(challenge)) {
+      toggleJigsawPoint(point, nextTrack);
+      return;
+    }
     toggleClickPoint(point, nextTrack);
   }
 

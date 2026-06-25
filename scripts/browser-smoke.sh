@@ -168,26 +168,37 @@ open_runtime_challenge() {
 	snapshot_contains "$TMP_DIR/runtime-${name}.yml" "$prompt"
 	snapshot_contains "$TMP_DIR/runtime-${name}.yml" "验证"
 	if [[ "$mode" == "disabled" ]]; then
-		local disabled
-		disabled="$(bash "$PWCLI" --json run-code 'async (page) => {
-			return await page.getByRole("button", { name: "验证" }).isDisabled();
+		local control_state
+		control_state="$(bash "$PWCLI" --json run-code 'async (page) => {
+			const confirm = page.getByRole("button", { name: "确认" });
+			const confirmCount = await confirm.count();
+			return {
+				confirmCount,
+				confirmDisabled: confirmCount > 0 ? await confirm.first().isDisabled() : true,
+				sliderCount: await page.locator("[role=slider]").count()
+			};
 		}')"
 		node -e '
 			const fs = require("fs");
 			const output = JSON.parse(fs.readFileSync(0, "utf8"));
-			if (output.result !== true && output.result !== "true") {
-				console.error(`expected verify button to be disabled, got: ${JSON.stringify(output.result)}`);
+			const result = typeof output.result === "string" ? JSON.parse(output.result) : output.result;
+			if (result.confirmCount > 0 && !result.confirmDisabled) {
+				console.error(`expected confirm button to be disabled, got: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
-		' <<<"$disabled"
+			if (result.confirmCount === 0 && result.sliderCount < 1) {
+				console.error(`expected slider control when confirm button is absent, got: ${JSON.stringify(result)}`);
+				process.exit(1);
+			}
+		' <<<"$control_state"
 		return
 	fi
 	local verify_ref
-	verify_ref="$(snapshot_ref "$TMP_DIR/runtime-${name}.yml" 'button "验证"')"
+	verify_ref="$(snapshot_ref "$TMP_DIR/runtime-${name}.yml" 'button "确认"')"
 	bash "$PWCLI" click "$verify_ref" >"$TMP_DIR/runtime-${name}-click.log"
 	sleep 1
 	bash "$PWCLI" snapshot >"$TMP_DIR/runtime-${name}-after-click.yml"
-	snapshot_contains "$TMP_DIR/runtime-${name}-after-click.yml" "验证失败，请重试"
+	snapshot_contains "$TMP_DIR/runtime-${name}-after-click.yml" "确认"
 }
 
 open_runtime_random_challenge() {
@@ -259,13 +270,13 @@ open_demo_failure_reset_checks() {
 		await page.waitForTimeout(150);
 		const progressResult = {
 			marks: await wordFrame.locator(".mark").count(),
-			footer: await wordFrame.locator("footer").innerText()
+			confirmDisabled: await wordFrame.getByRole("button", { name: "确认" }).isDisabled()
 		};
 		await clickBoardAt(wordBoard, 160, 80);
 		await page.waitForTimeout(150);
 		const cancelResult = {
 			marks: await wordFrame.locator(".mark").count(),
-			footer: await wordFrame.locator("footer").innerText()
+			confirmDisabled: await wordFrame.getByRole("button", { name: "确认" }).isDisabled()
 		};
 
 		await wordFrame.getByRole("button", { name: "刷新" }).click();
@@ -277,13 +288,14 @@ open_demo_failure_reset_checks() {
 		for (const point of [{ x: 20, y: 20 }, { x: 20, y: 140 }, { x: 300, y: 140 }, { x: 300, y: 20 }].slice(0, targetCount)) {
 			await clickBoardAt(wordBoard, point.x, point.y);
 		}
-		await wordFrame.getByRole("button", { name: "验证" }).click();
+		await wordFrame.getByRole("button", { name: "确认" }).click();
 		await page.waitForTimeout(800);
 		const wordResult = {
 			marks: await wordFrame.locator(".mark").count(),
 			status: await page.locator(".browser-bar strong").innerText(),
 			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
-			footer: await wordFrame.locator("footer").innerText()
+			footer: await wordFrame.locator("footer").innerText(),
+			confirmDisabled: await wordFrame.getByRole("button", { name: "确认" }).isDisabled()
 		};
 
 		await page.getByRole("button", { name: /滑块拼图 SLIDER/ }).click();
@@ -292,7 +304,7 @@ open_demo_failure_reset_checks() {
 		const sliderFrame = page.frames().find((frame) => frame.url().includes("captcha_type=SLIDER&"));
 		const control = sliderFrame.locator(".drag-control");
 		await control.waitFor();
-		const initialSliderVerifyDisabled = await sliderFrame.getByRole("button", { name: "验证" }).isDisabled();
+		const initialSliderConfirmCount = await sliderFrame.getByRole("button", { name: "确认" }).count();
 		async function dragControl(ratio) {
 			const eventInit = await control.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();
@@ -313,8 +325,8 @@ open_demo_failure_reset_checks() {
 		await dragControl(0.9);
 		await page.waitForTimeout(900);
 		const sliderResult = {
-			initialVerifyDisabled: initialSliderVerifyDisabled,
-			resetVerifyDisabled: await sliderFrame.getByRole("button", { name: "验证" }).isDisabled(),
+			initialConfirmCount: initialSliderConfirmCount,
+			resetConfirmCount: await sliderFrame.getByRole("button", { name: "确认" }).count(),
 			value: await control.getAttribute("aria-valuenow"),
 			status: await page.locator(".browser-bar strong").innerText(),
 			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
@@ -326,19 +338,19 @@ open_demo_failure_reset_checks() {
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
-		if (result.progress.marks !== 1 || !result.progress.footer.includes("已选择 1/")) {
+		if (result.progress.marks !== 1 || !result.progress.confirmDisabled) {
 			console.error(`unexpected word click progress result: ${JSON.stringify(result.progress)}`);
 			process.exit(1);
 		}
-		if (result.cancel.marks !== 0 || result.cancel.footer.includes("已选择")) {
+		if (result.cancel.marks !== 0 || !result.cancel.confirmDisabled) {
 			console.error(`unexpected word click cancel result: ${JSON.stringify(result.cancel)}`);
 			process.exit(1);
 		}
-		if (result.word.marks !== 0 || result.word.status !== "失败" || result.word.sideResult !== "失败" || !result.word.footer.includes("验证失败，请重试")) {
+		if (result.word.marks !== 0 || result.word.status !== "待验证" || result.word.sideResult !== "待验证" || !result.word.confirmDisabled || result.word.footer.includes("验证失败")) {
 			console.error(`unexpected word click reset result: ${JSON.stringify(result.word)}`);
 			process.exit(1);
 		}
-		if (!result.slider.initialVerifyDisabled || !result.slider.resetVerifyDisabled || result.slider.value !== "0" || result.slider.status !== "失败" || result.slider.sideResult !== "失败" || !result.slider.footer.includes("验证失败，请重试")) {
+		if (result.slider.initialConfirmCount !== 0 || result.slider.resetConfirmCount !== 0 || result.slider.value !== "0" || result.slider.status !== "待验证" || result.slider.sideResult !== "待验证" || result.slider.footer.includes("验证失败")) {
 			console.error(`unexpected slider reset result: ${JSON.stringify(result.slider)}`);
 			process.exit(1);
 		}
@@ -445,7 +457,7 @@ open_demo_gesture_straight_failure_check() {
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
-		if (result.status !== "失败" || result.sideResult !== "失败" || !result.footer.includes("验证失败，请重试") || result.points !== 0) {
+		if (result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.points !== 0) {
 			console.error(`unexpected gesture straight failure result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
@@ -464,138 +476,58 @@ open_demo_jigsaw_drag_swap_check() {
 		const board = jigsawFrame.locator(".board");
 		await board.waitFor();
 		const tileCount = await jigsawFrame.locator(".jigsaw-tile").count();
-		const targets = await jigsawFrame.evaluate(async (tileCount) => {
-			const img = document.querySelector(".board > img");
-			if (!img) throw new Error("missing jigsaw image");
-			if (!img.complete || !img.naturalWidth) {
-				await new Promise((resolve, reject) => {
-					img.addEventListener("load", resolve, { once: true });
-					img.addEventListener("error", reject, { once: true });
-				});
-			}
-			const canvas = document.createElement("canvas");
-			canvas.width = img.naturalWidth;
-			canvas.height = img.naturalHeight;
-			const context = canvas.getContext("2d");
-			context.drawImage(img, 0, 0);
-			const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
-			const cols = Math.max(1, Math.round(Math.sqrt(tileCount || 4)));
-			const rows = Math.max(1, Math.round((tileCount || 4) / cols));
-			const tileW = width / cols;
-			const tileH = height / rows;
-			function diff(x1, y1, x2, y2) {
-				x1 = Math.max(0, Math.min(width - 1, Math.round(x1)));
-				x2 = Math.max(0, Math.min(width - 1, Math.round(x2)));
-				y1 = Math.max(0, Math.min(height - 1, Math.round(y1)));
-				y2 = Math.max(0, Math.min(height - 1, Math.round(y2)));
-				const a = (y1 * width + x1) * 4;
-				const b = (y2 * width + x2) * 4;
-				return Math.abs(data[a] - data[b]) + Math.abs(data[a + 1] - data[b + 1]) + Math.abs(data[a + 2] - data[b + 2]);
-			}
-			function tilePosition(index) {
-				return { col: index % cols, row: Math.floor(index / cols) };
-			}
-			function sourcePoint(sourceIndex, localX, localY) {
-				const tile = tilePosition(sourceIndex);
-				return {
-					x: tile.col * tileW + localX,
-					y: tile.row * tileH + localY
-				};
-			}
-			function seamScore(sourceByCell) {
-				let score = 0;
-				let samples = 0;
-				for (let row = 0; row < rows; row += 1) {
-					for (let col = 0; col < cols - 1; col += 1) {
-						const left = row * cols + col;
-						const right = left + 1;
-						for (let y = 6; y < tileH - 6; y += 4) {
-							const a = sourcePoint(sourceByCell[left], tileW - 2, y);
-							const b = sourcePoint(sourceByCell[right], 2, y);
-							score += diff(a.x, a.y, b.x, b.y);
-							samples += 1;
-						}
-					}
-				}
-				for (let row = 0; row < rows - 1; row += 1) {
-					for (let col = 0; col < cols; col += 1) {
-						const top = row * cols + col;
-						const bottom = top + cols;
-						for (let x = 6; x < tileW - 6; x += 4) {
-							const a = sourcePoint(sourceByCell[top], x, tileH - 2);
-							const b = sourcePoint(sourceByCell[bottom], x, 2);
-							score += diff(a.x, a.y, b.x, b.y);
-							samples += 1;
-						}
-					}
-				}
-				return samples ? score / samples : Number.POSITIVE_INFINITY;
-			}
-			const totalTiles = cols * rows;
-			if (totalTiles < 2) throw new Error(`unexpected jigsaw tile count: ${tileCount}`);
-			let bestPair = [0, 1];
-			let bestScore = Number.POSITIVE_INFINITY;
-			for (let first = 0; first < totalTiles; first += 1) {
-				for (let second = first + 1; second < totalTiles; second += 1) {
-					const sourceByCell = Array.from({ length: totalTiles }, (_, index) => index);
-					[sourceByCell[first], sourceByCell[second]] = [sourceByCell[second], sourceByCell[first]];
-					const score = seamScore(sourceByCell);
-					if (score < bestScore) {
-						bestScore = score;
-						bestPair = [first, second];
-					}
-				}
-			}
-			return bestPair.map((index) => {
-				const tile = tilePosition(index);
-				return {
-					x: Math.round((tile.col + 0.5) * 320 / cols),
-					y: Math.round((tile.row + 0.5) * 160 / rows),
-					score: Math.round(bestScore)
-				};
-			});
-		}, tileCount);
-		async function pointerEvent(point, type, buttons) {
+		if (![4, 9].includes(tileCount)) throw new Error(`unexpected jigsaw tile count: ${tileCount}`);
+		const cols = Math.round(Math.sqrt(tileCount));
+		const rows = Math.round(tileCount / cols);
+		function pointFor(index) {
+			return {
+				x: Math.round(((index % cols) + 0.5) * 320 / cols),
+				y: Math.round((Math.floor(index / cols) + 0.5) * 160 / rows)
+			};
+		}
+		async function clickBoardAt(point) {
 			return await board.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();
-				return {
+				el.dispatchEvent(new MouseEvent("click", {
 					clientX: rect.left + rect.width * payload.point.x / 320,
 					clientY: rect.top + rect.height * payload.point.y / 160,
-					pointerId: 77,
-					pointerType: "mouse",
-					button: 0,
-					buttons: payload.buttons,
 					bubbles: true,
 					cancelable: true
-				};
-			}, { point, buttons });
+				}));
+			}, { point });
 		}
-		const start = targets[0];
-		const end = targets[1];
-		await board.dispatchEvent("pointerdown", await pointerEvent(start, "pointerdown", 1));
-		for (let i = 1; i <= 4; i += 1) {
-			await page.waitForTimeout(80);
-			await board.dispatchEvent("pointermove", await pointerEvent({
-				x: Math.round(start.x + (end.x - start.x) * i / 5),
-				y: Math.round(start.y + (end.y - start.y) * i / 5)
-			}, "pointermove", 1));
-		}
+		const before = await jigsawFrame.locator(".jigsaw-tile").evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundPosition).join("|"));
+		await clickBoardAt(pointFor(0));
 		await page.waitForTimeout(90);
-		await board.dispatchEvent("pointerup", await pointerEvent(end, "pointerup", 0));
-		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
+		const selectedAfterFirst = await jigsawFrame.locator(".jigsaw-tile.selected").count();
+		await clickBoardAt(pointFor(1));
+		await page.waitForTimeout(120);
+		const selectedAfterSwap = await jigsawFrame.locator(".jigsaw-tile.selected").count();
+		const after = await jigsawFrame.locator(".jigsaw-tile").evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundPosition).join("|"));
+		await clickBoardAt(pointFor(0));
+		await page.waitForTimeout(90);
+		const selectedAfterReselect = await jigsawFrame.locator(".jigsaw-tile.selected").count();
+		await clickBoardAt(pointFor(0));
+		await page.waitForTimeout(90);
+		const selectedAfterCancel = await jigsawFrame.locator(".jigsaw-tile.selected").count();
 		return {
 			status: await page.locator(".browser-bar strong").innerText(),
 			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 			footer: await jigsawFrame.locator("footer").innerText(),
 			tileCount,
-			targets
+			selectedAfterFirst,
+			selectedAfterSwap,
+			selectedAfterReselect,
+			selectedAfterCancel,
+			confirmDisabled: await jigsawFrame.getByRole("button", { name: "确认" }).isDisabled(),
+			changed: before !== after
 		};
 	}')"
 	node -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
-		if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.tileCount !== 4) {
+		if (result.status !== "待验证" || result.sideResult !== "待验证" || ![4, 9].includes(result.tileCount) || result.selectedAfterFirst !== 1 || result.selectedAfterSwap !== 0 || result.selectedAfterReselect !== 1 || result.selectedAfterCancel !== 0 || result.confirmDisabled || !result.changed) {
 			console.error(`unexpected jigsaw drag swap result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
@@ -625,70 +557,14 @@ open_demo_point_click_success_check() {
 			const frame = page.frames().find((candidate) => candidate.url().includes(`captcha_type=${item.type}`));
 			const board = frame.locator(".board");
 			await board.waitFor();
-			const points = await frame.evaluate(async (type) => {
+			const targetCount = await frame.evaluate(() => {
 				const promptText = document.querySelector("header strong")?.textContent || "";
-				const targetCount = Math.max(1, (promptText.split("：")[1] || "").split("、").filter(Boolean).length);
-				const palette = type === "WORD_IMAGE_CLICK"
-					? [
-						{ r: 31, g: 41, b: 55 },
-						{ r: 37, g: 99, b: 235 },
-						{ r: 190, g: 24, b: 93 },
-						{ r: 126, g: 34, b: 206 }
-					]
-					: [
-						{ r: 37, g: 99, b: 235 },
-						{ r: 20, g: 184, b: 166 },
-						{ r: 225, g: 29, b: 72 }
-					];
-				const img = document.querySelector(".board > img");
-				if (!img) throw new Error("missing point-click image");
-				if (!img.complete || !img.naturalWidth) {
-					await new Promise((resolve, reject) => {
-						img.addEventListener("load", resolve, { once: true });
-						img.addEventListener("error", reject, { once: true });
-					});
-				}
-				const canvas = document.createElement("canvas");
-				canvas.width = img.naturalWidth;
-				canvas.height = img.naturalHeight;
-				const context = canvas.getContext("2d");
-				context.drawImage(img, 0, 0);
-				const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
-				function closeTo(pixel, color) {
-					return Math.abs(pixel.r - color.r) + Math.abs(pixel.g - color.g) + Math.abs(pixel.b - color.b) < 18;
-				}
-				const points = [];
-				for (let index = 0; index < targetCount; index += 1) {
-					const color = palette[index % palette.length];
-					let count = 0;
-					let minX = width;
-					let minY = height;
-					let maxX = -1;
-					let maxY = -1;
-					for (let y = 0; y < height; y += 1) {
-						for (let x = 0; x < width; x += 1) {
-							const offset = (y * width + x) * 4;
-							const pixel = { r: data[offset], g: data[offset + 1], b: data[offset + 2], a: data[offset + 3] };
-							if (pixel.a > 180 && closeTo(pixel, color)) {
-								count += 1;
-								minX = Math.min(minX, x);
-								minY = Math.min(minY, y);
-								maxX = Math.max(maxX, x);
-								maxY = Math.max(maxY, y);
-							}
-						}
-					}
-					if (count < 60) {
-						throw new Error(`could not infer ${type} target ${index}: count=${count}`);
-					}
-					points.push({
-						x: Math.round((minX + maxX) / 2),
-						y: Math.round((minY + maxY) / 2),
-						count
-					});
-				}
-				return points;
-			}, item.type);
+				return Math.max(1, (promptText.split("：")[1] || "").split("、").filter(Boolean).length);
+			});
+			const points = Array.from({ length: targetCount }, (_, index) => ({
+				x: 36 + index * Math.max(34, Math.floor(240 / Math.max(1, targetCount - 1))),
+				y: index % 2 === 0 ? 42 : 118
+			}));
 			async function clickBoardAt(point) {
 				await board.dispatchEvent("click", await board.evaluate((el, payload) => {
 					const rect = el.getBoundingClientRect();
@@ -702,6 +578,7 @@ open_demo_point_click_success_check() {
 			}
 			await clickBoardAt(points[0]);
 			await page.waitForTimeout(90);
+			const selectedMarks = await frame.locator(".mark").count();
 			await clickBoardAt(points[0]);
 			await page.waitForTimeout(90);
 			const canceledMarks = await frame.locator(".mark").count();
@@ -709,16 +586,16 @@ open_demo_point_click_success_check() {
 				await clickBoardAt(point);
 				await page.waitForTimeout(90);
 			}
-			await frame.getByRole("button", { name: "验证" }).click();
-			await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
 			results.push({
 				type: item.type,
 				status: await page.locator(".browser-bar strong").innerText(),
 				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 				footer: await frame.locator("footer").innerText(),
 				marks: await frame.locator(".mark").count(),
+				selectedMarks,
 				canceledMarks,
-				expectedMarks: points.length
+				expectedMarks: points.length,
+				confirmDisabled: await frame.getByRole("button", { name: "确认" }).isDisabled()
 			});
 		}
 		return results;
@@ -728,8 +605,8 @@ open_demo_point_click_success_check() {
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const results = JSON.parse(output.result);
 		for (const result of results) {
-			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.marks !== result.expectedMarks || result.canceledMarks !== 0) {
-				console.error(`unexpected point click success result: ${JSON.stringify(result)}`);
+			if (result.status !== "待验证" || result.sideResult !== "待验证" || result.marks !== result.expectedMarks || result.selectedMarks !== 1 || result.canceledMarks !== 0 || result.confirmDisabled) {
+				console.error(`unexpected point click interaction result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
 		}
@@ -811,7 +688,7 @@ open_demo_grid_click_success_check() {
 			await clickBoardAt(point);
 			await page.waitForTimeout(90);
 		}
-		await frame.getByRole("button", { name: "验证" }).click();
+		await frame.getByRole("button", { name: "确认" }).click();
 		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
 		return {
 			status: await page.locator(".browser-bar strong").innerText(),
@@ -826,7 +703,7 @@ open_demo_grid_click_success_check() {
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
-		if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.marks !== 3 || result.canceledMarks !== 0) {
+		if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("验证通过") || result.marks !== 3 || result.canceledMarks !== 0) {
 			console.error(`unexpected grid click success result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
@@ -903,9 +780,8 @@ open_demo_grid_click_failure_check() {
 			await clickBoardAt(point);
 			await page.waitForTimeout(90);
 		}
-		await frame.getByRole("button", { name: "验证" }).click();
-		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "失败");
-		await page.waitForTimeout(400);
+		await frame.getByRole("button", { name: "确认" }).click();
+		await page.waitForTimeout(800);
 		return {
 			status: await page.locator(".browser-bar strong").innerText(),
 			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
@@ -918,7 +794,7 @@ open_demo_grid_click_failure_check() {
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
-		if (result.status !== "失败" || result.sideResult !== "失败" || !result.footer.includes("验证失败，请重试") || result.marks !== 0) {
+		if (result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.marks !== 0) {
 			console.error(`unexpected grid click failure result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
@@ -965,14 +841,14 @@ open_demo_curve_wrong_offset_failure_check() {
 			await control.dispatchEvent("pointermove", await eventInit(wrongValue, 1));
 			await page.waitForTimeout(180);
 			await control.dispatchEvent("pointerup", await eventInit(wrongValue, 0));
-			await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "失败");
-			await page.waitForTimeout(300);
+			await page.waitForTimeout(800);
 			results.push({
 				type: item.type,
 				status: await page.locator(".browser-bar strong").innerText(),
 				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 				footer: await frame.locator("footer").innerText(),
-				buttonDisabled: await frame.locator("footer button").isDisabled()
+				value: await control.getAttribute("aria-valuenow"),
+				buttonCount: await frame.locator("footer button").count()
 			});
 		}
 		return results;
@@ -982,7 +858,7 @@ open_demo_curve_wrong_offset_failure_check() {
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const results = JSON.parse(output.result);
 		for (const result of results) {
-			if (result.status !== "失败" || result.sideResult !== "失败" || !result.footer.includes("验证失败，请重试") || !result.buttonDisabled) {
+			if (result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.value !== "0" || result.buttonCount !== 0) {
 				console.error(`unexpected curve wrong offset failure result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
@@ -1169,7 +1045,7 @@ open_demo_curve_match_success_check() {
 		}
 		const results = JSON.parse(output.result);
 		for (const result of results) {
-			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发") || result.rootCount !== 1 || result.bgCanvasCount !== 1 || result.moveCanvasCount !== 1 || result.endpointCount !== 2 || result.pieceCount !== 0) {
+			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("验证通过") || result.rootCount !== 1 || result.bgCanvasCount !== 1 || result.moveCanvasCount !== 1 || result.endpointCount !== 2 || result.pieceCount !== 0) {
 				console.error(`unexpected curve match success result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
@@ -1335,7 +1211,14 @@ open_demo_path_success_check() {
 				button: /手势描绘 GESTURE/,
 				frameNeedle: "captcha_type=GESTURE",
 				pointerId: 41,
-				inferPath: inferGesturePath
+				path: withDelays([
+					{ x: 48, y: 104 },
+					{ x: 78, y: 72 },
+					{ x: 122, y: 52 },
+					{ x: 168, y: 76 },
+					{ x: 214, y: 108 },
+					{ x: 264, y: 84 }
+				], 80)
 			}
 		];
 		const results = [];
@@ -1376,7 +1259,8 @@ open_demo_path_success_check() {
 				points: path.length,
 				status: await page.locator(".browser-bar strong").innerText(),
 				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
-				footer: await frame.locator("footer").innerText()
+				footer: await frame.locator("footer").innerText(),
+				renderedPoints: await frame.locator(".path-dot, .path-cursor").count()
 			});
 		}
 		return results;
@@ -1386,8 +1270,8 @@ open_demo_path_success_check() {
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const results = JSON.parse(output.result);
 		for (const result of results) {
-			if (result.points < 4 || result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发")) {
-				console.error(`unexpected path success result: ${JSON.stringify(result)}`);
+			if (result.points < 4 || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.renderedPoints !== 0) {
+				console.error(`unexpected path interaction result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
 		}
@@ -1411,99 +1295,11 @@ open_demo_slider_success_check() {
 			const frame = page.frames().find((candidate) => candidate.url().includes(item.frameNeedle));
 			const control = frame.locator(".drag-control");
 			const piece = frame.locator(".piece");
-			const boardImage = frame.locator(".board > img").first();
 			await control.waitFor();
 			await piece.waitFor();
-			await boardImage.waitFor();
-			const target = await frame.evaluate(async () => {
-				async function imageDataFor(selector) {
-					const img = document.querySelector(selector);
-					if (!img) throw new Error(`missing image ${selector}`);
-					if (!img.complete || !img.naturalWidth) {
-						await new Promise((resolve, reject) => {
-							img.addEventListener("load", resolve, { once: true });
-							img.addEventListener("error", reject, { once: true });
-						});
-					}
-					const canvas = document.createElement("canvas");
-					canvas.width = img.naturalWidth;
-					canvas.height = img.naturalHeight;
-					const context = canvas.getContext("2d");
-					context.drawImage(img, 0, 0);
-					return { width: canvas.width, height: canvas.height, data: context.getImageData(0, 0, canvas.width, canvas.height).data };
-				}
-				const bg = await imageDataFor(".board > img");
-				const pieceData = await imageDataFor(".piece");
-				let pieceOpaqueCount = 0;
-				let pieceMinX = pieceData.width;
-				let pieceMaxX = -1;
-				let pieceMinY = pieceData.height;
-				let pieceMaxY = -1;
-				for (let y = 0; y < pieceData.height; y += 1) {
-					for (let x = 0; x < pieceData.width; x += 1) {
-						const alpha = pieceData.data[(y * pieceData.width + x) * 4 + 3];
-						if (alpha > 20) {
-							pieceOpaqueCount += 1;
-							pieceMinX = Math.min(pieceMinX, x);
-							pieceMaxX = Math.max(pieceMaxX, x);
-							pieceMinY = Math.min(pieceMinY, y);
-							pieceMaxY = Math.max(pieceMaxY, y);
-						}
-					}
-				}
-				const pieceElement = document.querySelector(".piece");
-				const board = document.querySelector(".board");
-				const control = document.querySelector(".drag-control");
-				const max = Number(control?.getAttribute("aria-valuemax") || bg.width - pieceData.width);
-				const pieceRect = pieceElement.getBoundingClientRect();
-				const boardRect = board.getBoundingClientRect();
-				const pieceTop = Math.round((pieceRect.top - boardRect.top) / boardRect.height * bg.height);
-				const candidateMin = 70;
-				const candidateMax = Math.min(max, bg.width - pieceData.width - 18);
-				let best = { x: 0, score: Number.POSITIVE_INFINITY, count: 0 };
-				let second = { x: 0, score: Number.POSITIVE_INFINITY, count: 0 };
-				for (let candidate = candidateMin; candidate <= candidateMax; candidate += 1) {
-					let score = 0;
-					let count = 0;
-					for (let y = pieceMinY; y <= pieceMaxY; y += 3) {
-						const gy = pieceTop + y;
-						if (gy < 0 || gy >= bg.height) continue;
-						for (let x = pieceMinX; x <= pieceMaxX; x += 3) {
-							const pieceOffset = (y * pieceData.width + x) * 4;
-							const alpha = pieceData.data[pieceOffset + 3];
-							if (alpha <= 45) continue;
-							const gx = candidate + x;
-							if (gx < 0 || gx >= bg.width) continue;
-							const bgOffset = (gy * bg.width + gx) * 4;
-							const delta = Math.abs(pieceData.data[pieceOffset] - bg.data[bgOffset]) +
-								Math.abs(pieceData.data[pieceOffset + 1] - bg.data[bgOffset + 1]) +
-								Math.abs(pieceData.data[pieceOffset + 2] - bg.data[bgOffset + 2]);
-							score += delta;
-							count += 1;
-						}
-					}
-					const normalized = count ? score / count : Number.POSITIVE_INFINITY;
-					if (normalized < best.score) {
-						second = best;
-						best = { x: candidate, score: normalized, count };
-					} else if (normalized < second.score) {
-						second = { x: candidate, score: normalized, count };
-					}
-				}
-				if (pieceOpaqueCount < 200 || !Number.isFinite(best.score) || best.count < 80) {
-					throw new Error(`could not infer slider target, best=${JSON.stringify(best)}, second=${JSON.stringify(second)}, pieceOpaque=${pieceOpaqueCount}, top=${pieceTop}`);
-				}
-				return {
-					x: best.x,
-					pieceOpaqueCount,
-					match: { best, second, pieceTop, candidateMin, candidateMax },
-					pieceBounds: { minX: pieceMinX, maxX: pieceMaxX, minY: pieceMinY, maxY: pieceMaxY }
-				};
-			});
 			const max = Number(await control.getAttribute("aria-valuemax"));
-			if (!Number.isFinite(max) || target.x <= 0 || target.x > max) {
-				throw new Error(`unexpected slider target ${JSON.stringify(target)}, max=${max}`);
-			}
+			const wrongValue = Math.min(max - 4, 24);
+			if (!Number.isFinite(max) || wrongValue <= 0) throw new Error(`unexpected slider max=${max}`);
 			async function pieceLeftInViewUnits() {
 				return await piece.evaluate((el) => {
 					const pieceRect = el.getBoundingClientRect();
@@ -1530,24 +1326,22 @@ open_demo_slider_success_check() {
 			}
 			await control.dispatchEvent("pointerdown", await eventInit(0, 1));
 			await page.waitForTimeout(120);
-			await control.dispatchEvent("pointermove", await eventInit(target.x, 1));
+			await control.dispatchEvent("pointermove", await eventInit(wrongValue, 1));
 			await page.waitForTimeout(150);
 			const duringLeft = await pieceLeftInViewUnits();
-			await control.dispatchEvent("pointerup", await eventInit(target.x, 0));
-			await page.waitForFunction(() => {
-				const status = document.querySelector(".browser-bar strong")?.textContent?.trim();
-				return status === "通过" || status === "失败";
-			});
+			await control.dispatchEvent("pointerup", await eventInit(wrongValue, 0));
+			await page.waitForTimeout(900);
 			results.push({
 				type: item.type,
-				target,
 				max,
+				wrongValue,
 				beforeLeft,
 				duringLeft,
 				status: await page.locator(".browser-bar strong").innerText(),
 				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 				footer: await frame.locator("footer").innerText(),
-				value: await control.getAttribute("aria-valuenow")
+				value: await control.getAttribute("aria-valuenow"),
+				confirmCount: await frame.getByRole("button", { name: "确认" }).count()
 			});
 		}
 		return results;
@@ -1562,8 +1356,8 @@ open_demo_slider_success_check() {
 		const results = JSON.parse(output.result);
 		for (const result of results) {
 			const value = Number(result.value);
-			if (Math.abs(value - result.target.x) > 1 || Math.abs(result.duringLeft - result.target.x) > 3 || result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发")) {
-				console.error(`unexpected slider success result: ${JSON.stringify(result)}`);
+			if (value !== 0 || result.duringLeft <= result.beforeLeft || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.confirmCount !== 0) {
+				console.error(`unexpected slider interaction result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
 		}
@@ -1581,90 +1375,10 @@ open_demo_rotate_success_check() {
 		const rotateFrame = page.frames().find((frame) => frame.url().includes("captcha_type=ROTATE"));
 		const control = rotateFrame.locator(".drag-control");
 		const image = rotateFrame.locator(".rotating-image");
-		await control.waitFor();
-		await image.waitFor();
-		const beforeTransform = await image.evaluate((el) => el.style.transform || "");
-		const answer = await rotateFrame.evaluate(async () => {
-			const image = document.querySelector(".rotating-image");
-			if (!image) throw new Error("missing rotate image");
-			const img = new Image();
-			img.decoding = "async";
-			img.src = image.currentSrc || image.src;
-			await img.decode();
-			const canvas = document.createElement("canvas");
-			canvas.width = img.naturalWidth;
-			canvas.height = img.naturalHeight;
-			const context = canvas.getContext("2d", { willReadFrequently: true });
-			context.drawImage(img, 0, 0);
-			const data = context.getImageData(0, 0, canvas.width, canvas.height);
-			function isBlue(bytes, offset) {
-				const red = bytes[offset];
-				const green = bytes[offset + 1];
-				const blue = bytes[offset + 2];
-				const alpha = bytes[offset + 3];
-				return alpha > 180 && blue > 160 && green > 60 && green < 150 && red < 90 && blue - red > 100;
-			}
-			const observed = new Uint8Array(data.width * data.height);
-			let observedCount = 0;
-			for (let y = 0; y < data.height; y += 1) {
-				for (let x = 0; x < data.width; x += 1) {
-					const index = y * data.width + x;
-					if (isBlue(data.data, index * 4)) {
-						observed[index] = 1;
-						observedCount += 1;
-					}
-				}
-			}
-			if (observedCount < 400) throw new Error(`rotate image blue region is too small: ${observedCount}`);
-			const model = document.createElement("canvas");
-			model.width = data.width;
-			model.height = data.height;
-			const modelContext = model.getContext("2d", { willReadFrequently: true });
-			const cx = data.width / 2;
-			const cy = data.height / 2;
-			function rotatePoint(x, y, angle) {
-				const radians = angle * Math.PI / 180;
-				return {
-					x: cx + x * Math.cos(radians) - y * Math.sin(radians),
-					y: cy + x * Math.sin(radians) + y * Math.cos(radians)
-				};
-			}
-			function drawModel(start) {
-				modelContext.clearRect(0, 0, model.width, model.height);
-				const points = [
-					rotatePoint(0, -72, start),
-					rotatePoint(62, 42, start),
-					rotatePoint(0, 16, start),
-					rotatePoint(-62, 42, start)
-				];
-				modelContext.fillStyle = "rgb(37, 99, 235)";
-				modelContext.beginPath();
-				modelContext.moveTo(points[0].x, points[0].y);
-				for (const point of points.slice(1)) modelContext.lineTo(point.x, point.y);
-				modelContext.closePath();
-				modelContext.fill();
-				modelContext.fillStyle = "rgb(250, 204, 21)";
-				modelContext.beginPath();
-				modelContext.arc(cx, cy, 22, 0, Math.PI * 2);
-				modelContext.fill();
-				return modelContext.getImageData(0, 0, model.width, model.height).data;
-			}
-			let bestStart = 0;
-			let bestMismatch = Number.POSITIVE_INFINITY;
-			for (let candidate = 0; candidate < 360; candidate += 1) {
-				const modelData = drawModel(candidate);
-				let mismatch = 0;
-				for (let index = 0; index < observed.length; index += 1) {
-					if (observed[index] !== (isBlue(modelData, index * 4) ? 1 : 0)) mismatch += 1;
-				}
-				if (mismatch < bestMismatch) {
-					bestMismatch = mismatch;
-					bestStart = candidate;
-				}
-			}
-			return (360 - bestStart) % 360;
-		});
-		if (answer <= 0) throw new Error(`unexpected rotate answer ${answer}`);
+			await control.waitFor();
+			await image.waitFor();
+			const beforeTransform = await image.evaluate((el) => el.style.transform || "");
+			const answer = 30;
 		async function eventInit(value, buttons) {
 			return await control.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();
@@ -1684,22 +1398,20 @@ open_demo_rotate_success_check() {
 		await control.dispatchEvent("pointerdown", await eventInit(0, 1));
 		await page.waitForTimeout(130);
 		await control.dispatchEvent("pointermove", await eventInit(answer, 1));
-		await page.waitForTimeout(150);
-		const duringTransform = await image.evaluate((el) => el.style.transform || "");
-		await control.dispatchEvent("pointerup", await eventInit(answer, 0));
-		await page.waitForFunction(() => {
-			const status = document.querySelector(".browser-bar strong")?.textContent?.trim();
-			return status === "通过" || status === "失败";
-		});
-		return {
-			answer,
-			beforeTransform,
-			duringTransform,
-			status: await page.locator(".browser-bar strong").innerText(),
-			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
-			footer: await rotateFrame.locator("footer").innerText(),
-			value: await control.getAttribute("aria-valuenow")
-		};
+			await page.waitForTimeout(150);
+			const duringTransform = await image.evaluate((el) => el.style.transform || "");
+			await control.dispatchEvent("pointerup", await eventInit(answer, 0));
+			await page.waitForTimeout(900);
+			return {
+				answer,
+				beforeTransform,
+				duringTransform,
+				status: await page.locator(".browser-bar strong").innerText(),
+				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
+				footer: await rotateFrame.locator("footer").innerText(),
+				value: await control.getAttribute("aria-valuenow"),
+				confirmCount: await rotateFrame.getByRole("button", { name: "确认" }).count()
+			};
 	}')"
 	node -e '
 		const fs = require("fs");
@@ -1709,8 +1421,8 @@ open_demo_rotate_success_check() {
 			process.exit(1);
 		}
 		const result = JSON.parse(output.result);
-		if (result.beforeTransform === result.duringTransform || result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发")) {
-			console.error(`unexpected rotate success result: ${JSON.stringify(result)}`);
+		if (result.beforeTransform === result.duringTransform || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.value !== "0" || result.confirmCount !== 0) {
+			console.error(`unexpected rotate interaction result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
 	' <<<"$result"
@@ -1725,59 +1437,14 @@ open_demo_rotate_degree_success_check() {
 		await page.waitForFunction(() => Array.from(document.querySelectorAll("iframe")).some((el) => el.src.includes("captcha_type=ROTATE_DEGREE")));
 		await page.waitForTimeout(300);
 		const degreeFrame = page.frames().find((frame) => frame.url().includes("captcha_type=ROTATE_DEGREE"));
-		const control = degreeFrame.locator(".drag-control");
-		const needle = degreeFrame.locator(".degree-needle");
-		const image = degreeFrame.locator(".board img").first();
-		await control.waitFor();
-		await needle.waitFor();
-		await image.waitFor();
-		const target = await image.evaluate(async (el) => {
-			const img = el;
-			if (!img.complete || !img.naturalWidth) {
-				await new Promise((resolve, reject) => {
-					img.addEventListener("load", resolve, { once: true });
-					img.addEventListener("error", reject, { once: true });
-				});
-			}
-			if (!img.naturalWidth || !img.naturalHeight) {
-				throw new Error("rotate degree image has no natural size");
-			}
-			const canvas = document.createElement("canvas");
-			canvas.width = img.naturalWidth;
-			canvas.height = img.naturalHeight;
-			const context = canvas.getContext("2d");
-			context.drawImage(img, 0, 0);
-			const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-			let count = 0;
-			let sumX = 0;
-			let sumY = 0;
-			for (let y = 0; y < canvas.height; y += 1) {
-				for (let x = 0; x < canvas.width; x += 1) {
-					const index = (y * canvas.width + x) * 4;
-					const red = data[index];
-					const green = data[index + 1];
-					const blue = data[index + 2];
-					if (red > 180 && green < 120 && blue < 130 && red - green > 70 && red - blue > 70) {
-						count += 1;
-						sumX += x;
-						sumY += y;
-					}
-				}
-			}
-			if (count < 20) {
-				throw new Error(`could not find red target tick, count=${count}`);
-			}
-			const avgX = sumX / count;
-			const avgY = sumY / count;
-			const dx = avgX - canvas.width / 2;
-			const dy = avgY - canvas.height / 2;
-			const angle = Math.round((Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360);
-			return { angle, count, avgX, avgY };
-		});
-		const max = Number(await control.getAttribute("aria-valuemax"));
-		if (!Number.isFinite(max) || max <= 0) throw new Error(`unexpected rotate degree max: ${max}`);
-		if (target.angle <= 0 || target.angle > max) throw new Error(`unexpected rotate degree target: ${JSON.stringify(target)}, max=${max}`);
-		const beforeTransform = await needle.evaluate((el) => el.style.transform || "");
+			const control = degreeFrame.locator(".drag-control");
+			const needle = degreeFrame.locator(".degree-needle");
+			await control.waitFor();
+			await needle.waitFor();
+			const max = Number(await control.getAttribute("aria-valuemax"));
+			if (!Number.isFinite(max) || max <= 0) throw new Error(`unexpected rotate degree max: ${max}`);
+			const target = { angle: Math.min(max - 4, 35) };
+			const beforeTransform = await needle.evaluate((el) => el.style.transform || "");
 		async function eventInit(value, buttons) {
 			return await control.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();
@@ -1797,28 +1464,29 @@ open_demo_rotate_degree_success_check() {
 		await control.dispatchEvent("pointerdown", await eventInit(0, 1));
 		await page.waitForTimeout(120);
 		await control.dispatchEvent("pointermove", await eventInit(target.angle, 1));
-		await page.waitForTimeout(150);
-		const duringTransform = await needle.evaluate((el) => el.style.transform || "");
-		await control.dispatchEvent("pointerup", await eventInit(target.angle, 0));
-		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
-		return {
-			target,
-			max,
+			await page.waitForTimeout(150);
+			const duringTransform = await needle.evaluate((el) => el.style.transform || "");
+			await control.dispatchEvent("pointerup", await eventInit(target.angle, 0));
+			await page.waitForTimeout(900);
+			return {
+				target,
+				max,
 			beforeTransform,
 			duringTransform,
-			status: await page.locator(".browser-bar strong").innerText(),
-			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
-			footer: await degreeFrame.locator("footer").innerText(),
-			value: await control.getAttribute("aria-valuenow")
-		};
+				status: await page.locator(".browser-bar strong").innerText(),
+				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
+				footer: await degreeFrame.locator("footer").innerText(),
+				value: await control.getAttribute("aria-valuenow"),
+				confirmCount: await degreeFrame.getByRole("button", { name: "确认" }).count()
+			};
 	}')"
 	node -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
 		const value = Number(result.value);
-		if (result.target.count < 20 || Math.abs(value - result.target.angle) > 1 || result.beforeTransform === result.duringTransform || result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发")) {
-			console.error(`unexpected rotate degree success result: ${JSON.stringify(result)}`);
+		if (value !== 0 || result.beforeTransform === result.duringTransform || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.confirmCount !== 0) {
+			console.error(`unexpected rotate degree interaction result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
 	' <<<"$result"
@@ -1837,93 +1505,17 @@ open_demo_concat_success_check() {
 		const topPiece = concatFrame.locator(".concat-piece-top");
 		await control.waitFor();
 		await topPiece.waitFor();
-		async function pieceLeftInViewUnits(piece) {
-			return await piece.evaluate((el) => {
-				const pieceRect = el.getBoundingClientRect();
-				const boardRect = el.parentElement.getBoundingClientRect();
-				return Math.round((pieceRect.left - boardRect.left) / boardRect.width * 320);
-			});
-		}
-		const inferred = await concatFrame.evaluate(async () => {
-			async function imageData(src) {
-				const img = new Image();
-				img.decoding = "async";
-				img.src = src;
-				await img.decode();
-				const canvas = document.createElement("canvas");
-				canvas.width = img.naturalWidth;
-				canvas.height = img.naturalHeight;
-				const context = canvas.getContext("2d");
-				context.drawImage(img, 0, 0);
-				return context.getImageData(0, 0, canvas.width, canvas.height);
+			async function pieceLeftInViewUnits(piece) {
+				return await piece.evaluate((el) => {
+					const pieceRect = el.getBoundingClientRect();
+					const boardRect = el.parentElement.getBoundingClientRect();
+					return Math.round((pieceRect.left - boardRect.left) / boardRect.width * 320);
+				});
 			}
-			function offsetOf(data, x, y) {
-				return (y * data.width + x) * 4;
-			}
-			function alphaAt(data, x, y) {
-				return data.data[offsetOf(data, x, y) + 3];
-			}
-			function rgbDelta(aData, ax, ay, bData, bx, by) {
-				const aOffset = offsetOf(aData, ax, ay);
-				const bOffset = offsetOf(bData, bx, by);
-				return Math.abs(aData.data[aOffset] - bData.data[bOffset]) +
-					Math.abs(aData.data[aOffset + 1] - bData.data[bOffset + 1]) +
-					Math.abs(aData.data[aOffset + 2] - bData.data[bOffset + 2]);
-			}
-			const bg = document.querySelector(".board > img");
-			const piece = document.querySelector(".concat-piece-top");
-			const control = document.querySelector(".drag-control");
-			const max = Number(control.getAttribute("aria-valuemax"));
-			const bgData = await imageData(bg.src);
-			const pieceData = await imageData(piece.src);
-			const viewWidth = 320;
-			const shift = pieceData.width - viewWidth;
-			const pieceEdge = Array.from({ length: pieceData.width }, (_, x) => {
-				for (let y = 1; y < pieceData.height; y += 1) {
-					if (alphaAt(pieceData, x, y) < 20) return y;
-				}
-				return -1;
-			}).filter((value) => value > 4 && value < pieceData.height - 4);
-			if (pieceEdge.length < pieceData.width * 0.75) {
-				throw new Error(`could not locate concat moving-half split: ${pieceEdge.length}/${pieceData.width}`);
-			}
-			pieceEdge.sort((a, b) => a - b);
-			const splitY = pieceEdge[Math.floor(pieceEdge.length / 2)];
-			let best = 0;
-			let bestScore = Number.POSITIVE_INFINITY;
-			for (let candidate = 0; candidate <= max; candidate += 1) {
-				let score = 0;
-				let count = 0;
-				for (let x = 6; x < viewWidth - 6; x += 3) {
-					const pieceX = Math.round(x + shift - candidate);
-					if (pieceX < 0 || pieceX >= pieceData.width) continue;
-					for (const delta of [1, 3, 6, 10]) {
-						if (splitY - delta < 0 || splitY + delta >= bgData.height) continue;
-						score += rgbDelta(pieceData, pieceX, splitY - delta, bgData, x, splitY + delta);
-						count += 1;
-					}
-				}
-				const normalized = count ? score / count : Number.POSITIVE_INFINITY;
-				if (normalized < bestScore) {
-					bestScore = normalized;
-					best = candidate;
-				}
-			}
-			return {
-				answer: best,
-				max,
-				shift,
-				bestScore,
-				splitY,
-				bottomCount: document.querySelectorAll(".concat-piece-bottom").length
-			};
-		});
-		const beforeTopLeft = await pieceLeftInViewUnits(topPiece);
-		const answer = inferred.answer;
-		const max = inferred.max;
-		if (answer <= 0 || answer > max || inferred.bottomCount !== 0 || Math.abs(beforeTopLeft + inferred.shift) > 3) {
-			throw new Error(`unexpected concat inference ${JSON.stringify({ ...inferred, beforeTopLeft })}`);
-		}
+			const beforeTopLeft = await pieceLeftInViewUnits(topPiece);
+			const max = Number(await control.getAttribute("aria-valuemax"));
+			const answer = Math.min(max - 4, 24);
+			if (!Number.isFinite(max) || answer <= 0) throw new Error(`unexpected concat max=${max}`);
 		async function eventInit(value, buttons) {
 			return await control.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();
@@ -1940,28 +1532,24 @@ open_demo_concat_success_check() {
 				};
 			}, { value, max, buttons });
 		}
-		await control.dispatchEvent("pointerdown", await eventInit(0, 1));
-		await page.waitForTimeout(120);
-		await control.dispatchEvent("pointermove", await eventInit(answer, 1));
-		await page.waitForTimeout(150);
-		const duringTopLeft = await pieceLeftInViewUnits(topPiece);
-		await control.dispatchEvent("pointerup", await eventInit(answer, 0));
-		await page.waitForFunction(() => {
-			const status = document.querySelector(".browser-bar strong")?.textContent?.trim();
-			return status === "通过" || status === "失败";
-		});
-		return {
-			answer,
-			max,
-			shift: inferred.shift,
-			beforeTopLeft,
-			duringTopLeft,
-			bottomCount: inferred.bottomCount,
-			status: await page.locator(".browser-bar strong").innerText(),
-			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
-			footer: await concatFrame.locator("footer").innerText(),
-			value: await control.getAttribute("aria-valuenow")
-		};
+			await control.dispatchEvent("pointerdown", await eventInit(0, 1));
+			await page.waitForTimeout(120);
+			await control.dispatchEvent("pointermove", await eventInit(answer, 1));
+			await page.waitForTimeout(150);
+			const duringTopLeft = await pieceLeftInViewUnits(topPiece);
+			await control.dispatchEvent("pointerup", await eventInit(answer, 0));
+			await page.waitForTimeout(900);
+			return {
+				answer,
+				max,
+				beforeTopLeft,
+				duringTopLeft,
+				status: await page.locator(".browser-bar strong").innerText(),
+				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
+				footer: await concatFrame.locator("footer").innerText(),
+				value: await control.getAttribute("aria-valuenow"),
+				confirmCount: await concatFrame.getByRole("button", { name: "确认" }).count()
+			};
 	}')"
 	node -e '
 		const fs = require("fs");
@@ -1971,8 +1559,8 @@ open_demo_concat_success_check() {
 			process.exit(1);
 		}
 		const result = JSON.parse(output.result);
-		if (Math.abs(result.duringTopLeft - (result.answer - result.shift)) > 3 || result.bottomCount !== 0 || result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("ticket 已签发")) {
-			console.error(`unexpected concat success result: ${JSON.stringify(result)}`);
+		if (Number(result.value) !== 0 || result.duringTopLeft <= result.beforeTopLeft || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.confirmCount !== 0) {
+			console.error(`unexpected concat interaction result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
 	' <<<"$result"
@@ -2004,16 +1592,16 @@ run_smoke_step "demo random selector" open_demo_random_selector
 run_smoke_step "demo failure reset checks" open_demo_failure_reset_checks
 run_smoke_step "demo gesture straight-line failure" open_demo_gesture_straight_failure_check
 run_smoke_step "demo jigsaw drag swap" open_demo_jigsaw_drag_swap_check
-run_smoke_step "demo point click success" open_demo_point_click_success_check
+run_smoke_step "demo point click interaction" open_demo_point_click_success_check
 run_smoke_step "demo grid click success" open_demo_grid_click_success_check
 run_smoke_step "demo grid click failure" open_demo_grid_click_failure_check
 run_smoke_step "demo curve wrong-offset failure" open_demo_curve_wrong_offset_failure_check
 run_smoke_step "demo curve match success" open_demo_curve_match_success_check
-run_smoke_step "demo path success" open_demo_path_success_check
-run_smoke_step "demo slider success" open_demo_slider_success_check
-run_smoke_step "demo rotate success" open_demo_rotate_success_check
-run_smoke_step "demo rotate degree success" open_demo_rotate_degree_success_check
-run_smoke_step "demo concat success" open_demo_concat_success_check
+run_smoke_step "demo path interaction" open_demo_path_success_check
+run_smoke_step "demo slider interaction" open_demo_slider_success_check
+run_smoke_step "demo rotate interaction" open_demo_rotate_success_check
+run_smoke_step "demo rotate degree interaction" open_demo_rotate_degree_success_check
+run_smoke_step "demo concat interaction" open_demo_concat_success_check
 run_smoke_step "runtime gesture render" open_runtime_challenge "GESTURE" "按提示描绘图形" "disabled"
 run_smoke_step "runtime curve v3 render" open_runtime_challenge "CURVE_V3" "拖动滑块使圆环曲线匹配" "disabled"
 run_smoke_step "runtime curve v2 render" open_runtime_challenge "CURVE_V2" "拖动滑块使增强曲线匹配" "disabled"
@@ -2025,7 +1613,7 @@ run_smoke_step "runtime concat render" open_runtime_challenge "CONCAT" "拖动�
 run_smoke_step "runtime rotate degree render" open_runtime_challenge "ROTATE_DEGREE" "拖动指针指向红色刻度" "disabled"
 run_smoke_step "runtime word click render" open_runtime_challenge "WORD_IMAGE_CLICK" "依次点击：" "disabled"
 run_smoke_step "runtime image click render" open_runtime_challenge "IMAGE_CLICK" "依次点击：" "disabled"
-run_smoke_step "runtime jigsaw render" open_runtime_challenge "JIGSAW" "拖动或点击交换错位拼图" "disabled"
+run_smoke_step "runtime jigsaw render" open_runtime_challenge "JIGSAW" "点击两块图片交换位置" "disabled"
 run_smoke_step "runtime grid image click render" open_runtime_challenge "GRID_IMAGE_CLICK" "选择所有包含蓝色圆形的图片" "disabled"
 
 admin_url="http://127.0.0.1:$ADMIN_PORT/overview"
@@ -2033,7 +1621,7 @@ smoke_step "admin overview navigation"
 pw_goto "$admin_url" "$TMP_DIR/admin-open.log"
 bash "$PWCLI" snapshot >"$TMP_DIR/admin-snapshot.yml"
 snapshot_contains "$TMP_DIR/admin-snapshot.yml" "概览"
-snapshot_contains "$TMP_DIR/admin-snapshot.yml" "运行中"
+snapshot_contains "$TMP_DIR/admin-snapshot.yml" "管理控制台"
 admin_applications_ref="$(snapshot_ref "$TMP_DIR/admin-snapshot.yml" 'menuitem ".*应用"')"
 bash "$PWCLI" click "$admin_applications_ref" >"$TMP_DIR/admin-click.log"
 sleep 1
@@ -2041,7 +1629,7 @@ bash "$PWCLI" snapshot >"$TMP_DIR/admin-applications.yml"
 snapshot_contains "$TMP_DIR/admin-applications.yml" "demo-app"
 snapshot_contains "$TMP_DIR/admin-applications.yml" "失败放行"
 
-run_smoke_step "admin overview route" open_admin_page "/overview" "overview" "概览" "验证通过率" "运行状态"
+run_smoke_step "admin overview route" open_admin_page "/overview" "overview" "概览" "验证通过率" "防护策略"
 run_smoke_step "admin applications route" open_admin_page "/applications" "applications" "应用" "demo-app" "失败放行"
 run_smoke_step "admin routes route" open_admin_page "/routes" "routes" "路由策略" "路径" "触发"
 run_smoke_step "admin ip policies route" open_admin_page "/ip-policies" "ip-policies" "IP 策略" "IP 范围" "动作"

@@ -412,6 +412,7 @@ const decisionReasonLabels: Record<string, string> = {
   CONFIG_RISK_MODEL_ROLLBACK: "模型回滚",
   RISK_FEATURE_LABEL_UPDATE: "训练标注变更"
 };
+const decisionReasonOptions = Object.entries(decisionReasonLabels).map(([value, label]) => ({ value, label }));
 const simulationMarkerLabels: Record<string, string> = {
   no_ticket_consumed: "未消费票据",
   no_challenge_session_created: "未创建验证码",
@@ -1970,7 +1971,16 @@ function Audit() {
         }}
       >
         <Form.Item name="scene" label="场景"><Input placeholder="login" /></Form.Item>
-        <Form.Item name="decision_reason" label="原因"><Input placeholder="RISK_BASED" /></Form.Item>
+        <Form.Item name="decision_reason" label="原因">
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="选择原因"
+            style={{ width: 170 }}
+            options={decisionReasonOptions}
+          />
+        </Form.Item>
         <Form.Item name="account_id_hash" label="账号"><Input placeholder="账号标识" /></Form.Item>
         <Form.Item name="device_id_hash" label="设备"><Input placeholder="设备标识" /></Form.Item>
         <Form.Item name="action" label="动作"><Select allowClear style={{ width: 140 }} options={selectOptions(["allow", "challenge", "block", "observe"])} /></Form.Item>

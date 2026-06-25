@@ -80,6 +80,7 @@ require_pattern web/admin/src/main.tsx 'label="触发条件"' "route policy form
 require_pattern web/admin/src/main.tsx 'function ApplicationCell' "admin tables render application names before identifiers"
 require_pattern web/admin/src/main.tsx 'label="上线方式"' "risk model admin uses release wording"
 require_pattern web/admin/src/main.tsx 'decisionReasonLabel' "admin maps backend decision reasons to business copy"
+require_pattern web/admin/src/main.tsx 'decisionReasonOptions' "admin filters audit reasons with localized options"
 require_pattern web/admin/src/main.tsx 'policy-simulator-options' "policy simulator keeps optional context out of the primary form"
 require_dependency_allowlist web/admin/package.json "admin production dependencies stay on the chosen mature stack" "@ant-design/icons" "@tanstack/react-query" "antd" "react" "react-dom" "react-router-dom"
 reject_pattern web/admin/package.json '"(@ant-design/pro-components|@ant-design/pro-layout|@umijs/|umi|next|nuxt|vue|element-plus|echarts|@ant-design/charts)"' "admin package avoids heavier alternate app frameworks and chart stacks"
@@ -92,6 +93,7 @@ reject_pattern web/admin/src/main.tsx 'Select options=\{selectOptions\(\["always
 reject_pattern web/admin/src/main.tsx 'title: "应用", dataIndex: "client_id"|label="CIDR"|title: "CIDR"' "admin tables avoid raw app and CIDR implementation fields"
 reject_pattern web/admin/src/main.tsx 'label="AUC"|模型包地址|observe/enforce 模式|active 版本' "risk model admin avoids raw model implementation wording"
 reject_pattern web/admin/src/main.tsx '<Tag key=\{item\}>\{item\}</Tag>|label=\{compactText\(item.name, 24\)\}|compactText\(row.decision_reason, 26\)' "admin avoids showing raw reason and dry-run markers"
+reject_pattern web/admin/src/main.tsx 'placeholder="RISK_BASED"|name="decision_reason" label="原因"><Input' "audit reason filter avoids raw backend reason input"
 
 if rg -n "欢迎使用|三步开始|平台能力介绍|hero|landing page|价值主张|能力清单|快速开始|接入教程|功能介绍|功能亮点|产品优势|为什么选择|使用说明|操作指南|快捷键|请先|你可以|强大|轻松|无需|开箱即用" web/admin/src web/runtime/src >/tmp/captcha-frontend-copy-check.txt; then
 	cat /tmp/captcha-frontend-copy-check.txt >&2
