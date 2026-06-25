@@ -1622,8 +1622,15 @@ function resourceTypeLabel(value: string) {
 function resourceHealthLabel(item: ResourceHit) {
   const captcha = item.captcha_type ? captchaLabel(item.captcha_type) : "通用";
   const resource = item.resource_type ? resourceTypeLabel(item.resource_type) : "素材";
-  const group = item.tag ? ` · ${item.tag}` : "";
-  return compactText(`${captcha} · ${resource}${group}`, 28);
+  const group = materialGroupLabel(item.tag);
+  const groupText = group ? ` · ${group}` : "";
+  return compactText(`${captcha} · ${resource}${groupText}`, 28);
+}
+
+function materialGroupLabel(value?: string) {
+  const group = (value || "").trim();
+  if (!group || group === "default") return "通用";
+  return group;
 }
 
 function statusLabel(value: string) {

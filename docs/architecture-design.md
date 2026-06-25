@@ -42,6 +42,7 @@
 - 资源图库卡片本身可点击或键盘选中，左上角复选框只作为辅助目标；多选启停/删除不能要求用户精确点击微小控件。
 - 资源上传表单对外使用“素材分组”表达底层 tag，并使用中文分类示例；不在管理台主操作里直接暴露 `default` 或英文分类样例。
 - 概览页资源健康以验证码类型、素材类型和素材分组作为主标签，资源 ID 不能作为运营人员看到的首要信息。
+- 管理端展示素材分组时必须把空分组和后端默认 `default` 映射为“通用”，避免把底层默认值当作运营语言。
 - 管理 API 的应用、密钥轮换、路由策略、IP 策略、资源、模型版本和训练标签变更会写入审计事件，记录变更类型、目标上下文和脱敏后的管理端 IP。外部 Event 上报不能控制审计事件 ID 或创建时间，平台会在写入时生成服务端身份字段。
 - 应用状态已进入主链路治理：不存在的应用不能创建 challenge；`disabled` 应用不能创建/获取/刷新/验证 challenge。HTTP/gRPC 策略评估会对 disabled/unknown 应用返回 `block` 决策，ticket 校验返回 `valid=false`，事件上报要求明确 `client_id` 并拒绝 disabled 应用写入。
 - 应用密钥支持后端生成和轮换；明文 client secret 只在轮换响应中返回一次，服务端仅保存 PBKDF2-SHA256 hash。应用一旦配置 secret，HTTP 后端接入 API 和 gRPC Policy/Ticket/Config/Event 服务都会校验 `X-Captcha-Client-Secret` 或 Bearer token。
