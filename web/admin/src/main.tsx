@@ -1350,7 +1350,7 @@ function PolicySimulator() {
         form={form}
         layout="vertical"
         className="policy-simulator-form"
-        initialValues={{ client_id: defaultClientID, method: "POST", path: "/api/login" }}
+        initialValues={{ client_id: defaultClientID, method: "POST", path: "" }}
         onFinish={(values) => mutation.mutate({ path: "/api/v1/admin/policy/simulate", body: values })}
       >
         <div className="policy-simulator-grid policy-simulator-primary">
@@ -1358,8 +1358,8 @@ function PolicySimulator() {
             <Select showSearch optionFilterProp="label" options={appOptions} />
           </Form.Item>
           <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
-          <Form.Item name="path" label="路径" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="scene" label="场景"><Input /></Form.Item>
+          <Form.Item name="path" label="路径" rules={[{ required: true }]}><Input placeholder="输入接口路径" /></Form.Item>
+          <Form.Item name="scene" label="场景"><Input placeholder="输入场景" /></Form.Item>
           <Form.Item name="ip" label="IP"><Input /></Form.Item>
           <Form.Item className="policy-simulator-submit">
             <Button type="primary" htmlType="submit" loading={mutation.isPending}>模拟</Button>
@@ -1379,7 +1379,7 @@ function PolicySimulator() {
                   <Form.Item name="account_id_hash" label="账号"><Input /></Form.Item>
                   <Form.Item name="device_id_hash" label="设备"><Input /></Form.Item>
                   <Form.Item name="request_nonce" label="请求标识"><Input /></Form.Item>
-                  <Form.Item name="resource_tag" label="资源标签"><Input /></Form.Item>
+                  <Form.Item name="resource_tag" label="素材分组"><Input placeholder="通用" /></Form.Item>
                 </div>
               )
             },
@@ -2112,7 +2112,7 @@ function Audit() {
           setPageState((prev) => ({ ...prev, page: 1 }));
         }}
       >
-        <Form.Item name="scene" label="场景"><Input placeholder="login" /></Form.Item>
+        <Form.Item name="scene" label="场景"><Input placeholder="输入场景" /></Form.Item>
         <Form.Item name="decision_reason" label="原因">
           <Select
             allowClear
@@ -2281,7 +2281,7 @@ function RiskFeatures() {
           setPageState((prev) => ({ ...prev, page: 1 }));
         }}
       >
-        <Form.Item name="scene" label="场景"><Input placeholder="login" /></Form.Item>
+        <Form.Item name="scene" label="场景"><Input placeholder="输入场景" /></Form.Item>
         <Form.Item name="challenge_type" label="验证码"><Select allowClear style={{ width: 170 }} options={selectOptions(captchaTypes)} /></Form.Item>
         <Form.Item name="label" label="人工标签"><Select allowClear style={{ width: 170 }} options={selectOptions(["unknown", "captcha_pass", "captcha_retry", "likely_human", "likely_bot", "confirmed_human", "confirmed_bot"])} /></Form.Item>
         <Form.Item name="model_trainable" label="状态"><Select allowClear style={{ width: 130 }} options={[{ value: "true", label: "入训样本" }, { value: "false", label: "候选样本" }]} /></Form.Item>
