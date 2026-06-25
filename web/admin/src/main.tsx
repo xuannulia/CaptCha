@@ -329,8 +329,8 @@ const failPolicyLabels: Record<string, string> = {
   fail_close: "失败拦截"
 };
 const ipPolicyTypeLabels: Record<string, string> = {
-  allowlist: "白名单",
-  blocklist: "黑名单"
+  allowlist: "放行名单",
+  blocklist: "拦截名单"
 };
 const actionLabels: Record<string, string> = {
   allow: "放行",
@@ -416,15 +416,15 @@ const decisionReasonLabels: Record<string, string> = {
   LOW_RISK_CONTEXT: "风险上下文正常",
   NO_ROUTE_POLICY: "未命中策略",
   UNKNOWN_MODE: "未知触发条件",
-  IP_ALLOWLIST: "IP 白名单",
-  IP_BLOCKLIST: "IP 黑名单",
+  IP_ALLOWLIST: "IP 放行名单",
+  IP_BLOCKLIST: "IP 拦截名单",
   APPLICATION_NOT_FOUND: "应用不存在",
   APPLICATION_DISABLED: "应用已停用",
   TICKET_CONSUMED: "票据已消费",
   CLEARANCE_VALID: "通行态有效",
   LOCAL_APPLICATION_DISABLED: "本地应用已停用",
-  LOCAL_IP_ALLOWLIST: "本地 IP 白名单",
-  LOCAL_IP_BLOCKLIST: "本地 IP 黑名单",
+  LOCAL_IP_ALLOWLIST: "本地 IP 放行名单",
+  LOCAL_IP_BLOCKLIST: "本地 IP 拦截名单",
   LOCAL_NO_ROUTE_POLICY: "本地未命中策略",
   LOCAL_MANUAL_BYPASS: "本地手动放行",
   LOCAL_SILENT: "本地静默观察",
@@ -1237,9 +1237,8 @@ function IpPolicies() {
   };
   const columns: ColumnsType<IpPolicy> = [
     { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
-    { title: "类型", render: (_, row) => ipPolicyTypeLabel(row.type) },
+    { title: "名单", render: (_, row) => ipPolicyTypeLabel(row.type) },
     { title: "IP 范围", dataIndex: "cidr" },
-    { title: "动作", render: (_, row) => actionLabel(row.action) },
     { title: "原因", dataIndex: "reason" },
     {
       title: "启用",
@@ -1324,7 +1323,7 @@ function IpPolicies() {
           <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
             <Select showSearch disabled={Boolean(editingPolicy)} optionFilterProp="label" options={appOptions} />
           </Form.Item>
-          <Form.Item name="type" label="类型" rules={[{ required: true }]}><Select options={selectOptions(["allowlist", "blocklist"])} /></Form.Item>
+          <Form.Item name="type" label="名单类型" rules={[{ required: true }]}><Select options={selectOptions(["allowlist", "blocklist"])} /></Form.Item>
           <Form.Item name="cidr" label="IP 范围" rules={[{ required: true }]}><Input placeholder="192.0.2.10 或 192.0.2.0/24" /></Form.Item>
           <Form.Item name="reason" label="原因"><Input /></Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
