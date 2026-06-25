@@ -85,12 +85,9 @@ type Resource = {
 
 type ResourceFormValues = {
   client_id?: string;
-  scene?: string;
-  tag?: string;
   gallery_type?: "background" | "concatBackground" | "jigsawBackground" | "rotate" | "grid" | "icon";
   category?: string;
   label?: string;
-  difficulty?: string;
 };
 
 type AuditEvent = {
@@ -486,11 +483,6 @@ const galleryUploadTypes = [
   { value: "rotate", label: "旋转校准图库" },
   { value: "grid", label: "图片格子图库" },
   { value: "icon", label: "图标图库" }
-];
-const resourceDifficultyOptions = [
-  { value: "easy", label: "简单" },
-  { value: "medium", label: "中等" },
-  { value: "hard", label: "较难" }
 ];
 const galleryUploadNotes: Record<string, string> = {
   background: "通用背景会用于滑块、点选、手势和曲线类验证码，避免主体过暗、过花或文字密集。",
@@ -1481,10 +1473,6 @@ function galleryUploadDefaults(galleryType?: string) {
   return { captchaType: "AUTO", resourceType: "background_library", tag: "default" };
 }
 
-function usesMaterialDifficulty(galleryType?: string) {
-  return galleryType === "concatBackground" || galleryType === "jigsawBackground";
-}
-
 function captchaLabel(value: string) {
   return captchaLabels[value] || value;
 }
@@ -1850,12 +1838,9 @@ function Resources() {
     setUploadError("");
     form.setFieldsValue({
       client_id: defaultClientID,
-      scene: "",
-      tag: "",
       gallery_type: "background",
       category: "",
-      label: "",
-      difficulty: "medium"
+      label: ""
     });
     setOpen(true);
   };
@@ -1939,12 +1924,9 @@ function Resources() {
           layout="vertical"
           initialValues={{
             client_id: defaultClientID,
-            scene: "",
-            tag: "",
             gallery_type: "background",
             category: "",
-            label: "",
-            difficulty: "medium"
+            label: ""
           }}
           onFinish={async (values: ResourceFormValues) => {
             if (selectedFiles.length === 0) {
@@ -1957,14 +1939,11 @@ function Resources() {
               formData.append("files", file);
             }
             formData.set("client_id", values.client_id || defaultClientID);
-            formData.set("scene", values.scene || "");
+            formData.set("scene", "");
             formData.set("captcha_type", defaults.captchaType);
             formData.set("resource_type", defaults.resourceType);
-            formData.set("tag", values.tag || defaults.tag);
+            formData.set("tag", defaults.tag);
             formData.set("status", "active");
-            if (usesMaterialDifficulty(values.gallery_type)) {
-              formData.set("difficulty", values.difficulty || "medium");
-            }
             if (values.category) formData.set("category", values.category);
             if (values.label) formData.set("label", values.label);
             const response = await adminFetch("/api/v1/admin/resources/upload", {
@@ -1990,19 +1969,6 @@ function Resources() {
             <Select options={galleryUploadTypes} />
           </Form.Item>
           <div className="gallery-upload-note">{galleryUploadNotes[uploadGalleryType] || galleryUploadNotes.background}</div>
-          {usesMaterialDifficulty(uploadGalleryType) && (
-            <Form.Item name="difficulty" label="素材难度">
-              <Select options={resourceDifficultyOptions} />
-            </Form.Item>
-          )}
-          <Space.Compact block>
-            <Form.Item name="scene" label="场景" style={{ width: "50%" }}>
-              <Input placeholder="全场景" />
-            </Form.Item>
-            <Form.Item name="tag" label="素材分组" style={{ width: "50%" }}>
-              <Input placeholder="通用" />
-            </Form.Item>
-          </Space.Compact>
           {uploadGalleryType === "grid" && (
             <Space.Compact block>
               <Form.Item name="category" label="分类" rules={[{ required: true, message: "请输入分类" }]} style={{ width: "50%" }}>
