@@ -74,6 +74,8 @@ require_pattern web/admin/package.json '"@tanstack/react-query"' "admin uses Tan
 require_pattern web/admin/src/main.tsx 'react-router-dom' "admin code wires React Router"
 require_pattern web/admin/src/main.tsx '@tanstack/react-query' "admin code wires TanStack Query"
 require_pattern web/admin/src/main.tsx 'from "antd"' "admin code wires Ant Design"
+require_pattern web/admin/src/main.tsx 'captcha-admin-token' "admin console supports runtime admin authorization"
+require_pattern web/admin/src/main.tsx 'captcha-admin-unauthorized' "admin console reacts to backend authorization failures"
 require_dependency_allowlist web/admin/package.json "admin production dependencies stay on the chosen mature stack" "@ant-design/icons" "@tanstack/react-query" "antd" "react" "react-dom" "react-router-dom"
 reject_pattern web/admin/package.json '"(@ant-design/pro-components|@ant-design/pro-layout|@umijs/|umi|next|nuxt|vue|element-plus|echarts|@ant-design/charts)"' "admin package avoids heavier alternate app frameworks and chart stacks"
 reject_pattern web/admin/src/main.tsx '明细列表|系统资源|resource-uri|resource-table-wrap|system-resource-panel' "admin resource gallery avoids raw detail panels"

@@ -16,9 +16,17 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes as RouterRoutes, useLocation, useNavigate } from "react-router-dom";
 import "./style.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => error instanceof Error && error.message === "ADMIN_UNAUTHORIZED" ? false : failureCount < 3
+    }
+  }
+});
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8080";
-const adminToken = import.meta.env.VITE_ADMIN_TOKEN || "";
+const adminTokenFromEnv = import.meta.env.VITE_ADMIN_TOKEN || "";
+const adminTokenStorageKey = "captcha-admin-token";
+const adminUnauthorizedEvent = "captcha-admin-unauthorized";
 
 type RoutePolicy = {
   id: string;
@@ -434,9 +442,13 @@ function App() {
 function AdminShell() {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const active = adminRoutes.find((route) => route.path === location.pathname)?.key || "overview";
   const { data: applications } = useList<Application>("applications", "/api/v1/admin/applications");
   const [selectedClientID, setSelectedClientID] = useState(() => localStorage.getItem("captcha-admin-client-id") || "");
+  const [authOpen, setAuthOpen] = useState(false);
+  const [adminTokenDraft, setAdminTokenDraft] = useState("");
+  const [hasAdminToken, setHasAdminToken] = useState(() => Boolean(currentAdminToken()));
   const appOptions = useMemo(() => applicationOptions(applications), [applications]);
   const scopeOptions = useMemo(() => [{ value: "", label: "全部应用" }, ...appOptions], [appOptions]);
   const defaultClientID = selectedClientID || firstApplicationClientID(applications);
@@ -455,6 +467,37 @@ function AdminShell() {
       setSelectedClientID("");
     }
   }, [applications, selectedClientID]);
+
+  useEffect(() => {
+    const openAuth = () => {
+      setAdminTokenDraft("");
+      setAuthOpen(true);
+    };
+    window.addEventListener(adminUnauthorizedEvent, openAuth);
+    return () => window.removeEventListener(adminUnauthorizedEvent, openAuth);
+  }, []);
+
+  const saveAdminToken = async () => {
+    const token = adminTokenDraft.trim();
+    if (!token) {
+      message.warning("请输入访问令牌");
+      return;
+    }
+    localStorage.setItem(adminTokenStorageKey, token);
+    setHasAdminToken(true);
+    setAuthOpen(false);
+    setAdminTokenDraft("");
+    await queryClient.invalidateQueries();
+    message.success("授权已生效");
+  };
+
+  const clearAdminToken = async () => {
+    localStorage.removeItem(adminTokenStorageKey);
+    setHasAdminToken(Boolean(adminTokenFromEnv));
+    setAdminTokenDraft("");
+    await queryClient.invalidateQueries();
+    message.success("已清除本机令牌");
+  };
 
   const applicationScope = useMemo(() => ({
     applications,
@@ -489,6 +532,8 @@ function AdminShell() {
                   optionFilterProp="label"
                   showSearch
                 />
+                {hasAdminToken && <Tag color="green">已授权</Tag>}
+                <Button onClick={() => setAuthOpen(true)}>授权</Button>
                 <span className="header-subtitle">管理控制台</span>
               </Space>
             </Layout.Header>
@@ -501,6 +546,25 @@ function AdminShell() {
             </Layout.Content>
           </Layout>
         </Layout>
+        <Modal
+          title="管理授权"
+          open={authOpen}
+          okText="保存"
+          cancelText="取消"
+          onOk={saveAdminToken}
+          onCancel={() => setAuthOpen(false)}
+        >
+          <Form layout="vertical" onFinish={saveAdminToken}>
+            <Form.Item label="访问令牌" required>
+              <Input.Password
+                autoComplete="current-password"
+                value={adminTokenDraft}
+                onChange={(event) => setAdminTokenDraft(event.target.value)}
+              />
+            </Form.Item>
+            <Button onClick={clearAdminToken}>清除本机令牌</Button>
+          </Form>
+        </Modal>
     </ApplicationScopeContext.Provider>
   );
 }
@@ -511,7 +575,7 @@ function Overview() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["metrics", selectedClientID],
     queryFn: async () => {
-      const response = await fetch(`${apiBase}${metricsPath}`, { headers: adminHeaders() });
+      const response = await adminFetch(metricsPath);
       if (!response.ok) throw new Error(response.statusText);
       return await response.json() as AdminMetrics;
     },
@@ -1437,9 +1501,9 @@ function Resources() {
   const queryClient = useQueryClient();
   const deleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      const response = await fetch(`${apiBase}/api/v1/admin/resources/delete`, {
+      const response = await adminFetch("/api/v1/admin/resources/delete", {
         method: "POST",
-        headers: { ...adminHeaders(), "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ client_id: deleteClientID, ids })
       });
       if (!response.ok) throw new Error(response.statusText);
@@ -1455,9 +1519,9 @@ function Resources() {
   const statusMutation = useMutation({
     mutationFn: async ({ items, status }: { items: Resource[]; status: string }) => {
       await Promise.all(items.map(async (item) => {
-        const response = await fetch(`${apiBase}/api/v1/admin/resources`, {
+        const response = await adminFetch("/api/v1/admin/resources", {
           method: "POST",
-          headers: { ...adminHeaders(), "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...item, status })
         });
         if (!response.ok) throw new Error(response.statusText);
@@ -1643,9 +1707,8 @@ function Resources() {
             }
             if (values.category) formData.set("category", values.category);
             if (values.label) formData.set("label", values.label);
-            const response = await fetch(`${apiBase}/api/v1/admin/resources/upload`, {
+            const response = await adminFetch("/api/v1/admin/resources/upload", {
               method: "POST",
-              headers: adminHeaders(),
               body: formData
             });
             if (!response.ok) {
@@ -1859,7 +1922,7 @@ function RiskFeatures() {
     }
     setExporting(true);
     try {
-      const response = await fetch(`${apiBase}/api/v1/admin/risk-feature-snapshots/export?${params.toString()}`, { headers: adminHeaders() });
+      const response = await adminFetch(`/api/v1/admin/risk-feature-snapshots/export?${params.toString()}`);
       if (!response.ok) throw new Error(response.statusText);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -2084,7 +2147,7 @@ function useList<T>(key: string, path: string) {
   return useQuery({
     queryKey: [key, path],
     queryFn: async () => {
-      const response = await fetch(`${apiBase}${path}`, { headers: adminHeaders() });
+      const response = await adminFetch(path);
       if (!response.ok) throw new Error(response.statusText);
       const body = await response.json() as ListResponse<T>;
       return body.items || [];
@@ -2096,7 +2159,7 @@ function usePagedList<T>(key: string, path: string) {
   return useQuery({
     queryKey: [key, path],
     queryFn: async (): Promise<PagedList<T>> => {
-      const response = await fetch(`${apiBase}${path}`, { headers: adminHeaders() });
+      const response = await adminFetch(path);
       if (!response.ok) throw new Error(response.statusText);
       const body = await response.json() as ListResponse<T>;
       return {
@@ -2113,9 +2176,9 @@ function usePost<T>(invalidateKey: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async ({ path, body }: { path: string; body: unknown }) => {
-      const response = await fetch(`${apiBase}${path}`, {
+      const response = await adminFetch(path, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
       if (!response.ok) throw new Error(response.statusText);
@@ -2141,8 +2204,20 @@ async function copyText(value: string) {
   }
 }
 
-function adminHeaders(): Record<string, string> {
-  return adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
+async function adminFetch(path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+  const token = currentAdminToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`${apiBase}${path}`, { ...init, headers });
+  if (response.status === 401) {
+    window.dispatchEvent(new Event(adminUnauthorizedEvent));
+    throw new Error("ADMIN_UNAUTHORIZED");
+  }
+  return response;
+}
+
+function currentAdminToken() {
+  return localStorage.getItem(adminTokenStorageKey) || adminTokenFromEnv;
 }
 
 function titleFor(key: string) {

@@ -58,7 +58,7 @@ Protect admin APIs in deployed environments:
 CAPTCHA_ADMIN_TOKEN='change-me' go run ./cmd/captcha-server
 ```
 
-When the admin token is enabled, the admin console should be built or started with `VITE_ADMIN_TOKEN` so requests include `Authorization: Bearer ...`.
+When the admin token is enabled, the admin console can enter the token at runtime from the authorization button. `VITE_ADMIN_TOKEN` remains available for local development, but deployed builds should prefer runtime entry so the admin token is not baked into the static bundle.
 
 Enable the production security gate before deploying:
 
