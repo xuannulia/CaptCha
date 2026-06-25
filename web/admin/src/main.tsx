@@ -1372,7 +1372,7 @@ function PolicySimulator() {
           items={[
             {
               key: "context",
-              label: "请求上下文",
+              label: "识别信息",
               children: (
                 <div className="policy-simulator-grid">
                   <Form.Item name="user_agent" label="浏览器标识"><Input /></Form.Item>
@@ -1385,13 +1385,13 @@ function PolicySimulator() {
             },
             {
               key: "risk",
-              label: "风险输入",
+              label: "风险信号",
               children: (
                 <div className="policy-simulator-grid">
                   <Form.Item name="risk_score" label="风险分"><InputNumber min={0} max={100} /></Form.Item>
                   <Form.Item name="risk_level" label="风险级别"><Select allowClear options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高" }]} /></Form.Item>
-                  <Form.Item name="model_score" label="模型评分"><InputNumber min={0} max={100} /></Form.Item>
-                  <Form.Item name="model_mode" label="模型上线"><Select allowClear options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
+                  <Form.Item name="model_score" label="模型分"><InputNumber min={0} max={100} /></Form.Item>
+                  <Form.Item name="model_mode" label="模型状态"><Select allowClear options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
                 </div>
               )
             }
