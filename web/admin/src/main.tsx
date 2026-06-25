@@ -88,12 +88,15 @@ type AuditEvent = {
   id: string;
   client_id: string;
   scene: string;
+  route?: string;
+  ip_hash?: string;
   account_id_hash?: string;
   device_id_hash?: string;
   action: string;
   result: string;
   decision_reason: string;
   challenge_type: string;
+  created_at?: string;
 };
 
 type RiskFeatureSnapshot = {
@@ -1282,6 +1285,21 @@ function unknownText(value: unknown) {
   return String(value);
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).format(date);
+}
+
 function resourceTypeLabel(value: string) {
   return resourceTypeLabels[value] || value;
 }
@@ -1782,7 +1800,7 @@ function Resources() {
 
 function Audit() {
   const { selectedClientID } = useApplicationScope();
-  const [filters, setFilters] = useState({ action: "", result: "", scene: "", account_id_hash: "", device_id_hash: "" });
+  const [filters, setFilters] = useState({ action: "", result: "", scene: "", decision_reason: "", account_id_hash: "", device_id_hash: "" });
   const [pageState, setPageState] = useState({ page: 1, pageSize: 20 });
   const [form] = Form.useForm();
 
@@ -1799,6 +1817,7 @@ function Audit() {
     if (filters.scene) params.set("scene", filters.scene);
     if (filters.action) params.set("action", filters.action);
     if (filters.result) params.set("result", filters.result);
+    if (filters.decision_reason) params.set("decision_reason", filters.decision_reason);
     if (filters.account_id_hash) params.set("account_id_hash", filters.account_id_hash);
     if (filters.device_id_hash) params.set("device_id_hash", filters.device_id_hash);
     return `/api/v1/admin/audit-events?${params.toString()}`;
@@ -1807,14 +1826,25 @@ function Audit() {
   const rows = data?.items || [];
   const total = (pageState.page - 1) * pageState.pageSize + rows.length + (data?.has_more ? 1 : 0);
   const columns: ColumnsType<AuditEvent> = [
+    { title: "时间", width: 170, render: (_, row) => formatDateTime(row.created_at) },
     { title: "应用", dataIndex: "client_id", width: 130 },
+    { title: "路由", render: (_, row) => <span title={row.route || ""}>{compactText(row.route || "", 28)}</span> },
     { title: "场景", dataIndex: "scene" },
-    { title: "账号", dataIndex: "account_id_hash" },
-    { title: "设备", dataIndex: "device_id_hash" },
+    {
+      title: "主体",
+      render: (_, row) => (
+        <Space wrap>
+          {row.ip_hash && <Tag title={row.ip_hash}>IP {compactText(row.ip_hash, 14)}</Tag>}
+          {row.account_id_hash && <Tag title={row.account_id_hash}>账号 {compactText(row.account_id_hash, 14)}</Tag>}
+          {row.device_id_hash && <Tag title={row.device_id_hash}>设备 {compactText(row.device_id_hash, 14)}</Tag>}
+          {!row.ip_hash && !row.account_id_hash && !row.device_id_hash && "-"}
+        </Space>
+      )
+    },
     { title: "动作", render: (_, row) => actionLabel(row.action) },
     { title: "验证码", render: (_, row) => row.challenge_type ? captchaLabel(row.challenge_type) : "-" },
     { title: "结果", render: (_, row) => resultLabel(row.result) },
-    { title: "原因", dataIndex: "decision_reason" }
+    { title: "原因", render: (_, row) => <span title={row.decision_reason}>{compactText(row.decision_reason, 26)}</span> }
   ];
   return (
     <Card title="审计">
@@ -1827,6 +1857,7 @@ function Audit() {
             action: values.action || "",
             result: values.result || "",
             scene: values.scene || "",
+            decision_reason: values.decision_reason || "",
             account_id_hash: values.account_id_hash || "",
             device_id_hash: values.device_id_hash || ""
           });
@@ -1834,11 +1865,12 @@ function Audit() {
         }}
         onReset={() => {
           form.resetFields();
-          setFilters({ action: "", result: "", scene: "", account_id_hash: "", device_id_hash: "" });
+          setFilters({ action: "", result: "", scene: "", decision_reason: "", account_id_hash: "", device_id_hash: "" });
           setPageState((prev) => ({ ...prev, page: 1 }));
         }}
       >
         <Form.Item name="scene" label="场景"><Input placeholder="login" /></Form.Item>
+        <Form.Item name="decision_reason" label="原因"><Input placeholder="RISK_BASED" /></Form.Item>
         <Form.Item name="account_id_hash" label="账号"><Input placeholder="account hash" /></Form.Item>
         <Form.Item name="device_id_hash" label="设备"><Input placeholder="device hash" /></Form.Item>
         <Form.Item name="action" label="动作"><Select allowClear style={{ width: 140 }} options={selectOptions(["allow", "challenge", "block", "observe"])} /></Form.Item>
