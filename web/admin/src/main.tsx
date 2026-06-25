@@ -377,6 +377,31 @@ const riskLevelLabels: Record<string, string> = {
   critical: "严重"
 };
 const decisionReasonLabels: Record<string, string> = {
+  OK: "验证通过",
+  ANSWER_MISSING: "未提交答案",
+  ANSWER_MISMATCH: "答案不匹配",
+  UNSUPPORTED_CAPTCHA_TYPE: "验证码类型不支持",
+  TRACK_ANSWER_MISMATCH: "轨迹与答案不匹配",
+  TRACK_CHALLENGE_HARDER: "轨迹异常升级验证",
+  TRACK_CONSTANT_VELOCITY: "轨迹速度过于稳定",
+  TRACK_SYNTHETIC_CURVE: "疑似合成轨迹",
+  TRACK_TELEPORT: "轨迹跳变异常",
+  TRACK_TIMESTAMP_ANOMALY: "轨迹时间异常",
+  TRACK_TOO_FAST: "操作过快",
+  TRACK_TOO_FEW_POINTS: "轨迹点过少",
+  TRACK_TOO_MANY_POINTS: "轨迹点过多",
+  TRACK_TOO_STRAIGHT: "轨迹过直",
+  ROUTE_MISMATCH: "路由不匹配",
+  REQUEST_NONCE_MISMATCH: "请求标识不匹配",
+  SESSION_ALREADY_VERIFIED: "验证已完成",
+  SESSION_NOT_ACTIVE: "验证已失效",
+  TOO_MANY_FAILURES: "失败次数过多",
+  CONSUMED: "票据已消费",
+  EXPIRED: "票据已过期",
+  NOT_FOUND: "记录不存在",
+  TICKET_INVALID: "票据无效",
+  TICKET_SERVICE_UNAVAILABLE: "票据服务不可用",
+  POLICY_UNAVAILABLE: "策略服务不可用",
   ALWAYS: "固定验证",
   RATE_LIMIT: "访问过快",
   RATE_LIMIT_DRY_RUN: "访问过快",
@@ -396,6 +421,13 @@ const decisionReasonLabels: Record<string, string> = {
   APPLICATION_DISABLED: "应用已停用",
   TICKET_CONSUMED: "票据已消费",
   CLEARANCE_VALID: "通行态有效",
+  LOCAL_APPLICATION_DISABLED: "本地应用已停用",
+  LOCAL_IP_ALLOWLIST: "本地 IP 白名单",
+  LOCAL_IP_BLOCKLIST: "本地 IP 黑名单",
+  LOCAL_NO_ROUTE_POLICY: "本地未命中策略",
+  LOCAL_MANUAL_BYPASS: "本地手动放行",
+  LOCAL_SILENT: "本地静默观察",
+  LOCAL_OBSERVE: "本地观察放行",
   MANUAL_BYPASS: "手动放行",
   SILENT: "静默观察",
   OBSERVE: "观察放行",
@@ -1457,7 +1489,7 @@ function modelStatusLabel(value: string) {
 }
 
 function decisionReasonLabel(value: string) {
-  return decisionReasonLabels[value] || value || "-";
+  return decisionReasonLabels[value] || (value ? "其他原因" : "-");
 }
 
 function simulationMarkerLabel(value: string) {

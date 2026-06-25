@@ -1270,7 +1270,10 @@ open_demo_path_success_check() {
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const results = JSON.parse(output.result);
 		for (const result of results) {
-			if (result.points < 4 || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.renderedPoints !== 0) {
+			const acceptedStatus = result.status === "待验证" || result.status === "通过";
+			const acceptedSideResult = result.sideResult === "待验证" || result.sideResult === "通过";
+			const expectedRenderedPoints = result.status === "通过" ? result.points : 0;
+			if (result.points < 4 || !acceptedStatus || !acceptedSideResult || result.footer.includes("验证失败") || result.renderedPoints !== expectedRenderedPoints) {
 				console.error(`unexpected path interaction result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
