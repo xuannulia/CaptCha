@@ -79,6 +79,7 @@ require_pattern web/admin/src/main.tsx 'captcha-admin-unauthorized' "admin conso
 require_pattern web/admin/src/main.tsx '/api/v1/admin/auth/check' "admin console validates authorization before loading data"
 require_pattern web/admin/src/main.tsx 'authState === "authorized"' "admin console gates management pages behind authorization state"
 require_pattern web/admin/src/main.tsx '管理令牌' "admin console presents open-source management access as a simple token"
+reject_pattern web/admin/src/main.tsx '令牌有效|管理控制台|header-subtitle' "admin header avoids redundant status and console copy"
 require_pattern web/admin/src/main.tsx 'okText="保存令牌"' "admin token modal save action names its target"
 require_pattern web/admin/src/main.tsx '>新增应用</Button>' "application page primary action names its target"
 require_pattern web/admin/src/main.tsx '>新增策略</Button>' "route policy page primary action names its target"

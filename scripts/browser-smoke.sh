@@ -1628,7 +1628,7 @@ smoke_step "admin overview navigation"
 pw_goto "$admin_url" "$TMP_DIR/admin-open.log"
 bash "$PWCLI" snapshot >"$TMP_DIR/admin-snapshot.yml"
 snapshot_contains "$TMP_DIR/admin-snapshot.yml" "概览"
-snapshot_contains "$TMP_DIR/admin-snapshot.yml" "管理控制台"
+snapshot_contains "$TMP_DIR/admin-snapshot.yml" "管理令牌"
 admin_applications_ref="$(snapshot_ref "$TMP_DIR/admin-snapshot.yml" 'menuitem ".*应用"')"
 bash "$PWCLI" click "$admin_applications_ref" >"$TMP_DIR/admin-click.log"
 sleep 1

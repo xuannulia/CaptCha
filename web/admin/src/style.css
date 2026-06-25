@@ -39,11 +39,6 @@ body {
   padding: 20px;
 }
 
-.header-subtitle {
-  color: #64748b;
-  font-size: 13px;
-}
-
 .header-actions {
   display: flex;
   align-items: center;

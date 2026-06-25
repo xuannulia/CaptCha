@@ -660,10 +660,8 @@ function AdminShell() {
                   disabled={!authReady}
                 />
                 {authState === "checking" && <Tag>校验中</Tag>}
-                {authState === "authorized" && hasAdminToken && <Tag color="green">令牌有效</Tag>}
                 {authState === "required" && <Tag color="red">需令牌</Tag>}
                 <Button onClick={() => setAuthOpen(true)}>管理令牌</Button>
-                <span className="header-subtitle">管理控制台</span>
               </Space>
             </Layout.Header>
             <Layout.Content className="content">
