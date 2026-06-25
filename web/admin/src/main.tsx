@@ -599,7 +599,7 @@ function Applications() {
   const { data, isLoading } = useList<Application>("applications", "/api/v1/admin/applications");
   const [open, setOpen] = useState(false);
   const [editingApplication, setEditingApplication] = useState<Application | null>(null);
-  const [secret, setSecret] = useState<{ clientID: string; value: string } | null>(null);
+  const [secret, setSecret] = useState<{ clientID: string; name: string; value: string } | null>(null);
   const [pendingApplicationID, setPendingApplicationID] = useState("");
   const [form] = Form.useForm();
   const mutation = usePost<Application>("applications");
@@ -626,7 +626,7 @@ function Applications() {
             path: `/api/v1/admin/applications/${encodeURIComponent(row.client_id)}/secret`,
             body: {}
           });
-          setSecret({ clientID: result.application.client_id, value: result.client_secret });
+          setSecret({ clientID: result.application.client_id, name: result.application.name, value: result.client_secret });
         } catch {
           message.error("密钥轮换失败");
         } finally {
@@ -636,8 +636,15 @@ function Applications() {
     });
   };
   const columns: ColumnsType<Application> = [
-    { title: "Client ID", dataIndex: "client_id" },
-    { title: "名称", dataIndex: "name" },
+    {
+      title: "应用",
+      render: (_, row) => (
+        <div className="table-primary-cell">
+          <strong>{row.name}</strong>
+          <span>{row.client_id}</span>
+        </div>
+      )
+    },
     {
       title: "密钥",
       render: (_, row) => (
@@ -685,7 +692,7 @@ function Applications() {
             loading={secretMutation.isPending && pendingApplicationID === row.id}
             onClick={() => rotateApplicationSecret(row)}
           >
-            {row.has_secret ? "轮换" : "生成"}
+            {row.has_secret ? "轮换密钥" : "生成密钥"}
           </Button>
         </Space>
       )
@@ -719,7 +726,7 @@ function Applications() {
         <div className="secret-result">
           <div className="secret-meta">
             <span>应用</span>
-            <strong>{secret?.clientID}</strong>
+            <strong>{secret ? `${secret.name} (${secret.clientID})` : "-"}</strong>
           </div>
           <Input.TextArea readOnly value={secret?.value || ""} autoSize />
           <div className="secret-warning">关闭窗口后无法再次查看这段明文密钥。</div>
@@ -749,7 +756,7 @@ function Applications() {
             }
           }}
         >
-          <Form.Item name="client_id" label="Client ID" rules={[{ required: true }]}><Input disabled={Boolean(editingApplication)} /></Form.Item>
+          <Form.Item name="client_id" label="应用标识" rules={[{ required: true }]}><Input disabled={Boolean(editingApplication)} /></Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="status" label="状态"><Select options={selectOptions(["active", "disabled"])} /></Form.Item>
           <Form.Item name="default_fail_policy" label="失败策略"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>

@@ -79,6 +79,7 @@ reject_pattern web/admin/package.json '"(@ant-design/pro-components|@ant-design/
 reject_pattern web/admin/src/main.tsx '明细列表|系统资源|resource-uri|resource-table-wrap|system-resource-panel' "admin resource gallery avoids raw detail panels"
 reject_pattern web/admin/src/style.css 'resource-uri|resource-table-wrap|system-resource-panel' "admin resource gallery styles avoid raw detail panels"
 reject_pattern web/admin/src/main.tsx '训练特征|导出 JSONL' "admin risk training copy avoids implementation wording"
+reject_pattern web/admin/src/main.tsx 'Client ID' "admin application copy avoids raw client-id wording"
 
 if rg -n "欢迎使用|三步开始|平台能力介绍|hero|landing page|价值主张|能力清单|快速开始|接入教程|功能介绍|功能亮点|产品优势|为什么选择|使用说明|操作指南|快捷键|请先|你可以|强大|轻松|无需|开箱即用" web/admin/src web/runtime/src >/tmp/captcha-frontend-copy-check.txt; then
 	cat /tmp/captcha-frontend-copy-check.txt >&2

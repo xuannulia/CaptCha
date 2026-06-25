@@ -178,6 +178,21 @@ body {
   color: #94a3b8;
 }
 
+.table-primary-cell {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.table-primary-cell strong {
+  color: #111827;
+}
+
+.table-primary-cell span {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .resource-file-bar {
   display: flex;
   align-items: center;
