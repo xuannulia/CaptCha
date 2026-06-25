@@ -2049,6 +2049,6 @@ run_smoke_step "admin policy simulate route" open_admin_page "/policy-simulate" 
 run_smoke_step "admin resources route" open_admin_page "/resources" "resources" "资源图库" "全部文件" "新增"
 run_smoke_step "admin audit route" open_admin_page "/audit" "audit" "审计" "原因" "结果"
 run_smoke_step "admin risk features route" open_admin_page "/risk-features" "risk-features" "训练样本" "导出样本" "标签"
-run_smoke_step "admin risk models route" open_admin_page "/risk-models" "risk-models" "模型管理" "模式" "状态"
+run_smoke_step "admin risk models route" open_admin_page "/risk-models" "risk-models" "模型管理" "上线方式" "状态"
 
 echo "browser smoke passed"

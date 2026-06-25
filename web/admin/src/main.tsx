@@ -355,9 +355,9 @@ const riskLabelLabels: Record<string, string> = {
   confirmed_bot: "机器样本"
 };
 const modelModeLabels: Record<string, string> = {
-  shadow: "影子",
-  observe: "观察",
-  enforce: "生效"
+  shadow: "仅评估",
+  observe: "观察决策",
+  enforce: "参与决策"
 };
 const modelStatusLabels: Record<string, string> = {
   candidate: "候选",
@@ -2081,7 +2081,7 @@ function RiskModels() {
       content: (
         <div className="confirm-copy">
           <p>{row.name} / {row.version}</p>
-          <p>{activating ? "激活后同名模型的当前 active 版本会退役，observe/enforce 模式可能参与风险决策。" : "回滚会将当前 active 标记为已回滚，并恢复最近一个退役版本。"}</p>
+          <p>{activating ? `激活后同名模型的当前启用版本会退役；上线方式为“${modelModeLabel(row.mode)}”时，模型分可能参与风险判断。` : "回滚会停用当前版本，并恢复最近一个退役版本。"}</p>
         </div>
       ),
       okText: activating ? "确认激活" : "确认回滚",
@@ -2104,9 +2104,9 @@ function RiskModels() {
   const columns: ColumnsType<RiskModelVersion> = [
     { title: "名称", dataIndex: "name" },
     { title: "版本", dataIndex: "version" },
-    { title: "特征集", dataIndex: "feature_version" },
-    { title: "窗口", dataIndex: "training_window" },
-    { title: "模式", render: (_, row) => <Tag color={row.mode === "enforce" ? "red" : row.mode === "observe" ? "blue" : "default"}>{modelModeLabel(row.mode)}</Tag> },
+    { title: "样本版本", dataIndex: "feature_version" },
+    { title: "训练数据", dataIndex: "training_window" },
+    { title: "上线方式", render: (_, row) => <Tag color={row.mode === "enforce" ? "red" : row.mode === "observe" ? "blue" : "default"}>{modelModeLabel(row.mode)}</Tag> },
     { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : row.status === "rolled_back" ? "orange" : "default"}>{modelStatusLabel(row.status)}</Tag> },
     {
       title: "操作",
@@ -2149,12 +2149,12 @@ function RiskModels() {
         >
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="version" label="版本" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="feature_version" label="特征集" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="training_window" label="训练窗口" rules={[{ required: true }]}><Input placeholder="2026-06-01/2026-06-20" /></Form.Item>
-          <Form.Item name="artifact_uri" label="模型包地址" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="mode" label="模式"><Select options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
+          <Form.Item name="feature_version" label="样本版本" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="training_window" label="训练数据" rules={[{ required: true }]}><Input placeholder="2026-06-01/2026-06-20" /></Form.Item>
+          <Form.Item name="artifact_uri" label="模型文件" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="mode" label="上线方式"><Select options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
           <Space.Compact block>
-            <Form.Item name="auc" label="AUC" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
+            <Form.Item name="auc" label="准确率" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="false_positive_rate" label="误伤率" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
           </Space.Compact>
         </Form>
