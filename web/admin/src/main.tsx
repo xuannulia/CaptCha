@@ -325,8 +325,8 @@ const policyModeLabels: Record<string, string> = {
   manual_bypass: "手动放行"
 };
 const failPolicyLabels: Record<string, string> = {
-  fail_open: "失败放行",
-  fail_close: "失败拦截"
+  fail_open: "异常时放行",
+  fail_close: "异常时拦截"
 };
 const ipPolicyTypeLabels: Record<string, string> = {
   allowlist: "放行名单",
@@ -890,7 +890,7 @@ function Applications() {
         />
       )
     },
-    { title: "失败策略", render: (_, row) => failPolicyLabel(row.default_fail_policy) },
+    { title: "异常处理", render: (_, row) => failPolicyLabel(row.default_fail_policy) },
     {
       title: "操作",
       width: 170,
@@ -974,7 +974,7 @@ function Applications() {
           <Form.Item name="client_id" label="应用标识" rules={[{ required: true }]}><Input disabled={Boolean(editingApplication)} /></Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="status" label="状态"><Select options={selectOptions(["active", "disabled"])} /></Form.Item>
-          <Form.Item name="default_fail_policy" label="失败策略"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
+          <Form.Item name="default_fail_policy" label="异常处理"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
         </Form>
       </Modal>
     </Card>
@@ -1176,7 +1176,7 @@ function Routes() {
               <Form.Item name="challenge_type" label="默认验证码"><Select options={selectOptions(captchaTypes)} /></Form.Item>
               {showRiskFields && <Form.Item name="risk_challenge_type" label="风险验证码"><Select allowClear options={selectOptions(captchaTypes)} /></Form.Item>}
               <Form.Item name="challenge_escalation" label="升级序列"><Select mode="multiple" allowClear options={selectOptions(captchaTypes)} /></Form.Item>
-              <Form.Item name="fail_policy" label="失败策略"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
+              <Form.Item name="fail_policy" label="异常处理"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
               <Form.Item name="token_ttl_seconds" label="通行有效期"><InputNumber className="field-number" addonAfter="秒" /></Form.Item>
             </>
           )}
