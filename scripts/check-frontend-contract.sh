@@ -98,6 +98,8 @@ require_pattern web/admin/src/main.tsx 'label="名单类型"' "IP policy form us
 require_pattern web/admin/src/main.tsx 'allowlist: "放行名单"' "IP allowlist is localized as an operational allow list"
 require_pattern web/admin/src/main.tsx 'blocklist: "拦截名单"' "IP blocklist is localized as an operational block list"
 require_pattern web/admin/src/main.tsx 'function ApplicationCell' "admin tables render application names before identifiers"
+require_pattern web/admin/src/main.tsx 'className="application-option"' "admin application selectors render names before identifiers"
+require_pattern web/admin/src/main.tsx 'optionFilterProp="searchText" options=\{appOptions\}' "admin application selectors search names and identifiers without making ids primary copy"
 require_pattern web/admin/src/main.tsx 'label="上线方式"' "risk model admin uses release wording"
 require_pattern web/admin/src/main.tsx 'title: "质量"' "risk model admin surfaces model quality metrics"
 require_pattern web/admin/src/main.tsx 'label="模型名称"' "risk model registration uses explicit model naming"

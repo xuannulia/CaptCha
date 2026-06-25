@@ -216,7 +216,8 @@ type Application = {
 
 type SelectOption = {
   value: string;
-  label: string;
+  label: React.ReactNode;
+  searchText?: string;
 };
 
 type ApplicationScopeState = {
@@ -531,7 +532,7 @@ function AdminShell() {
   const [hasAdminToken, setHasAdminToken] = useState(() => Boolean(currentAdminToken()));
   const scopedApplications = authReady ? applications : undefined;
   const appOptions = useMemo(() => applicationOptions(scopedApplications), [scopedApplications]);
-  const scopeOptions = useMemo(() => [{ value: "", label: "全部应用" }, ...appOptions], [appOptions]);
+  const scopeOptions = useMemo(() => [{ value: "", label: "全部应用", searchText: "全部应用" }, ...appOptions], [appOptions]);
   const defaultClientID = selectedClientID || firstApplicationClientID(scopedApplications);
 
   useEffect(() => {
@@ -654,7 +655,7 @@ function AdminShell() {
                   value={selectedClientID}
                   options={scopeOptions}
                   onChange={setSelectedClientID}
-                  optionFilterProp="label"
+                  optionFilterProp="searchText"
                   showSearch
                   disabled={!authReady}
                 />
@@ -1156,7 +1157,7 @@ function Routes() {
           }}
         >
           <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
-            <Select showSearch disabled={Boolean(editingRoute)} optionFilterProp="label" options={appOptions} />
+            <Select showSearch disabled={Boolean(editingRoute)} optionFilterProp="searchText" options={appOptions} />
           </Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="path_pattern" label="路径" rules={[{ required: true }]}><Input /></Form.Item>
@@ -1313,7 +1314,7 @@ function IpPolicies() {
           }}
         >
           <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
-            <Select showSearch disabled={Boolean(editingPolicy)} optionFilterProp="label" options={appOptions} />
+            <Select showSearch disabled={Boolean(editingPolicy)} optionFilterProp="searchText" options={appOptions} />
           </Form.Item>
           <Form.Item name="type" label="名单类型" rules={[{ required: true }]}><Select options={selectOptions(["allowlist", "blocklist"])} /></Form.Item>
           <Form.Item name="cidr" label="IP 范围" rules={[{ required: true }]}><Input placeholder="192.0.2.10 或 192.0.2.0/24" /></Form.Item>
@@ -1347,7 +1348,7 @@ function PolicySimulator() {
       >
         <div className="policy-simulator-grid policy-simulator-primary">
           <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
-            <Select showSearch optionFilterProp="label" options={appOptions} />
+            <Select showSearch optionFilterProp="searchText" options={appOptions} />
           </Form.Item>
           <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
           <Form.Item name="path" label="路径" rules={[{ required: true }]}><Input placeholder="输入接口路径" /></Form.Item>
@@ -1632,7 +1633,13 @@ function useApplicationScope() {
 function applicationOptions(applications?: Application[]) {
   return (applications || []).map((item) => ({
     value: item.client_id,
-    label: `${item.name} (${item.client_id})`
+    searchText: `${item.name} ${item.client_id}`,
+    label: (
+      <span className="application-option">
+        <strong>{item.name}</strong>
+        <span>{item.client_id}</span>
+      </span>
+    )
   }));
 }
 
@@ -1963,7 +1970,7 @@ function Resources() {
           }}
         >
           <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
-            <Select showSearch optionFilterProp="label" options={appOptions} />
+            <Select showSearch optionFilterProp="searchText" options={appOptions} />
           </Form.Item>
           <Form.Item name="gallery_type" label="图库" rules={[{ required: true }]}>
             <Select options={galleryUploadTypes} />
