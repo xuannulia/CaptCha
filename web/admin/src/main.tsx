@@ -2322,7 +2322,7 @@ function RiskModels() {
     { title: "名称", dataIndex: "name" },
     { title: "版本", dataIndex: "version" },
     { title: "样本版本", dataIndex: "feature_version" },
-    { title: "训练数据", dataIndex: "training_window" },
+    { title: "训练时间窗", dataIndex: "training_window" },
     { title: "质量", render: (_, row) => modelQualityText(row) },
     { title: "上线方式", render: (_, row) => <Tag color={row.mode === "enforce" ? "red" : row.mode === "observe" ? "blue" : "default"}>{modelModeLabel(row.mode)}</Tag> },
     { title: "状态", render: (_, row) => <Tag color={row.status === "active" ? "green" : row.status === "rolled_back" ? "orange" : "default"}>{modelStatusLabel(row.status)}</Tag> },
@@ -2344,8 +2344,6 @@ function RiskModels() {
           form={form}
           layout="vertical"
           initialValues={{
-            name: "track-baseline",
-            feature_version: "track-v1",
             mode: "shadow"
           }}
           onFinish={async (values) => {
@@ -2365,11 +2363,11 @@ function RiskModels() {
             }
           }}
         >
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="version" label="版本" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="feature_version" label="样本版本" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="training_window" label="训练数据" rules={[{ required: true }]}><Input placeholder="2026-06-01/2026-06-20" /></Form.Item>
-          <Form.Item name="artifact_uri" label="模型文件" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="name" label="模型名称" rules={[{ required: true }]}><Input placeholder="滑动轨迹基线" /></Form.Item>
+          <Form.Item name="version" label="模型版本" rules={[{ required: true }]}><Input placeholder="2026-06-v1" /></Form.Item>
+          <Form.Item name="feature_version" label="样本版本" rules={[{ required: true }]}><Input placeholder="track-v1" /></Form.Item>
+          <Form.Item name="training_window" label="训练时间窗" rules={[{ required: true }]}><Input placeholder="2026-06-01 至 2026-06-20" /></Form.Item>
+          <Form.Item name="artifact_uri" label="模型文件" rules={[{ required: true }]}><Input placeholder="s3://models/track/2026-06-v1.json" /></Form.Item>
           <Form.Item name="mode" label="上线方式"><Select options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
           <Space.Compact block>
             <Form.Item name="auc" label="准确率" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
