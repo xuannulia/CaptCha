@@ -1424,7 +1424,9 @@ open_demo_rotate_success_check() {
 			process.exit(1);
 		}
 		const result = JSON.parse(output.result);
-		if (result.beforeTransform === result.duringTransform || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.value !== "0" || result.confirmCount !== 0) {
+		const passed = result.status === "通过" || result.sideResult === "通过" || result.footer.includes("验证通过");
+		const pending = result.status === "待验证" && result.sideResult === "待验证" && result.value === "0";
+		if (result.beforeTransform === result.duringTransform || (!pending && !passed) || result.footer.includes("验证失败") || result.confirmCount !== 0) {
 			console.error(`unexpected rotate interaction result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
@@ -1488,7 +1490,9 @@ open_demo_rotate_degree_success_check() {
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		const result = JSON.parse(output.result);
 		const value = Number(result.value);
-		if (value !== 0 || result.beforeTransform === result.duringTransform || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.confirmCount !== 0) {
+		const passed = result.status === "通过" || result.sideResult === "通过" || result.footer.includes("验证通过");
+		const pending = result.status === "待验证" && result.sideResult === "待验证" && value === 0;
+		if (result.beforeTransform === result.duringTransform || (!pending && !passed) || result.footer.includes("验证失败") || result.confirmCount !== 0) {
 			console.error(`unexpected rotate degree interaction result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}

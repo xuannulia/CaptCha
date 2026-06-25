@@ -1475,11 +1475,32 @@ func TestAdminTokenAuth(t *testing.T) {
 		t.Fatalf("expected unauthorized admin request, got %d %s", unauthorized.Code, unauthorized.Body.String())
 	}
 
+	unauthorizedCheck := request(t, server, http.MethodGet, "/api/v1/admin/auth/check", nil)
+	if unauthorizedCheck.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized admin auth check, got %d %s", unauthorizedCheck.Code, unauthorizedCheck.Body.String())
+	}
+
 	authorized := requestWithHeaders(t, server, http.MethodGet, "/api/v1/admin/applications", nil, map[string]string{
 		"Authorization": "Bearer admin-secret",
 	})
 	if authorized.Code != http.StatusOK {
 		t.Fatalf("expected authorized admin request, got %d %s", authorized.Code, authorized.Body.String())
+	}
+
+	authorizedCheck := requestWithHeaders(t, server, http.MethodGet, "/api/v1/admin/auth/check", nil, map[string]string{
+		"X-Captcha-Admin-Token": "admin-secret",
+	})
+	if authorizedCheck.Code != http.StatusOK {
+		t.Fatalf("expected authorized admin auth check, got %d %s", authorizedCheck.Code, authorizedCheck.Body.String())
+	}
+	var body struct {
+		OK            bool `json:"ok"`
+		Authenticated bool `json:"authenticated"`
+		Required      bool `json:"required"`
+	}
+	decode(t, authorizedCheck, &body)
+	if !body.OK || !body.Authenticated || !body.Required {
+		t.Fatalf("expected successful admin auth check body, got %+v", body)
 	}
 }
 

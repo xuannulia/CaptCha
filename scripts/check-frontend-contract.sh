@@ -76,6 +76,8 @@ require_pattern web/admin/src/main.tsx '@tanstack/react-query' "admin code wires
 require_pattern web/admin/src/main.tsx 'from "antd"' "admin code wires Ant Design"
 require_pattern web/admin/src/main.tsx 'captcha-admin-token' "admin console supports runtime admin authorization"
 require_pattern web/admin/src/main.tsx 'captcha-admin-unauthorized' "admin console reacts to backend authorization failures"
+require_pattern web/admin/src/main.tsx '/api/v1/admin/auth/check' "admin console validates authorization before loading data"
+require_pattern web/admin/src/main.tsx 'authState === "authorized"' "admin console gates management pages behind authorization state"
 require_pattern web/admin/src/main.tsx 'label="触发条件"' "route policy form uses business trigger wording"
 require_pattern web/admin/src/main.tsx 'function ApplicationCell' "admin tables render application names before identifiers"
 require_pattern web/admin/src/main.tsx 'label="上线方式"' "risk model admin uses release wording"

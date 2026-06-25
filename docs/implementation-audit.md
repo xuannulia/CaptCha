@@ -45,7 +45,7 @@
 | clearance 短期通行态 | `internal/token`、`internal/store`、Policy/Ticket HTTP/gRPC、Gateway、Express middleware；测试覆盖 ticket 换 clearance、后续同 scene 放行、账号 hash 不匹配回退 challenge、匿名设备 hash 绑定、Gateway 写回 header/cookie 和 middleware 读取 cookie |
 | challenge id 随机且短 TTL | `internal/store/id.go`、`internal/engine`；session 创建、TTL 配置和过期状态测试 |
 | 应用 client secret 只返回一次并 hash 存储 | `internal/secret`、`handleRotateApplicationSecret`；API 和 store 测试确认不泄露 `secret_hash` |
-| 管理 API 强鉴权 | `CAPTCHA_ADMIN_TOKEN`、`withAdminAuth`；`TestAdminTokenAuth` |
+| 管理 API 强鉴权 | `CAPTCHA_ADMIN_TOKEN`、`withAdminAuth`、`GET /api/v1/admin/auth/check`；`TestAdminTokenAuth` |
 | gRPC 平台 token 和应用 secret 鉴权 | `internal/grpcserver` interceptors；`TestGRPCPlatformTokenAuth`、`TestGRPCClientSecretAuth` 覆盖 Policy、Ticket、Config 和 Event 服务，Event 同时拒绝缺失 `client_id` 的匿名写入 |
 | 中间件/Gateway header allowlist | `collectAllowedHeaders`、Express middleware；Gateway 和 middleware 测试确认默认不信任/不转发敏感头 |
 | 远程调用 deadline 与故障降级 | Gateway `context.WithTimeout`/HTTP client timeout、Express `AbortController` timeout、风险推理 HTTP/gRPC 入口降级、训练特征异步写入异常恢复、Gateway 事件队列回压降级；Gateway、middleware、策略评估和验证接口测试覆盖 fail-open/fail-close、熔断、超时、外部推理失败、特征采集失败和事件队列满不阻塞主链路 |

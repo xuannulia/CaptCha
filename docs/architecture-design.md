@@ -41,7 +41,7 @@
 - 管理 API 的应用、密钥轮换、路由策略、IP 策略、资源、模型版本和训练标签变更会写入审计事件，记录变更类型、目标上下文和脱敏后的管理端 IP。外部 Event 上报不能控制审计事件 ID 或创建时间，平台会在写入时生成服务端身份字段。
 - 应用状态已进入主链路治理：不存在的应用不能创建 challenge；`disabled` 应用不能创建/获取/刷新/验证 challenge。HTTP/gRPC 策略评估会对 disabled/unknown 应用返回 `block` 决策，ticket 校验返回 `valid=false`，事件上报要求明确 `client_id` 并拒绝 disabled 应用写入。
 - 应用密钥支持后端生成和轮换；明文 client secret 只在轮换响应中返回一次，服务端仅保存 PBKDF2-SHA256 hash。应用一旦配置 secret，HTTP 后端接入 API 和 gRPC Policy/Ticket/Config/Event 服务都会校验 `X-Captcha-Client-Secret` 或 Bearer token。
-- 管理 API 支持可选 Bearer token 鉴权；设置 `CAPTCHA_ADMIN_TOKEN` 后，所有 `/api/v1/admin/*` 请求必须带管理 token。管理台提供运行时授权入口，令牌保存在当前浏览器并随 Admin API 请求发送，接口返回未授权时会要求重新授权。
+- 管理 API 支持可选 Bearer token 鉴权；设置 `CAPTCHA_ADMIN_TOKEN` 后，所有 `/api/v1/admin/*` 请求必须带管理 token。管理台启动时会先调用授权校验接口，校验通过后才加载应用、策略、资源、审计和模型数据；令牌保存在当前浏览器并随 Admin API 请求发送，接口返回未授权时会要求重新授权。
 - Server 启动支持生产安全闸门：设置 `CAPTCHA_ENV=production` 或 `CAPTCHA_PRODUCTION=true` 后，缺少管理 token、gRPC token、metrics token、显式非通配 CORS/return_url allowlist、PostgreSQL、Redis，或未禁用 demo seed 时会启动失败。
 - gRPC 当前服务已覆盖 Policy、Ticket、Config、Event，并支持平台级 `CAPTCHA_GRPC_TOKEN` 强鉴权和应用 client secret metadata 鉴权；Go 侧已由 `proto/captcha/v1/captcha.proto` 生成 `gen/captcha/v1` 客户端和服务端代码，业务内部类型通过转换层与 protobuf 契约隔离。
 - ConfigService 支持 `GetConfig` 基础拉取和 `WatchConfig` 流式配置更新；配置快照包含 `application_status`、路由策略、IP 策略和验证码资源，管理 API 修改应用、路由策略、IP 策略或资源后会推送新版本配置快照。
@@ -773,6 +773,9 @@ POST /api/v1/events/report
 ```text
 GET /api/v1/admin/metrics
   管理台概览指标，聚合应用、策略、资源、近期审计事件、训练样本、模型版本和资源命中/失败分析。
+
+GET /api/v1/admin/auth/check
+  管理台授权校验。设置 CAPTCHA_ADMIN_TOKEN 时必须携带管理令牌，用于前端在加载后台数据前确认当前浏览器已授权。
 
 GET /api/v1/admin/applications
 POST /api/v1/admin/applications

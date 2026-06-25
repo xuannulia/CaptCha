@@ -70,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/challenge/sessions/{id}/refresh", s.handleRefreshSession)
 	mux.HandleFunc("POST /api/v1/tickets/verify", s.handleVerifyTicket)
 	mux.HandleFunc("POST /api/v1/policy/evaluate", s.handleEvaluatePolicy)
+	mux.HandleFunc("GET /api/v1/admin/auth/check", s.handleAdminAuthCheck)
 	mux.HandleFunc("GET /api/v1/admin/applications", s.handleListApplications)
 	mux.HandleFunc("POST /api/v1/admin/applications", s.handleUpsertApplication)
 	mux.HandleFunc("POST /api/v1/admin/applications/{client_id}/secret", s.handleRotateApplicationSecret)
@@ -103,6 +104,14 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+}
+
+func (s *Server) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"authenticated": true,
+		"required":      strings.TrimSpace(s.options.AdminToken) != "",
+	})
 }
 
 type createSessionRequest struct {

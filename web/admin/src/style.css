@@ -53,6 +53,25 @@ body {
   width: 220px;
 }
 
+.admin-auth-panel {
+  max-width: 420px;
+  margin: 120px auto 0;
+}
+
+.admin-auth-panel .ant-card-body {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-auth-panel strong {
+  color: #111827;
+  font-size: 18px;
+}
+
+.admin-auth-panel span {
+  color: #64748b;
+}
+
 .overview-page {
   display: grid;
   gap: 16px;
