@@ -1985,14 +1985,14 @@ function Resources() {
             <Form.Item name="scene" label="场景" style={{ width: "50%" }}>
               <Input placeholder="全场景" />
             </Form.Item>
-            <Form.Item name="tag" label="标签" style={{ width: "50%" }}>
-              <Input placeholder="default" />
+            <Form.Item name="tag" label="素材分组" style={{ width: "50%" }}>
+              <Input placeholder="通用" />
             </Form.Item>
           </Space.Compact>
           {uploadGalleryType === "grid" && (
             <Space.Compact block>
               <Form.Item name="category" label="分类" rules={[{ required: true, message: "请输入分类" }]} style={{ width: "50%" }}>
-                <Input placeholder="car" />
+                <Input placeholder="汽车" />
               </Form.Item>
               <Form.Item name="label" label="显示名" style={{ width: "50%" }}>
                 <Input placeholder="汽车" />
