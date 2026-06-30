@@ -99,30 +99,39 @@ type SessionResponse = {
 };
 
 type ChallengeResponse = {
+  ok?: boolean;
+  reason?: string;
+  reason_code?: string;
   session_id: string;
   client_id: string;
   scene: string;
+  status?: string;
   expire_at?: string;
   route?: string;
   request_nonce?: string;
   resource_tag?: string;
   return_url?: string;
-  challenge: Challenge;
+  challenge?: Challenge;
 };
 
 type RefreshResponse = {
-  session_id: string;
-  expire_at: string;
+  ok?: boolean;
+  session_id?: string;
+  expire_at?: string;
+  reason?: string;
+  reason_code?: string;
+  can_refresh?: boolean;
   route?: string;
   request_nonce?: string;
   resource_tag?: string;
   return_url?: string;
-  challenge: Challenge;
+  challenge?: Challenge;
 };
 
 type VerifyResponse = {
   ok?: boolean;
   decision?: string;
+  reason?: string;
   reason_code?: string;
   can_refresh?: boolean;
   captcha_type?: string;
@@ -142,32 +151,316 @@ type TrackPoint = {
   type: "start" | "move" | "end";
 };
 
+type PointerInputType = "mouse" | "touch" | "keyboard" | "unknown";
+type InputDeviceHint = "mouse" | "trackpad" | "touch" | "unknown";
+
+type InputMetaState = {
+  inputDeviceHint: InputDeviceHint;
+  primaryPointerType: PointerInputType;
+  lastPointerType: PointerInputType;
+  pointerCounts: Record<PointerInputType, number>;
+  keyboardUsed: boolean;
+  touchCapable: boolean;
+  coarsePointer: boolean;
+  hoverCapable: boolean;
+  maxTouchPoints: number;
+};
+
+type CollectorTaskType = "slider_short" | "slider_medium" | "slider_long" | "slider_slow" | "slider_fast" | "slider_adjust";
+
+type CollectorTask = {
+  id: string;
+  type: CollectorTaskType;
+  title: string;
+  start: ChallengePoint;
+  target: ChallengePoint;
+  path: ChallengePoint[];
+};
+
+type CollectionDeviceSummary = {
+  label: string;
+  target: number;
+  count: number;
+  remaining: number;
+  progress: number;
+};
+
+type CollectionSummary = {
+  sample_source: string;
+  target_total: number;
+  total: number;
+  remaining: number;
+  devices: Record<string, CollectionDeviceSummary>;
+  captcha_types: Record<string, number>;
+};
+
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8080";
-const refreshIconURL = "/refresh.svg";
-const closeIconURL = "/close.svg";
 const sliderThumbWidth = 52;
+const recreateSessionReasons = new Set([
+  "EXPIRED",
+  "NOT_FOUND",
+  "CONSUMED",
+  "SESSION_NOT_ACTIVE",
+  "SESSION_ALREADY_VERIFIED"
+]);
+
+function responseReason(response?: { reason?: string; reason_code?: string }, fallback = "UNKNOWN") {
+  return response?.reason_code || response?.reason || fallback;
+}
+
+function shouldRecreateSession(reason?: string) {
+  return Boolean(reason && recreateSessionReasons.has(reason));
+}
+
+function expiredRefreshStatus(reason?: string) {
+  return reason === "EXPIRED" ? "验证码已过期，正在刷新" : "验证码已失效，正在刷新";
+}
+
+function runtimeThemeFromParams(params: URLSearchParams) {
+  const theme = (params.get("theme") || "").trim().toLowerCase();
+  const embed = (params.get("embed") || "").trim().toLowerCase();
+  return theme === "dark" || embed === "1" || embed === "true" ? "dark" : "light";
+}
 
 function App() {
+  if (window.location.pathname === "/collect") {
+    return <CollectPage />;
+  }
   if (window.location.pathname === "/demo") {
     return <DemoPage />;
   }
   return <RuntimeChallenge />;
 }
 
-function RuntimeHeaderActions({ onRefresh, onClose }: { onRefresh: () => void; onClose: () => void }) {
+function RefreshIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M20 11a8 8 0 1 0-2.34 5.66" />
+      <path d="M20 5v6h-6" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function RuntimeHeaderActions({ onRefresh, onClose, refreshDisabled = false }: { onRefresh: () => void; onClose: () => void; refreshDisabled?: boolean }) {
   return (
     <div class="runtime-header-actions">
-      <button type="button" class="icon-button" onClick={onRefresh} aria-label="刷新验证码" title="刷新">
-        <img src={refreshIconURL} alt="" aria-hidden="true" />
+      <button type="button" class="icon-button" onClick={onRefresh} disabled={refreshDisabled} aria-label="刷新验证码" title="刷新">
+        <RefreshIcon />
       </button>
       <button type="button" class="icon-button" onClick={onClose} aria-label="关闭验证码" title="关闭">
-        <img src={closeIconURL} alt="" aria-hidden="true" />
+        <CloseIcon />
       </button>
     </div>
   );
 }
 
+function CollectPage() {
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const inputDeviceHint = useMemo(() => normalizeInputDeviceHint(params.get("input_device") || params.get("device") || params.get("input") || ""), [params]);
+  const collectorToken = useMemo(() => params.get("collector_token") || params.get("token") || "", [params]);
+  const clientID = useMemo(() => params.get("client_id") || "demo", [params]);
+  const scene = useMemo(() => params.get("scene") || `collector-${inputDeviceHint}`, [params, inputDeviceHint]);
+  const [taskIndex, setTaskIndex] = useState(0);
+  const [task, setTask] = useState(() => createCollectorTask(0));
+  const [collectorValue, setCollectorValue] = useState(0);
+  const [track, setTrack] = useState<TrackPoint[]>([]);
+  const [status, setStatus] = useState("等待操作");
+  const [submitted, setSubmitted] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const collectorControlRef = useRef<HTMLDivElement>(null);
+  const startedAt = useRef(0);
+  const trackRef = useRef<TrackPoint[]>([]);
+  const draggingRef = useRef(false);
+  const inputMetaRef = useRef<InputMetaState>(createInputMetaState(inputDeviceHint));
+  const submitInFlight = useRef(false);
+  const nextTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    document.title = "轨迹采集";
+    return () => {
+      if (nextTimer.current) clearTimeout(nextTimer.current);
+    };
+  }, []);
+
+  function resetForTask(nextIndex: number) {
+    const nextTask = createCollectorTask(nextIndex);
+    setTaskIndex(nextIndex);
+    setTask(nextTask);
+    setCollectorValue(0);
+    setTrack([]);
+    setStatus("等待操作");
+    trackRef.current = [];
+    startedAt.current = 0;
+    draggingRef.current = false;
+    submitInFlight.current = false;
+    inputMetaRef.current = createInputMetaState(inputDeviceHint);
+  }
+
+  function scheduleNext(delay = 380) {
+    if (nextTimer.current) clearTimeout(nextTimer.current);
+    nextTimer.current = setTimeout(() => {
+      resetForTask(taskIndex + 1);
+    }, delay);
+  }
+
+  function rememberCollectorPointer(inputType: PointerInputType) {
+    const state = inputMetaRef.current;
+    state.pointerCounts[inputType] = (state.pointerCounts[inputType] || 0) + 1;
+    state.lastPointerType = inputType;
+    if (inputType === "keyboard") {
+      state.keyboardUsed = true;
+      return;
+    }
+    if (state.primaryPointerType === "unknown" && inputType !== "unknown") {
+      state.primaryPointerType = inputType;
+    }
+  }
+
+  function appendCollectorTrack(type: TrackPoint["type"], point: ChallengePoint, inputType: PointerInputType) {
+    rememberCollectorPointer(inputType);
+    if (!startedAt.current) startedAt.current = performance.now();
+    const t = Math.max(0, Math.round(performance.now() - startedAt.current));
+    const previous = trackRef.current[trackRef.current.length - 1];
+    if (previous && type === "move" && Math.hypot(previous.x - point.x, previous.y - point.y) < 2 && t - previous.t < 20) {
+      return trackRef.current;
+    }
+    const monotonicT = previous && t < previous.t ? previous.t : t;
+    const nextTrack = [...trackRef.current, { x: point.x, y: point.y, t: monotonicT, type }];
+    trackRef.current = nextTrack.slice(-220);
+    setTrack(trackRef.current);
+    return trackRef.current;
+  }
+
+  function onCollectorPointerDown(event: PointerEvent) {
+    if (paused || submitInFlight.current || !collectorControlRef.current) return;
+    event.preventDefault();
+    const point = collectorSliderPointFromEvent(event, collectorControlRef.current);
+    startedAt.current = performance.now();
+    trackRef.current = [];
+    setTrack([]);
+    setCollectorValue(point.x);
+    draggingRef.current = true;
+    setStatus("采集中");
+    trySetPointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
+    appendCollectorTrack("start", point, pointerTypeFromEvent(event));
+  }
+
+  function onCollectorPointerMove(event: PointerEvent) {
+    if (!draggingRef.current || paused || submitInFlight.current || !collectorControlRef.current) return;
+    event.preventDefault();
+    const point = collectorSliderPointFromEvent(event, collectorControlRef.current);
+    setCollectorValue(point.x);
+    appendCollectorTrack("move", point, pointerTypeFromEvent(event));
+  }
+
+  function onCollectorPointerUp(event: PointerEvent) {
+    if (!draggingRef.current || paused || submitInFlight.current || !collectorControlRef.current) return;
+    event.preventDefault();
+    const point = collectorSliderPointFromEvent(event, collectorControlRef.current);
+    setCollectorValue(point.x);
+    const nextTrack = appendCollectorTrack("end", point, pointerTypeFromEvent(event));
+    draggingRef.current = false;
+    tryReleasePointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
+    void submitCollectorTrack(nextTrack);
+  }
+
+  function onCollectorPointerCancel(event: PointerEvent) {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    tryReleasePointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
+    setStatus("已取消");
+    scheduleNext(260);
+  }
+
+  async function submitCollectorTrack(nextTrack: TrackPoint[]) {
+    if (submitInFlight.current) return;
+    if (nextTrack.length < 2) {
+      setStatus("轨迹过短");
+      scheduleNext(420);
+      return;
+    }
+    submitInFlight.current = true;
+    setStatus("提交中");
+    try {
+      await postWithHeaders("/api/v1/risk/track-samples", {
+        client_id: clientID,
+        scene,
+        task_type: task.type,
+        task_target: { x: Math.round(task.target.x), y: Math.round(task.target.y) },
+        input_device_hint: inputDeviceHint,
+        track: nextTrack,
+        viewport: { width: 360, height: 48 },
+        runtime_meta: {
+          runtime_version: "0.1.0",
+          device_pixel_ratio: window.devicePixelRatio || 1,
+          ...runtimeInputMeta(inputMetaRef.current)
+        }
+      }, collectorToken ? { "X-Captcha-Collector-Token": collectorToken } : {});
+      setSubmitted((current) => current + 1);
+      setStatus("已提交");
+      scheduleNext();
+    } catch {
+      setStatus("提交失败，自动跳过");
+      scheduleNext(900);
+    }
+  }
+
+  const deviceLabel = inputDeviceHint === "unknown" ? "未指定设备" : inputDeviceHint;
+  const collectorRatio = clamp(collectorValue / 360, 0, 1);
+  return (
+    <main class="collector-shell">
+      <section class="collector-panel">
+        <header class="collector-header">
+          <div>
+            <strong>轨迹采集</strong>
+            <span>{deviceLabel}</span>
+          </div>
+          <div class="collector-actions">
+            <b>{submitted}</b>
+            <button type="button" onClick={() => setPaused((current) => !current)}>
+              {paused ? "继续" : "暂停"}
+            </button>
+          </div>
+        </header>
+        <div
+          ref={collectorControlRef}
+          class="collector-slider-control"
+          role="slider"
+          aria-valuemin={0}
+          aria-valuemax={360}
+          aria-valuenow={Math.round(collectorValue)}
+          onPointerDown={onCollectorPointerDown}
+          onPointerMove={onCollectorPointerMove}
+          onPointerUp={onCollectorPointerUp}
+          onPointerCancel={onCollectorPointerCancel}
+        >
+          <span class="collector-slider-target" style={{ left: collectorTargetLeftStyle(task.target.x) }} />
+          <span class="collector-slider-fill" style={{ width: sliderFillWidthStyle(collectorRatio) }} />
+          <span class="collector-slider-thumb" style={{ left: sliderThumbLeftStyle(collectorRatio) }} />
+        </div>
+        <footer class="collector-footer">
+          <span>{paused ? "已暂停" : task.title}</span>
+          <strong>{status}</strong>
+        </footer>
+      </section>
+    </main>
+  );
+}
+
 function DemoPage() {
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const inputDeviceHint = useMemo(() => normalizeInputDeviceHint(params.get("input_device") || params.get("device") || params.get("input") || ""), [params]);
+  const sampleSource = useMemo(() => normalizeSampleSource(params.get("sample_source") || params.get("source") || "human-demo"), [params]);
+  const scenePrefix = useMemo(() => normalizeScenePart(params.get("scene_prefix") || sampleSource || "human-demo"), [params, sampleSource]);
   const captchaTypes: Array<{ type: CaptchaRequestType; label: string; scene: string }> = [
     { type: "RANDOM", label: "随机验证", scene: "verify" },
     { type: "GESTURE", label: "手势描绘", scene: "verify" },
@@ -191,13 +484,24 @@ function DemoPage() {
   const [elapsed, setElapsed] = useState(0);
   const [actualType, setActualType] = useState("");
   const [frameOpen, setFrameOpen] = useState(true);
+  const [summary, setSummary] = useState<CollectionSummary | null>(null);
   const startedAt = useRef(performance.now());
+  const autoReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRef = useRef<CaptchaRequestType>(active);
   const activeItem = captchaTypes.find((item) => item.type === active) || captchaTypes[0];
-  const src = challengeFrameURL(activeItem.type, activeItem.scene, nonce);
+  const src = challengeFrameURL(activeItem.type, activeItem.scene, nonce, { inputDeviceHint, sampleSource, scenePrefix });
 
   useEffect(() => {
     document.title = "CaptCha Demo";
+    void loadSummary();
+    return () => {
+      if (autoReloadTimer.current) clearTimeout(autoReloadTimer.current);
+    };
   }, []);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -214,11 +518,14 @@ function DemoPage() {
         setStatus("通过");
         setLastTicket(String(data.ticket || ""));
         setElapsed(Math.max(1, Math.round(performance.now() - startedAt.current)));
+        window.setTimeout(() => void loadSummary(), 450);
+        scheduleAutoReload(activeRef.current);
       }
       if (data?.type === "CAPTCHA_FAILURE") {
         setStatus("失败");
         setLastTicket("");
         setElapsed(Math.max(1, Math.round(performance.now() - startedAt.current)));
+        window.setTimeout(() => void loadSummary(), 450);
       }
       if (data?.type === "CAPTCHA_CLOSE") {
         setStatus("已关闭");
@@ -232,6 +539,10 @@ function DemoPage() {
   }, []);
 
   function reload(nextType = active) {
+    if (autoReloadTimer.current) {
+      clearTimeout(autoReloadTimer.current);
+      autoReloadTimer.current = null;
+    }
     setActive(nextType);
     setNonce(newNonce());
     setStatus("待验证");
@@ -242,6 +553,26 @@ function DemoPage() {
     startedAt.current = performance.now();
   }
 
+  function scheduleAutoReload(nextType: CaptchaRequestType) {
+    if (autoReloadTimer.current) clearTimeout(autoReloadTimer.current);
+    autoReloadTimer.current = window.setTimeout(() => {
+      autoReloadTimer.current = null;
+      reload(nextType);
+    }, 180);
+  }
+
+  async function loadSummary() {
+    try {
+      const next = await get<CollectionSummary>(`/api/v1/risk/demo-collection-summary?sample_source=${encodeURIComponent(sampleSource)}`);
+      setSummary(next);
+    } catch {
+      setSummary(null);
+    }
+  }
+
+  const recommendedDevice = collectionRecommendedDevice(summary);
+  const deviceOrder = ["mouse", "touch", "trackpad"];
+
   return (
     <main class="demo-shell">
       <section class="demo-topbar">
@@ -250,6 +581,31 @@ function DemoPage() {
           <p>Iframe 模式</p>
         </div>
         <button type="button" onClick={() => reload()} aria-label="刷新当前验证码">刷新</button>
+      </section>
+
+      <section class="collection-dashboard" aria-label="采集目标">
+        <div class="collection-total">
+          <span>采集进度</span>
+          <strong>{summary ? `${summary.total}/${summary.target_total}` : "-/10000"}</strong>
+          <small>{summary ? `剩余 ${summary.remaining}` : "加载中"}</small>
+        </div>
+        <div class="collection-targets">
+          {deviceOrder.map((device) => {
+            const item = summary?.devices?.[device] || fallbackCollectionDevice(device);
+            return (
+              <a
+                key={device}
+                class={`collection-target ${device === inputDeviceHint ? "active" : ""} ${device === recommendedDevice ? "recommended" : ""}`}
+                href={`/demo?input_device=${device}&sample_source=${sampleSource}`}
+              >
+                <span>{item.label}</span>
+                <strong>{item.count}/{item.target}</strong>
+                <small>缺 {item.remaining}</small>
+                <i style={{ width: `${clamp(item.progress, 0, 100)}%` }} />
+              </a>
+            );
+          })}
+        </div>
       </section>
 
       <section class="demo-layout">
@@ -321,6 +677,9 @@ function DemoPage() {
 
 function RuntimeChallenge() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const inputDeviceHint = useMemo(() => normalizeInputDeviceHint(params.get("input_device") || params.get("device") || params.get("input") || ""), [params]);
+  const sampleSource = useMemo(() => normalizeSampleSource(params.get("sample_source") || params.get("source") || ""), [params]);
+  const runtimeTheme = useMemo(() => runtimeThemeFromParams(params), [params]);
   const initialSessionId = useMemo(() => params.get("session_id") || sessionIDFromPath(), [params]);
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [route, setRoute] = useState(params.get("route") || "");
@@ -330,6 +689,7 @@ function RuntimeChallenge() {
   const [challenge, setChallenge] = useState<Challenge | null>(null);
   const [status, setStatus] = useState("加载中");
   const [ticket, setTicket] = useState("");
+  const [sessionCompleted, setSessionCompleted] = useState(false);
   const [value, setValue] = useState(0);
   const [points, setPoints] = useState<ChallengePoint[]>([]);
   const [track, setTrack] = useState<TrackPoint[]>([]);
@@ -345,6 +705,7 @@ function RuntimeChallenge() {
   const valueRef = useRef(0);
   const pointsRef = useRef<ChallengePoint[]>([]);
   const trackRef = useRef<TrackPoint[]>([]);
+  const inputMetaRef = useRef<InputMetaState>(createInputMetaState(inputDeviceHint));
   const jigsawTilesRef = useRef<number[]>([]);
   const ticketRef = useRef("");
   const boardRef = useRef<HTMLDivElement>(null);
@@ -355,6 +716,8 @@ function RuntimeChallenge() {
   const sliderRatio = sliderRatioFromValue(value, sliderBounds);
   const sliderFillWidth = sliderFillWidthStyle(sliderRatio);
   const sliderThumbLeft = sliderThumbLeftStyle(sliderRatio);
+  const completed = sessionCompleted || Boolean(ticket);
+  const completionMarker = completed ? (ticket || "completed") : "";
 
   useEffect(() => {
     void bootstrap();
@@ -369,32 +732,63 @@ function RuntimeChallenge() {
     try {
       let id = sessionId;
       if (!id) {
-        const created = await post<SessionResponse>("/api/v1/challenge/sessions", {
-          client_id: params.get("client_id") || "demo",
-          scene: params.get("scene") || "login",
-          captcha_type: params.get("captcha_type") || "AUTO",
-          route,
-          return_url: returnUrl,
-          request_nonce: requestNonce,
-          resource_tag: resourceTag
-        });
-        id = created.session_id;
-        setSessionId(id);
-        applySessionContext(created);
+        await createFreshSession("加载中");
+        return;
       }
       await loadChallenge(id);
-    } catch {
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "LOAD_FAILED";
+      if (shouldRecreateSession(reason)) {
+        try {
+          await createFreshSession(expiredRefreshStatus(reason));
+        } catch {
+          setStatus("加载失败");
+        }
+        return;
+      }
       setStatus("加载失败");
     }
   }
 
   async function loadChallenge(id: string) {
     const loaded = await get<ChallengeResponse>(`/api/v1/challenge/sessions/${id}`);
+    if (loaded.ok === false || !loaded.challenge) {
+      throw new Error(responseReason(loaded, "LOAD_FAILED"));
+    }
     applySessionContext(loaded);
-    resetChallenge(loaded.challenge);
+    if (loaded.status === "verified") {
+      resetChallenge(loaded.challenge, id);
+      setSessionCompleted(true);
+      setStatus("验证通过");
+      return;
+    }
+    resetChallenge(loaded.challenge, id);
   }
 
-  async function refresh() {
+  async function createFreshSession(statusText = "刷新中") {
+    setStatus(statusText);
+    const created = await post<SessionResponse>("/api/v1/challenge/sessions", {
+      client_id: params.get("client_id") || "demo",
+      scene: params.get("scene") || "login",
+      captcha_type: params.get("captcha_type") || "AUTO",
+      route,
+      return_url: returnUrl,
+      request_nonce: requestNonce,
+      resource_tag: resourceTag
+    });
+    applySessionContext(created);
+    setSessionId(created.session_id);
+    await loadChallenge(created.session_id);
+  }
+
+  async function refresh(options: { allowDuringVerify?: boolean } = {}) {
+    if (sessionCompleted || ticketRef.current || ticket) {
+      setStatus("验证通过");
+      return;
+    }
+    if (verifyInFlight.current && !options.allowDuringVerify) {
+      return;
+    }
     if (!sessionId) {
       await bootstrap();
       return;
@@ -403,7 +797,19 @@ function RuntimeChallenge() {
     try {
       const refreshed = await post<RefreshResponse>(`/api/v1/challenge/sessions/${sessionId}/refresh`, {});
       applySessionContext(refreshed);
-      resetChallenge(refreshed.challenge);
+      if (!refreshed.challenge) {
+        const reason = responseReason(refreshed, "REFRESH_FAILED");
+        if (shouldRecreateSession(reason)) {
+          await createFreshSession(expiredRefreshStatus(reason));
+          return;
+        }
+        if (refreshed.reason_code === "SESSION_ALREADY_VERIFIED") {
+          setSessionCompleted(true);
+        }
+        setStatus(reason === "SESSION_ALREADY_VERIFIED" ? "验证通过" : "刷新失败");
+        return;
+      }
+      resetChallenge(refreshed.challenge, sessionId);
     } catch {
       setStatus("刷新失败");
     }
@@ -425,16 +831,18 @@ function RuntimeChallenge() {
     }
   }
 
-  function resetChallenge(next: Challenge) {
+  function resetChallenge(next: Challenge, readySessionId = sessionId) {
     setChallenge(next);
     setStatus("");
     setTicket("");
+    setSessionCompleted(false);
     setPoints([]);
     setTrack([]);
     setValue(0);
     ticketRef.current = "";
     pointsRef.current = [];
     trackRef.current = [];
+    inputMetaRef.current = createInputMetaState(inputDeviceHint);
     valueRef.current = 0;
     const nextJigsawTiles = isJigsawCaptcha(next) ? initialJigsawTiles(next) : [];
     jigsawTilesRef.current = nextJigsawTiles;
@@ -447,7 +855,7 @@ function RuntimeChallenge() {
     jigsawDragStart.current = null;
     suppressNextBoardClick.current = false;
     verifyInFlight.current = false;
-    window.parent?.postMessage({ type: "CAPTCHA_READY", captchaType: next.type, prompt: next.prompt, sessionId, route, requestNonce }, "*");
+    window.parent?.postMessage({ type: "CAPTCHA_READY", captchaType: next.type, prompt: next.prompt, sessionId: readySessionId, route, requestNonce }, "*");
   }
 
   function applySessionContext(context: { route?: string; request_nonce?: string; resource_tag?: string; return_url?: string }) {
@@ -459,7 +867,7 @@ function RuntimeChallenge() {
 
   async function verify(snapshot?: { value?: number; points?: ChallengePoint[]; track?: TrackPoint[] }) {
     if (!challenge || !sessionId) return;
-    if (verifyInFlight.current || ticketRef.current) return;
+    if (verifyInFlight.current || ticketRef.current || sessionCompleted) return;
     verifyInFlight.current = true;
     setStatus("验证中");
     const answerValue = snapshot?.value ?? valueRef.current;
@@ -476,7 +884,9 @@ function RuntimeChallenge() {
       runtime_meta: {
         runtime_version: "0.1.0",
         device_pixel_ratio: window.devicePixelRatio || 1,
-        request_nonce: requestNonce
+        request_nonce: requestNonce,
+        sample_source: sampleSource,
+        ...runtimeInputMeta(inputMetaRef.current)
       }
     };
     try {
@@ -487,6 +897,7 @@ function RuntimeChallenge() {
         const successRequestNonce = result.request_nonce || requestNonce;
         const successReturnUrl = result.return_url || returnUrl;
         setTicket(issued);
+        setSessionCompleted(true);
         ticketRef.current = issued;
         setStatus("验证通过");
         window.parent?.postMessage({ type: "CAPTCHA_SUCCESS", ticket: issued, sessionId, route: successRoute, requestNonce: successRequestNonce, returnUrl: successReturnUrl }, "*");
@@ -502,7 +913,7 @@ function RuntimeChallenge() {
   }
 
   async function handleFailedVerify(result?: VerifyResponse, fallbackReason = "VERIFY_FAILED") {
-    const reason = result?.reason_code || fallbackReason;
+    const reason = responseReason(result, fallbackReason);
     const nextStatus = result?.decision === "challenge_harder"
       ? "验证升级中"
       : result?.decision === "block"
@@ -512,20 +923,29 @@ function RuntimeChallenge() {
     notifyParentFailure(reason);
     if (result?.challenge) {
       applySessionContext(result);
-      resetChallenge(result.challenge);
+      resetChallenge(result.challenge, sessionId);
+      return;
+    }
+    if (shouldRecreateSession(reason)) {
+      try {
+        await createFreshSession(expiredRefreshStatus(reason));
+      } catch {
+        setStatus("刷新失败");
+        if (challenge) resetAttemptState(challenge);
+      }
       return;
     }
     if (result?.decision === "block") {
       if (challenge) resetAttemptState(challenge);
       return;
     }
-    await refresh();
+    await refresh({ allowDuringVerify: true });
   }
 
   function onPointer(type: TrackPoint["type"], event: PointerEvent) {
     if (!challenge || !boardRef.current) return;
     const point = challengePointFromEvent(event, challenge, boardRef.current);
-    appendTrack(type, point.x, point.y);
+    appendTrack(type, point.x, point.y, pointerTypeFromEvent(event));
   }
 
   function onBoardPointerDown(event: PointerEvent) {
@@ -542,7 +962,7 @@ function RuntimeChallenge() {
       const point = challengePointFromEvent(event, challenge, event.currentTarget as HTMLDivElement);
       jigsawDragStart.current = point;
       trySetPointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
-      appendTrack("start", point.x, point.y);
+      appendTrack("start", point.x, point.y, pointerTypeFromEvent(event));
       return;
     }
     if (usesBoardDragControl(challenge)) {
@@ -551,6 +971,9 @@ function RuntimeChallenge() {
       trySetPointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
       updateValueFromBoard(event, "start");
       return;
+    }
+    if (isClickCaptcha(challenge)) {
+      rememberPointerInput(pointerTypeFromEvent(event));
     }
     if (!isClickCaptcha(challenge)) {
       onPointer("start", event);
@@ -568,7 +991,7 @@ function RuntimeChallenge() {
     if (isJigsawCaptcha(challenge) && jigsawDragStart.current) {
       event.preventDefault();
       const point = challengePointFromEvent(event, challenge, event.currentTarget as HTMLDivElement);
-      appendTrack("move", point.x, point.y);
+      appendTrack("move", point.x, point.y, pointerTypeFromEvent(event));
       return;
     }
     if (usesBoardDragControl(challenge) && boardRangeTracking.current) {
@@ -635,7 +1058,7 @@ function RuntimeChallenge() {
   function handlePathPointer(type: TrackPoint["type"], event: PointerEvent, reset: boolean) {
     if (!challenge || !boardRef.current) return undefined;
     const point = challengePointFromEvent(event, challenge, boardRef.current);
-    const nextTrack = appendTrack(type, point.x, point.y);
+    const nextTrack = appendTrack(type, point.x, point.y, pointerTypeFromEvent(event));
     const nextPoints = appendPathPoint(point, reset);
     return { points: nextPoints, track: nextTrack, value: valueRef.current };
   }
@@ -646,7 +1069,7 @@ function RuntimeChallenge() {
     const end = challengePointFromEvent(event, challenge, boardRef.current);
     jigsawDragStart.current = null;
     suppressNextBoardClick.current = true;
-    const nextTrack = appendTrack("end", end.x, end.y);
+    const nextTrack = appendTrack("end", end.x, end.y, pointerTypeFromEvent(event));
     if (distanceBetweenPoints(start, end) >= Math.min(numberParam(challenge, "tile_width", 80), numberParam(challenge, "tile_height", 40)) * 0.45) {
       const snapshot = applyJigsawPair(start, end, nextTrack);
       return snapshot ? { ...snapshot, autoVerify: false } : snapshot;
@@ -698,7 +1121,7 @@ function RuntimeChallenge() {
     const next = snapValue(raw, bounds.min, bounds.max, bounds.step);
     const trackY = Math.round(clamp(event.clientY - rect.top, 0, rect.height));
     setCurrentValue(next);
-    const nextTrack = appendTrack(type, next, trackY);
+    const nextTrack = appendTrack(type, next, trackY, pointerTypeFromEvent(event));
     return { value: next, track: nextTrack };
   }
 
@@ -714,7 +1137,7 @@ function RuntimeChallenge() {
     }
     const next = snapValue(raw, bounds.min, bounds.max, bounds.step);
     setCurrentValue(next);
-    const nextTrack = appendTrack(type, next, Math.round(point.y));
+    const nextTrack = appendTrack(type, next, Math.round(point.y), pointerTypeFromEvent(event));
     return { value: next, track: nextTrack };
   }
 
@@ -772,11 +1195,12 @@ function RuntimeChallenge() {
       event.preventDefault();
       const snapped = snapValue(next, bounds.min, bounds.max, bounds.step);
       setCurrentValue(snapped);
-      appendTrack("move", snapped, 0);
+      appendTrack("move", snapped, 0, "keyboard");
     }
   }
 
-  function appendTrack(type: TrackPoint["type"], x: number, y: number) {
+  function appendTrack(type: TrackPoint["type"], x: number, y: number, inputType?: PointerInputType) {
+    if (inputType) rememberPointerInput(inputType);
     if (!startedAt.current) startedAt.current = performance.now();
     const t = Math.max(0, Math.round(performance.now() - startedAt.current));
     const previous = trackRef.current[trackRef.current.length - 1];
@@ -788,6 +1212,19 @@ function RuntimeChallenge() {
     trackRef.current = nextTrack;
     setTrack(nextTrack);
     return nextTrack;
+  }
+
+  function rememberPointerInput(inputType: PointerInputType) {
+    const state = inputMetaRef.current;
+    state.pointerCounts[inputType] = (state.pointerCounts[inputType] || 0) + 1;
+    state.lastPointerType = inputType;
+    if (inputType === "keyboard") {
+      state.keyboardUsed = true;
+      return;
+    }
+    if (state.primaryPointerType === "unknown" && inputType !== "unknown") {
+      state.primaryPointerType = inputType;
+    }
   }
 
   function setCurrentValue(next: number) {
@@ -862,7 +1299,7 @@ function RuntimeChallenge() {
       return;
     }
     const point = challengePointFromEvent(event, challenge, boardRef.current);
-    const nextTrack = appendTrack("end", point.x, point.y);
+    const nextTrack = appendTrack("end", point.x, point.y, inputMetaRef.current.lastPointerType === "unknown" ? "mouse" : inputMetaRef.current.lastPointerType);
     if (isJigsawCaptcha(challenge)) {
       toggleJigsawPoint(point, nextTrack);
       return;
@@ -905,14 +1342,14 @@ function RuntimeChallenge() {
     startedAt.current = performance.now();
   }
 
-  const verifyDisabled = !challenge || manualVerifyDisabled(challenge, status, ticket, points.length, value, jigsawTiles);
+  const verifyDisabled = !challenge || manualVerifyDisabled(challenge, status, completionMarker, points.length, value, jigsawTiles);
   return (
-    <main class="shell">
+    <main class="shell" data-theme={runtimeTheme}>
       <section class="panel">
         {(!challenge || !isCurveCaptcha(challenge)) && (
           <header>
             <strong>{challenge?.prompt || "人机验证"}</strong>
-            <RuntimeHeaderActions onRefresh={refresh} onClose={closeCaptcha} />
+            <RuntimeHeaderActions onRefresh={refresh} onClose={closeCaptcha} refreshDisabled={completed || status === "验证中"} />
           </header>
         )}
 
@@ -920,7 +1357,7 @@ function RuntimeChallenge() {
           <div id="tianai-captcha" class="tianai-captcha-slider runtime-curve-captcha" style={{ transform: "translateX(0px)" }}>
             <div class="slider-tip">
               <span id="tianai-captcha-slider-move-track-font">{challenge.prompt}</span>
-              <RuntimeHeaderActions onRefresh={refresh} onClose={closeCaptcha} />
+              <RuntimeHeaderActions onRefresh={refresh} onClose={closeCaptcha} refreshDisabled={completed || status === "验证中"} />
             </div>
             <div class="content">
               <div class="bg-img-div" style={{ aspectRatio: `${challenge.view.width} / ${challenge.view.height}` }}>
@@ -1090,7 +1527,7 @@ function RuntimeChallenge() {
         )}
 
         <footer>
-          <span>{challenge ? footerStatus(challenge, ticket, status, points.length) : status}</span>
+          <span>{challenge ? footerStatus(challenge, completionMarker, status, points.length) : status}</span>
           {challenge && !usesDragControl(challenge) && (
             <button type="button" onClick={() => void verify()} disabled={verifyDisabled}>确认</button>
           )}
@@ -1100,15 +1537,111 @@ function RuntimeChallenge() {
   );
 }
 
-function challengeFrameURL(type: CaptchaRequestType, scene: string, nonce: string) {
+function challengeFrameURL(type: CaptchaRequestType, scene: string, nonce: string, options?: { inputDeviceHint?: InputDeviceHint; sampleSource?: string; scenePrefix?: string }) {
+  const inputDevice = options?.inputDeviceHint || normalizeInputDeviceHint(new URLSearchParams(window.location.search).get("input_device") || "");
+  const sampleSource = normalizeSampleSource(options?.sampleSource || new URLSearchParams(window.location.search).get("sample_source") || "human-demo");
+  const scenePrefix = normalizeScenePart(options?.scenePrefix || new URLSearchParams(window.location.search).get("scene_prefix") || sampleSource);
+  const sceneParts = [scenePrefix, inputDevice !== "unknown" ? inputDevice : "", scene].filter(Boolean);
+  const demoScene = sceneParts.join("-");
   const params = new URLSearchParams({
     client_id: "demo",
-    scene,
+    scene: demoScene,
     captcha_type: type,
-    route: `/demo/${type.toLowerCase()}`,
+    route: `/demo/${sampleSource}/${inputDevice}/${type.toLowerCase()}`,
     request_nonce: nonce
   });
+  if (inputDevice !== "unknown") params.set("input_device", inputDevice);
+  params.set("sample_source", sampleSource);
   return `/?${params.toString()}`;
+}
+
+function collectionRecommendedDevice(summary: CollectionSummary | null) {
+  if (!summary) return "mouse";
+  const weights: Record<string, number> = { mouse: 3, touch: 2, trackpad: 1 };
+  return ["mouse", "touch", "trackpad"].sort((left, right) => {
+    const leftItem = summary.devices?.[left] || fallbackCollectionDevice(left);
+    const rightItem = summary.devices?.[right] || fallbackCollectionDevice(right);
+    return rightItem.remaining * weights[right] - leftItem.remaining * weights[left];
+  })[0];
+}
+
+function fallbackCollectionDevice(device: string): CollectionDeviceSummary {
+  if (device === "touch") {
+    return { label: "触屏", target: 3000, count: 0, remaining: 3000, progress: 0 };
+  }
+  if (device === "trackpad") {
+    return { label: "触控板", target: 2000, count: 0, remaining: 2000, progress: 0 };
+  }
+  return { label: "鼠标", target: 5000, count: 0, remaining: 5000, progress: 0 };
+}
+
+const collectorTaskTypes: CollectorTaskType[] = ["slider_medium", "slider_long", "slider_adjust", "slider_slow", "slider_short", "slider_fast"];
+
+function createCollectorTask(index: number): CollectorTask {
+  const type = collectorTaskTypes[index % collectorTaskTypes.length];
+  const start = { x: 0, y: 24 };
+  const target = { x: collectorTargetX(type), y: 24 };
+  return {
+    id: `${type}-${index}-${Date.now()}`,
+    type,
+    title: collectorTaskTitle(type),
+    start,
+    target,
+    path: [start, target]
+  };
+}
+
+function collectorTargetX(type: CollectorTaskType) {
+  switch (type) {
+    case "slider_short":
+      return randomInt(88, 145);
+    case "slider_medium":
+      return randomInt(165, 235);
+    case "slider_long":
+      return randomInt(268, 342);
+    case "slider_adjust":
+      return randomInt(210, 326);
+    case "slider_slow":
+      return randomInt(180, 310);
+    case "slider_fast":
+      return randomInt(205, 335);
+  }
+}
+
+function collectorTaskTitle(type: CollectorTaskType) {
+  switch (type) {
+    case "slider_short":
+      return "短距离拖动滑块";
+    case "slider_medium":
+      return "拖动滑块到目标";
+    case "slider_long":
+      return "长距离拖动滑块";
+    case "slider_adjust":
+      return "拖动滑块并微调";
+    case "slider_slow":
+      return "稍慢拖动滑块";
+    case "slider_fast":
+      return "快速拖动滑块";
+    default:
+      return "拖动滑块";
+  }
+}
+
+function randomInt(min: number, max: number) {
+  return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function collectorSliderPointFromEvent(event: MouseEvent | PointerEvent, element: HTMLDivElement) {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: Math.round(clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1) * 360),
+    y: Math.round(clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0, 1) * 48)
+  };
+}
+
+function collectorTargetLeftStyle(targetX: number) {
+  const ratio = clamp(targetX / 360, 0, 1);
+  return `calc(${ratio * 100}% - 1px)`;
 }
 
 function newNonce() {
@@ -1460,12 +1993,18 @@ function buildAnswer(challenge: Challenge, value: number, points: ChallengePoint
 }
 
 function footerStatus(challenge: Challenge, ticket: string, status: string, pointCount: number) {
-  if (ticket) return status || "";
-  if (status) return status;
+  const visibleStatus = visibleRuntimeStatus(status);
+  if (ticket) return visibleStatus;
+  if (visibleStatus) return visibleStatus;
   if (isClickCaptcha(challenge) && pointCount > 0) {
     return `已选择 ${pointCount}/${clickTargetCount(challenge)}`;
   }
   return "";
+}
+
+function visibleRuntimeStatus(status: string) {
+  if (status === "验证中" || status === "验证通过") return "";
+  return status;
 }
 
 function clickTargetCount(challenge: Challenge) {
@@ -1537,6 +2076,79 @@ function ensureTrack(track: TrackPoint[], value: number): TrackPoint[] {
   ];
 }
 
+function normalizeInputDeviceHint(value: string): InputDeviceHint {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "mouse") return "mouse";
+  if (normalized === "trackpad" || normalized === "touchpad" || normalized === "pad") return "trackpad";
+  if (normalized === "touch" || normalized === "touchscreen" || normalized === "screen") return "touch";
+  return "unknown";
+}
+
+function normalizeSampleSource(value: string) {
+  const normalized = normalizeScenePart(value);
+  return normalized || "human-demo";
+}
+
+function normalizeScenePart(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function pointerTypeFromEvent(event: PointerEvent): PointerInputType {
+  const value = String(event.pointerType || "").toLowerCase();
+  if (value === "mouse" || value === "touch") return value;
+  return "unknown";
+}
+
+function createInputMetaState(inputDeviceHint: InputDeviceHint): InputMetaState {
+  return {
+    inputDeviceHint,
+    primaryPointerType: "unknown",
+    lastPointerType: "unknown",
+    pointerCounts: { mouse: 0, touch: 0, keyboard: 0, unknown: 0 },
+    keyboardUsed: false,
+    touchCapable: navigator.maxTouchPoints > 0,
+    coarsePointer: mediaMatches("(pointer: coarse)"),
+    hoverCapable: mediaMatches("(hover: hover)"),
+    maxTouchPoints: clamp(navigator.maxTouchPoints || 0, 0, 16)
+  };
+}
+
+function runtimeInputMeta(state: InputMetaState) {
+  return {
+    input_device_hint: state.inputDeviceHint,
+    input_device_inferred: inferredInputDevice(state),
+    pointer_type: state.primaryPointerType,
+    last_pointer_type: state.lastPointerType,
+    pointer_counts: { ...state.pointerCounts },
+    keyboard_used: state.keyboardUsed,
+    touch_capable: state.touchCapable,
+    coarse_pointer: state.coarsePointer,
+    hover_capable: state.hoverCapable,
+    max_touch_points: state.maxTouchPoints
+  };
+}
+
+function inferredInputDevice(state: InputMetaState) {
+  if (state.inputDeviceHint !== "unknown") return state.inputDeviceHint;
+  if (state.primaryPointerType === "touch") return "touch";
+  if (state.primaryPointerType === "mouse") return "mouse_like";
+  if (state.keyboardUsed) return "keyboard";
+  return "unknown";
+}
+
+function mediaMatches(query: string) {
+  try {
+    return window.matchMedia?.(query).matches || false;
+  } catch {
+    return false;
+  }
+}
+
 function appendPathPointTo(points: ChallengePoint[], point: ChallengePoint) {
   const last = points[points.length - 1];
   if (last && Math.hypot(last.x - point.x, last.y - point.y) < 4) return points;
@@ -1557,6 +2169,16 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) throw new Error(response.statusText);
+  return response.json();
+}
+
+async function postWithHeaders<T>(path: string, body: unknown, headers: Record<string, string>): Promise<T> {
+  const response = await fetch(`${apiBase}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(response.statusText);

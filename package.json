@@ -4,14 +4,17 @@
   "type": "module",
   "workspaces": [
     "web/runtime",
+    "web/collector",
     "web/admin",
     "integrations/express-middleware"
   ],
   "scripts": {
     "dev:runtime": "npm --workspace @captcha/runtime run dev",
+    "dev:collector": "npm --workspace @captcha/collector run dev",
     "dev:admin": "npm --workspace @captcha/admin run dev",
     "build": "npm --workspaces run build",
     "build:runtime": "npm --workspace @captcha/runtime run build",
+    "build:collector": "npm --workspace @captcha/collector run build",
     "build:admin": "npm --workspace @captcha/admin run build"
   }
 }
