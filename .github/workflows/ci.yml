@@ -17,7 +17,12 @@ jobs:
           go-version-file: go.mod
 
       - name: Install protobuf compiler
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler ripgrep unzip
+          curl -fsSLO https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-linux-x86_64.zip
+          sudo unzip -o protoc-35.1-linux-x86_64.zip -d /usr/local
+          protoc --version
 
       - name: Install protobuf Go generators
         run: |
