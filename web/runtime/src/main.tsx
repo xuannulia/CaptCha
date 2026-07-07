@@ -179,6 +179,7 @@ type CollectorTask = {
 };
 
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8080";
+const appBasePath = normalizeAppBasePath(import.meta.env.BASE_URL || "/");
 const sliderThumbWidth = 52;
 const recreateSessionReasons = new Set([
   "EXPIRED",
@@ -207,10 +208,11 @@ function runtimeThemeFromParams(params: URLSearchParams) {
 }
 
 function App() {
-  if (window.location.pathname === "/collect") {
+  const pathname = appPathname();
+  if (pathname === "/collect") {
     return <CollectPage />;
   }
-  if (window.location.pathname === "/demo") {
+  if (pathname === "/demo") {
     return <DemoPage />;
   }
   return <RuntimeChallenge />;
@@ -1514,7 +1516,7 @@ function challengeFrameURL(type: CaptchaRequestType, scene: string, nonce: strin
   });
   if (inputDevice !== "unknown") params.set("input_device", inputDevice);
   params.set("sample_source", sampleSource);
-  return `/?${params.toString()}`;
+  return appURL("", params);
 }
 
 const collectorTaskTypes: CollectorTaskType[] = ["slider_medium", "slider_long", "slider_adjust", "slider_slow", "slider_short", "slider_fast"];
@@ -2274,8 +2276,32 @@ async function postWithHeaders<T>(path: string, body: unknown, headers: Record<s
 render(<App />, document.getElementById("app")!);
 
 function sessionIDFromPath() {
-  const match = window.location.pathname.match(/\/challenge\/([^/?#]+)/);
+  const match = appPathname().match(/\/challenge\/([^/?#]+)/);
   return match ? decodeURIComponent(match[1]) : "";
+}
+
+function normalizeAppBasePath(value: string) {
+  const raw = (value || "/").trim();
+  if (!raw || raw === ".") return "/";
+  const withSlashes = `/${raw.replace(/^\/+|\/+$/g, "")}/`;
+  return withSlashes === "//" ? "/" : withSlashes;
+}
+
+function appPathname() {
+  const current = window.location.pathname || "/";
+  if (appBasePath !== "/" && current.startsWith(appBasePath)) {
+    const next = current.slice(appBasePath.length - 1) || "/";
+    return next.startsWith("/") ? next : `/${next}`;
+  }
+  return current;
+}
+
+function appURL(path: string, params?: URLSearchParams) {
+  const base = appBasePath.endsWith("/") ? appBasePath : `${appBasePath}/`;
+  const cleanPath = path.replace(/^\/+/, "");
+  const url = `${base}${cleanPath}`;
+  const query = params?.toString();
+  return query ? `${url}?${query}` : url;
 }
 
 function redirectIfTopLevel(returnUrl: string, ticket: string, sessionId: string, route: string, requestNonce: string) {

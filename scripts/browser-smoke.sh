@@ -168,7 +168,7 @@ open_admin_page() {
 	local name=$2
 	shift 2
 	local snapshot="$TMP_DIR/admin-${name}.yml"
-	pw_goto "http://127.0.0.1:$ADMIN_PORT$path" "$TMP_DIR/admin-${name}-open.log"
+	pw_goto "http://127.0.0.1:$ADMIN_PORT/#$path" "$TMP_DIR/admin-${name}-open.log"
 	sleep 1
 	bash "$PWCLI" snapshot >"$snapshot"
 	for expected in "$@"; do
@@ -1546,7 +1546,7 @@ run_smoke_step "runtime image click render" open_runtime_challenge "IMAGE_CLICK"
 run_smoke_step "runtime jigsaw render" open_runtime_challenge "JIGSAW" "点击两块图片交换位置" "disabled"
 run_smoke_step "runtime grid image click render" open_runtime_challenge "GRID_IMAGE_CLICK" "选择所有包含" "disabled"
 
-admin_url="http://127.0.0.1:$ADMIN_PORT/overview"
+admin_url="http://127.0.0.1:$ADMIN_PORT/#/overview"
 smoke_step "admin overview navigation"
 pw_goto "$admin_url" "$TMP_DIR/admin-open.log"
 bash "$PWCLI" snapshot >"$TMP_DIR/admin-snapshot.yml"

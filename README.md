@@ -220,7 +220,7 @@ Run the iframe runtime:
 npm run dev:runtime
 ```
 
-Open `http://localhost:5173/demo` for a local captcha demo with `RANDOM` plus `GESTURE`, `CURVE`, `CURVE_V2`, `CURVE_V3`, `SLIDER`, `SLIDER_V2`, `ROTATE`, `CONCAT`, `ROTATE_DEGREE`, `WORD_IMAGE_CLICK`, `IMAGE_CLICK`, `JIGSAW`, and `GRID_IMAGE_CLICK`.
+Open `http://localhost:5173/demo` for a local captcha demo with `RANDOM` plus `GESTURE`, `CURVE`, `CURVE_V2`, `CURVE_V3`, `SLIDER`, `SLIDER_V2`, `ROTATE`, `CONCAT`, `WORD_IMAGE_CLICK`, `IMAGE_CLICK`, `JIGSAW`, and `GRID_IMAGE_CLICK`.
 
 Open `http://localhost:5173/collect?input_device=mouse` for lightweight slider-track collection without loading full captcha challenges. The collector shows a real slider bar with randomized short, medium, long, slow, fast, and adjustment tasks, then submits automatically on release. Use `input_device=mouse`, `input_device=trackpad`, or `input_device=touch` to explicitly label the collection device; browsers usually report both mouse and trackpad as `mouse`. Set `CAPTCHA_COLLECTOR_TOKEN` on the API server and pass `collector_token` in the collection URL to protect the ingestion endpoint:
 

@@ -36,6 +36,7 @@ const defaultTypes: CaptchaType[] = [
   "CURVE_V3",
   "ROTATE"
 ];
+const runtimeBaseURL = import.meta.env.VITE_RUNTIME_URL || "/captcha/";
 
 function App() {
   const options = useMemo(readCollectorOptions, []);
@@ -189,7 +190,7 @@ function runtimeURL(options: CollectorOptions, captchaType: CaptchaType, step: n
     params.set("theme", "dark");
     params.set("embed", "1");
   }
-  return `/captcha/?${params.toString()}`;
+  return `${runtimeBaseURL}${runtimeBaseURL.includes("?") ? "&" : "?"}${params.toString()}`;
 }
 
 function collectorTheme(params: URLSearchParams): CollectorTheme {

@@ -15,7 +15,7 @@ import type { ColumnsType } from "antd/es/table";
 import zhCN from "antd/locale/zh_CN";
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Navigate, Route, Routes as RouterRoutes, useLocation, useNavigate } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes as RouterRoutes, useLocation, useNavigate } from "react-router-dom";
 import "./style.css";
 
 const queryClient = new QueryClient({
@@ -504,9 +504,9 @@ function App() {
   return (
     <ConfigProvider locale={zhCN} theme={{ token: { borderRadius: 6, colorPrimary: "#2563eb" } }}>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
+        <HashRouter>
           <AdminShell />
-        </BrowserRouter>
+        </HashRouter>
       </QueryClientProvider>
     </ConfigProvider>
   );
