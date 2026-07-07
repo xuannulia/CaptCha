@@ -81,6 +81,57 @@ func TestSyntheticFastTrackIsRejected(t *testing.T) {
 	}
 }
 
+func TestTrackRequiredCaptchasRejectMissingTrack(t *testing.T) {
+	t.Parallel()
+
+	e := New(2 * time.Minute)
+	session, err := e.NewSession("app_test", "login", types.CaptchaSlider)
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+
+	result := e.Verify(session, answerFor(session), nil)
+	if result.OK {
+		t.Fatal("expected missing track to be rejected")
+	}
+	if result.Decision != types.DecisionChallengeHarder || result.ReasonCode != "TRACK_CHALLENGE_HARDER" {
+		t.Fatalf("unexpected missing-track result: %+v", result)
+	}
+	if !containsReason(result.TrackScore.Reasons, "TRACK_TOO_FEW_POINTS") {
+		t.Fatalf("expected missing track reason, got %+v", result.TrackScore)
+	}
+}
+
+func TestAnswerMustMatchTrackEndpoint(t *testing.T) {
+	t.Parallel()
+
+	e := New(2 * time.Minute)
+	for _, captchaType := range []types.CaptchaType{
+		types.CaptchaSlider,
+		types.CaptchaSlider2,
+		types.CaptchaConcat,
+		types.CaptchaRotate,
+		types.CaptchaRotateDegree,
+	} {
+		captchaType := captchaType
+		t.Run(string(captchaType), func(t *testing.T) {
+			t.Parallel()
+
+			session, err := e.NewSession("app_test", "login", captchaType)
+			if err != nil {
+				t.Fatalf("new session: %v", err)
+			}
+			result := e.Verify(session, answerFor(session), mismatchedEndpointTrackForSession(session))
+			if result.OK {
+				t.Fatal("expected mismatched track endpoint to be rejected")
+			}
+			if result.Decision != types.DecisionRetry || result.ReasonCode != "TRACK_ANSWER_MISMATCH" {
+				t.Fatalf("unexpected mismatch result: %+v", result)
+			}
+		})
+	}
+}
+
 func TestGeneratedPayloadsUsePNGDataURLs(t *testing.T) {
 	t.Parallel()
 
@@ -144,8 +195,9 @@ func TestSliderChallengesUseLargeSVGPiecesInBounds(t *testing.T) {
 					t.Fatalf("slider y out of bounds: answer=%+v size=%d view=%+v", session.Answer, size, session.RenderPayload.View)
 				}
 				piece := decodePNGDataURL(t, session.RenderPayload.Piece)
-				if piece.Bounds().Dx() != size || piece.Bounds().Dy() != size {
-					t.Fatalf("piece PNG dimensions should match piece_size: bounds=%+v size=%d", piece.Bounds(), size)
+				wantRenderSize := size * sliderRenderScale
+				if piece.Bounds().Dx() != wantRenderSize || piece.Bounds().Dy() != wantRenderSize {
+					t.Fatalf("piece PNG dimensions should match render-scaled piece_size: bounds=%+v render_size=%d", piece.Bounds(), wantRenderSize)
 				}
 			}
 		})
@@ -179,13 +231,15 @@ func TestSliderPieceHasNoOutsideShadow(t *testing.T) {
 	t.Parallel()
 
 	size := sliderPieceSize
+	renderSize := size * sliderRenderScale
 	mask := sliderMaskKind("dianzan.svg")
 	maskFile := sliderMaskFile(mask)
 	target := image.Point{X: 120, Y: 60}
 	_, piece := drawSliderChallenge(target.X, target.Y, size, mask)
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			if svgMaskAlpha(maskFile, size, x, y) > 4 {
+	assertImageHasAntialiasedEdge(t, piece, "slider piece")
+	for y := 0; y < renderSize; y++ {
+		for x := 0; x < renderSize; x++ {
+			if svgMaskAlpha(maskFile, renderSize, x, y) > 4 {
 				continue
 			}
 			if alphaAt(t, piece, x, y) != 0 {
@@ -194,11 +248,12 @@ func TestSliderPieceHasNoOutsideShadow(t *testing.T) {
 		}
 	}
 
-	base := drawSliderScene()
-	assertSliderPieceHasInnerBorder(t, piece, base, target, size, func(x, y int) uint8 {
-		return svgMaskAlpha(maskFile, size, x, y)
+	base := drawSliderSceneSized(imageViewWidth*sliderRenderScale, imageViewHeight*sliderRenderScale)
+	renderTarget := image.Point{X: target.X * sliderRenderScale, Y: target.Y * sliderRenderScale}
+	assertSliderPieceHasSolidInnerBorder(t, piece, base, renderTarget, renderSize, func(x, y int) uint8 {
+		return svgMaskAlpha(maskFile, renderSize, x, y)
 	}, func(x, y int) float64 {
-		return sliderMaskEdgeBandStrength(maskFile, size, x, y, sliderBorderRadius)
+		return sliderMaskEdgeBandStrength(maskFile, renderSize, x, y, sliderBorderRadius)
 	})
 }
 
@@ -304,7 +359,7 @@ func TestGestureChallengesAreDynamicAndRejectStraightLines(t *testing.T) {
 		t.Fatalf("expected straight gesture shortcut to fail, got %+v", result)
 	}
 
-	result = e.Verify(first, types.VerifyAnswer{Points: first.Answer.Points}, normalTrack())
+	result = e.Verify(first, types.VerifyAnswer{Points: first.Answer.Points}, trackFromPoints(first.Answer.Points))
 	if !result.OK {
 		t.Fatalf("expected correct gesture path to pass, got %+v", result)
 	}
@@ -945,7 +1000,7 @@ func TestPreGeneratedChallengePool(t *testing.T) {
 	if depths[types.CaptchaSlider] != 1 {
 		t.Fatalf("expected slider pool depth 1 after take, got %+v", depths)
 	}
-	result := e.Verify(session, answerFor(session), normalTrack())
+	result := e.Verify(session, answerFor(session), trackForSession(session))
 	if !result.OK {
 		t.Fatalf("expected pre-generated challenge to verify, got %+v", result)
 	}
@@ -1000,10 +1055,18 @@ func straightLinePoints(start, end types.Point, count int) []types.Point {
 }
 
 func trackForSession(session types.ChallengeSession) []types.TrackPoint {
-	if isCurveCaptchaType(session.Type) {
+	switch session.Type {
+	case types.CaptchaGesture:
+		return trackFromPoints(session.Answer.Points)
+	case types.CaptchaCurve, types.CaptchaCurve2, types.CaptchaCurve3, types.CaptchaSlider, types.CaptchaSlider2:
 		return trackFromSliderValue(session.Answer.X)
+	case types.CaptchaConcat:
+		return trackFromSliderValue(session.Answer.Offset)
+	case types.CaptchaRotate, types.CaptchaRotateDegree:
+		return trackFromSliderValue(session.Answer.Angle)
+	default:
+		return normalTrack()
 	}
-	return normalTrack()
 }
 
 func trackFromSliderValue(value int) []types.TrackPoint {
@@ -1038,6 +1101,17 @@ func trackFromPoints(points []types.Point) []types.TrackPoint {
 		})
 	}
 	return track
+}
+
+func mismatchedEndpointTrackForSession(session types.ChallengeSession) []types.TrackPoint {
+	switch session.Type {
+	case types.CaptchaConcat:
+		return trackFromSliderValue(session.Answer.Offset + 48)
+	case types.CaptchaRotate, types.CaptchaRotateDegree:
+		return trackFromSliderValue((session.Answer.Angle + 52) % 360)
+	default:
+		return trackFromSliderValue(session.Answer.X + 48)
+	}
 }
 
 func approximateDrawableGesturePath(expected []types.Point) []types.Point {
@@ -1388,28 +1462,45 @@ func rgbaDelta(a, b color.RGBA) int {
 	return abs(int(a.R)-int(b.R)) + abs(int(a.G)-int(b.G)) + abs(int(a.B)-int(b.B)) + abs(int(a.A)-int(b.A))
 }
 
-func assertSliderPieceHasInnerBorder(t *testing.T, piece, source image.Image, sourceOrigin image.Point, size int, maskAlphaAt func(int, int) uint8, edgeAt func(int, int) float64) {
+func assertSliderPieceHasSolidInnerBorder(t *testing.T, piece, source image.Image, sourceOrigin image.Point, size int, maskAlphaAt func(int, int) uint8, edgeAt func(int, int) float64) {
 	t.Helper()
 	borderPixels := 0
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			if maskAlphaAt(x, y) < 140 || edgeAt(x, y) < 0.15 {
+			if maskAlphaAt(x, y) <= 4 || edgeAt(x, y) < 0.15 {
 				continue
 			}
 			sourcePixel := rgbaAt(source, sourceOrigin.X+x, sourceOrigin.Y+y)
 			piecePixel := rgbaAt(piece, x, y)
-			if luminance(sourcePixel)-luminance(piecePixel) > 8 {
+			if piecePixel.A > 4 && luminance(sourcePixel)-luminance(piecePixel) >= 8 {
 				borderPixels++
 			}
 		}
 	}
 	if borderPixels < size/2 {
-		t.Fatalf("slider piece should have a semi-transparent inner border, darkened edge pixels=%d", borderPixels)
+		t.Fatalf("slider piece should have a 0.75 black inner border, matching border pixels=%d", borderPixels)
 	}
 }
 
 func luminance(c color.RGBA) float64 {
 	return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+}
+
+func assertImageHasAntialiasedEdge(t *testing.T, img image.Image, label string) {
+	t.Helper()
+	bounds := img.Bounds()
+	partialPixels := 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			alpha := alphaAt(t, img, x, y)
+			if alpha != 0 && alpha != 255 {
+				partialPixels++
+			}
+		}
+	}
+	if partialPixels < bounds.Dx()/2 {
+		t.Fatalf("%s should retain antialiased edge pixels, partial alpha pixels=%d", label, partialPixels)
+	}
 }
 
 func testAlphaBounds(t *testing.T, img image.Image, threshold uint8) (image.Rectangle, bool) {

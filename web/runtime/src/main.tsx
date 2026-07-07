@@ -73,6 +73,7 @@ type ChallengeParameters = {
   tile_rows?: number;
   tile_width?: number;
   tile_height?: number;
+  target_count?: number;
   resources?: RenderResource[];
   curve_profile?: CurveProfile;
 };
@@ -175,23 +176,6 @@ type CollectorTask = {
   start: ChallengePoint;
   target: ChallengePoint;
   path: ChallengePoint[];
-};
-
-type CollectionDeviceSummary = {
-  label: string;
-  target: number;
-  count: number;
-  remaining: number;
-  progress: number;
-};
-
-type CollectionSummary = {
-  sample_source: string;
-  target_total: number;
-  total: number;
-  remaining: number;
-  devices: Record<string, CollectionDeviceSummary>;
-  captcha_types: Record<string, number>;
 };
 
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8080";
@@ -471,7 +455,6 @@ function DemoPage() {
     { type: "SLIDER", label: "滑块拼图", scene: "login" },
     { type: "ROTATE", label: "旋转校准", scene: "pay" },
     { type: "CONCAT", label: "滑动还原", scene: "verify" },
-    { type: "ROTATE_DEGREE", label: "角度刻度", scene: "pay" },
     { type: "WORD_IMAGE_CLICK", label: "文字点选", scene: "register" },
     { type: "IMAGE_CLICK", label: "图标点选", scene: "register" },
     { type: "JIGSAW", label: "乱序拼图", scene: "verify" },
@@ -484,7 +467,6 @@ function DemoPage() {
   const [elapsed, setElapsed] = useState(0);
   const [actualType, setActualType] = useState("");
   const [frameOpen, setFrameOpen] = useState(true);
-  const [summary, setSummary] = useState<CollectionSummary | null>(null);
   const startedAt = useRef(performance.now());
   const autoReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRef = useRef<CaptchaRequestType>(active);
@@ -493,7 +475,6 @@ function DemoPage() {
 
   useEffect(() => {
     document.title = "CaptCha Demo";
-    void loadSummary();
     return () => {
       if (autoReloadTimer.current) clearTimeout(autoReloadTimer.current);
     };
@@ -518,14 +499,12 @@ function DemoPage() {
         setStatus("通过");
         setLastTicket(String(data.ticket || ""));
         setElapsed(Math.max(1, Math.round(performance.now() - startedAt.current)));
-        window.setTimeout(() => void loadSummary(), 450);
         scheduleAutoReload(activeRef.current);
       }
       if (data?.type === "CAPTCHA_FAILURE") {
         setStatus("失败");
         setLastTicket("");
         setElapsed(Math.max(1, Math.round(performance.now() - startedAt.current)));
-        window.setTimeout(() => void loadSummary(), 450);
       }
       if (data?.type === "CAPTCHA_CLOSE") {
         setStatus("已关闭");
@@ -561,18 +540,6 @@ function DemoPage() {
     }, 180);
   }
 
-  async function loadSummary() {
-    try {
-      const next = await get<CollectionSummary>(`/api/v1/risk/demo-collection-summary?sample_source=${encodeURIComponent(sampleSource)}`);
-      setSummary(next);
-    } catch {
-      setSummary(null);
-    }
-  }
-
-  const recommendedDevice = collectionRecommendedDevice(summary);
-  const deviceOrder = ["mouse", "touch", "trackpad"];
-
   return (
     <main class="demo-shell">
       <section class="demo-topbar">
@@ -581,31 +548,6 @@ function DemoPage() {
           <p>Iframe 模式</p>
         </div>
         <button type="button" onClick={() => reload()} aria-label="刷新当前验证码">刷新</button>
-      </section>
-
-      <section class="collection-dashboard" aria-label="采集目标">
-        <div class="collection-total">
-          <span>采集进度</span>
-          <strong>{summary ? `${summary.total}/${summary.target_total}` : "-/10000"}</strong>
-          <small>{summary ? `剩余 ${summary.remaining}` : "加载中"}</small>
-        </div>
-        <div class="collection-targets">
-          {deviceOrder.map((device) => {
-            const item = summary?.devices?.[device] || fallbackCollectionDevice(device);
-            return (
-              <a
-                key={device}
-                class={`collection-target ${device === inputDeviceHint ? "active" : ""} ${device === recommendedDevice ? "recommended" : ""}`}
-                href={`/demo?input_device=${device}&sample_source=${sampleSource}`}
-              >
-                <span>{item.label}</span>
-                <strong>{item.count}/{item.target}</strong>
-                <small>缺 {item.remaining}</small>
-                <i style={{ width: `${clamp(item.progress, 0, 100)}%` }} />
-              </a>
-            );
-          })}
-        </div>
       </section>
 
       <section class="demo-layout">
@@ -712,6 +654,7 @@ function RuntimeChallenge() {
   const controlRef = useRef<HTMLDivElement>(null);
   const curveBgCanvasRef = useRef<HTMLCanvasElement>(null);
   const curveMoveCanvasRef = useRef<HTMLCanvasElement>(null);
+  const jigsawCanvasRef = useRef<HTMLCanvasElement>(null);
   const sliderBounds = challenge ? rangeBounds(challenge) : { min: 0, max: 360, step: 1 };
   const sliderRatio = sliderRatioFromValue(value, sliderBounds);
   const sliderFillWidth = sliderFillWidthStyle(sliderRatio);
@@ -727,6 +670,11 @@ function RuntimeChallenge() {
     if (!challenge || !isCurveCaptcha(challenge) || !curveBgCanvasRef.current || !curveMoveCanvasRef.current) return;
     drawCurveCanvases(curveBgCanvasRef.current, curveMoveCanvasRef.current, challenge, value);
   }, [challenge, value]);
+
+  useEffect(() => {
+    if (!challenge || !isJigsawCaptcha(challenge)) return;
+    void drawJigsawCanvas(jigsawCanvasRef.current, challenge, jigsawTiles, points);
+  }, [challenge, jigsawTiles, points]);
 
   async function bootstrap() {
     try {
@@ -966,6 +914,9 @@ function RuntimeChallenge() {
       return;
     }
     if (usesBoardDragControl(challenge)) {
+      if (isSliderCaptcha(challenge) && !isPointerNearSliderPiece(event, challenge, event.currentTarget as HTMLDivElement, valueRef.current)) {
+        return;
+      }
       event.preventDefault();
       boardRangeTracking.current = true;
       trySetPointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
@@ -1143,11 +1094,12 @@ function RuntimeChallenge() {
 
   function onControlPointerDown(event: PointerEvent) {
     if (interactionLocked()) return;
+    if (!challenge) return;
+    const dragStart = controlThumbDragStart(event, challenge, valueRef.current);
+    if (!dragStart) return;
     event.preventDefault();
     rangeTracking.current = true;
-    if (challenge) {
-      controlDragStart.current = controlThumbDragStart(event, challenge, valueRef.current);
-    }
+    controlDragStart.current = dragStart;
     trySetPointerCapture(event.currentTarget as HTMLDivElement, event.pointerId);
     updateValueFromControl(event, "start");
   }
@@ -1277,6 +1229,9 @@ function RuntimeChallenge() {
 
   function toggleClickPoint(point: ChallengePoint, nextTrack = trackRef.current) {
     if (!challenge) return undefined;
+    if (isGridImageClickCaptcha(challenge)) {
+      return toggleGridPoint(point, nextTrack);
+    }
     const base = pointsRef.current;
     const radius = clickCancelRadius(challenge);
     const existingIndex = base.findIndex((selected) => distanceBetweenPoints(selected, point) <= radius);
@@ -1284,6 +1239,22 @@ function RuntimeChallenge() {
       ? base.filter((_, index) => index !== existingIndex)
       : base.length < clickTargetCount(challenge)
         ? [...base, point]
+        : base;
+    pointsRef.current = nextPoints;
+    setPoints(nextPoints);
+    return { points: nextPoints, value: valueRef.current, track: nextTrack };
+  }
+
+  function toggleGridPoint(point: ChallengePoint, nextTrack = trackRef.current) {
+    if (!challenge || !isGridImageClickCaptcha(challenge)) return undefined;
+    const tileIndex = jigsawTileIndexFromPoint(challenge, point);
+    if (tileIndex < 0) return undefined;
+    const base = pointsRef.current;
+    const existingIndex = base.findIndex((selected) => jigsawTileIndexFromPoint(challenge, selected) === tileIndex);
+    const nextPoints = existingIndex >= 0
+      ? base.filter((_, index) => index !== existingIndex)
+      : base.length < gridTileCount(challenge)
+        ? [...base, jigsawTileCenterPoint(challenge, tileIndex)]
         : base;
     pointsRef.current = nextPoints;
     setPoints(nextPoints);
@@ -1432,7 +1403,15 @@ function RuntimeChallenge() {
             onPointerCancel={onBoardPointerCancel}
             onClick={onBoardClick}
           >
-            {challenge.image && (
+            {isJigsawCaptcha(challenge) && challenge.image ? (
+              <canvas
+                ref={jigsawCanvasRef}
+                class="jigsaw-canvas"
+                width={challenge.view.width}
+                height={challenge.view.height}
+                aria-hidden="true"
+              />
+            ) : challenge.image && (
               <img
                 class={challenge.type === "ROTATE" ? "rotating-image" : ""}
                 src={challenge.image}
@@ -1440,23 +1419,6 @@ function RuntimeChallenge() {
                 draggable={false}
                 style={challenge.type === "ROTATE" ? { transform: `rotate(${value}deg)` } : undefined}
               />
-            )}
-            {isJigsawCaptcha(challenge) && challenge.image && jigsawTiles.length > 0 && (
-              <div
-                class="jigsaw-tiles"
-                style={{
-                  gridTemplateColumns: `repeat(${jigsawCols(challenge)}, 1fr)`,
-                  gridTemplateRows: `repeat(${jigsawRows(challenge)}, 1fr)`
-                }}
-              >
-                {jigsawTiles.map((sourceIndex, cellIndex) => (
-                  <span
-                    key={`${cellIndex}-${sourceIndex}`}
-                    class={`jigsaw-tile ${isJigsawTileSelected(challenge, cellIndex, points) ? "selected" : ""}`}
-                    style={jigsawTileStyle(challenge, sourceIndex)}
-                  />
-                ))}
-              </div>
             )}
             {challenge.type === "ROTATE_DEGREE" && (
               <span class="degree-needle" style={{ transform: `translate(-50%, -100%) rotate(${value}deg)` }} />
@@ -1553,26 +1515,6 @@ function challengeFrameURL(type: CaptchaRequestType, scene: string, nonce: strin
   if (inputDevice !== "unknown") params.set("input_device", inputDevice);
   params.set("sample_source", sampleSource);
   return `/?${params.toString()}`;
-}
-
-function collectionRecommendedDevice(summary: CollectionSummary | null) {
-  if (!summary) return "mouse";
-  const weights: Record<string, number> = { mouse: 3, touch: 2, trackpad: 1 };
-  return ["mouse", "touch", "trackpad"].sort((left, right) => {
-    const leftItem = summary.devices?.[left] || fallbackCollectionDevice(left);
-    const rightItem = summary.devices?.[right] || fallbackCollectionDevice(right);
-    return rightItem.remaining * weights[right] - leftItem.remaining * weights[left];
-  })[0];
-}
-
-function fallbackCollectionDevice(device: string): CollectionDeviceSummary {
-  if (device === "touch") {
-    return { label: "触屏", target: 3000, count: 0, remaining: 3000, progress: 0 };
-  }
-  if (device === "trackpad") {
-    return { label: "触控板", target: 2000, count: 0, remaining: 2000, progress: 0 };
-  }
-  return { label: "鼠标", target: 5000, count: 0, remaining: 5000, progress: 0 };
 }
 
 const collectorTaskTypes: CollectorTaskType[] = ["slider_medium", "slider_long", "slider_adjust", "slider_slow", "slider_short", "slider_fast"];
@@ -1680,7 +1622,21 @@ function controlThumbDragStart(event: PointerEvent, challenge: Challenge, curren
   const thumbWidth = control.querySelector<HTMLElement>(".slider-move-btn, .drag-thumb")?.getBoundingClientRect().width || sliderThumbWidth;
   const thumbLeft = sliderThumbLeftPx(sliderRatioFromValue(currentValue, rangeBounds(challenge)), rect.width);
   const nearThumb = relativeX >= thumbLeft - 8 && relativeX <= thumbLeft + thumbWidth + 8;
-  return { offset: nearThumb ? relativeX - thumbLeft : thumbWidth / 2 };
+  if (!nearThumb) return null;
+  return { offset: relativeX - thumbLeft };
+}
+
+function isPointerNearSliderPiece(event: PointerEvent, challenge: Challenge, board: HTMLDivElement, currentValue: number) {
+  const point = challengePointFromEvent(event, challenge, board);
+  const pieceSize = sliderPieceSize(challenge);
+  const pieceY = numberParam(challenge, "piece_y", challenge.view.height - 60);
+  const tolerance = Math.max(8, Math.round(pieceSize * 0.12));
+  return (
+    point.x >= currentValue - tolerance &&
+    point.x <= currentValue + pieceSize + tolerance &&
+    point.y >= pieceY - tolerance &&
+    point.y <= pieceY + pieceSize + tolerance
+  );
 }
 
 function sliderRatioFromValue(value: number, bounds: { min: number; max: number }) {
@@ -1923,18 +1879,132 @@ function isJigsawTileSelected(challenge: Challenge, cellIndex: number, points: C
   return points.some((point) => jigsawTileIndexFromPoint(challenge, point) === cellIndex);
 }
 
-function jigsawTileStyle(challenge: Challenge, sourceIndex: number) {
+const jigsawImageCache = new Map<string, Promise<HTMLImageElement>>();
+
+async function drawJigsawCanvas(canvas: HTMLCanvasElement | null, challenge: Challenge, tiles: number[], points: ChallengePoint[]) {
+  if (!canvas || !challenge.image) return;
+  const width = Math.max(1, Math.round(challenge.view.width));
+  const height = Math.max(1, Math.round(challenge.view.height));
   const cols = jigsawCols(challenge);
   const rows = jigsawRows(challenge);
-  const sourceCol = sourceIndex % cols;
-  const sourceRow = Math.floor(sourceIndex / cols);
-  const x = cols <= 1 ? 0 : (sourceCol / (cols - 1)) * 100;
-  const y = rows <= 1 ? 0 : (sourceRow / (rows - 1)) * 100;
-  return {
-    backgroundImage: `url("${challenge.image || ""}")`,
-    backgroundPosition: `${x}% ${y}%`,
-    backgroundSize: `${cols * 100}% ${rows * 100}%`
-  };
+  const total = cols * rows;
+  const order = tiles.length === total ? tiles : initialJigsawTiles(challenge);
+  const selectedTiles = points
+    .map((point) => jigsawTileIndexFromPoint(challenge, point))
+    .filter((index) => index >= 0 && index < total);
+  const renderKey = `${challenge.image}:${order.join(",")}:${selectedTiles.join(",")}`;
+
+  canvas.dataset.jigsawRenderKey = renderKey;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.clearRect(0, 0, width, height);
+
+  let image: HTMLImageElement;
+  try {
+    image = await loadJigsawImage(challenge.image);
+  } catch {
+    return;
+  }
+  if (!canvas.isConnected || canvas.dataset.jigsawRenderKey !== renderKey) return;
+
+  context.clearRect(0, 0, width, height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  if (isIdentityOrder(order)) {
+    context.drawImage(image, 0, 0, width, height);
+  } else {
+    drawJigsawTiles(context, image, width, height, cols, rows, order);
+  }
+  drawJigsawGrid(context, width, height, cols, rows);
+  selectedTiles.forEach((tileIndex) => drawJigsawSelection(context, challenge, tileIndex));
+}
+
+function loadJigsawImage(src: string) {
+  const cached = jigsawImageCache.get(src);
+  if (cached) return cached;
+  const promise = new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("JIGSAW_IMAGE_LOAD_FAILED"));
+    image.src = src;
+  });
+  jigsawImageCache.set(src, promise);
+  return promise;
+}
+
+function isIdentityOrder(order: number[]) {
+  return order.every((sourceIndex, cellIndex) => sourceIndex === cellIndex);
+}
+
+function drawJigsawTiles(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+  cols: number,
+  rows: number,
+  order: number[]
+) {
+  const total = cols * rows;
+  order.forEach((sourceIndex, cellIndex) => {
+    const safeSourceIndex = clamp(Math.round(sourceIndex), 0, total - 1);
+    const sourceCol = safeSourceIndex % cols;
+    const sourceRow = Math.floor(safeSourceIndex / cols);
+    const targetCol = cellIndex % cols;
+    const targetRow = Math.floor(cellIndex / cols);
+    const sx0 = Math.round((sourceCol * image.naturalWidth) / cols);
+    const sx1 = Math.round(((sourceCol + 1) * image.naturalWidth) / cols);
+    const sy0 = Math.round((sourceRow * image.naturalHeight) / rows);
+    const sy1 = Math.round(((sourceRow + 1) * image.naturalHeight) / rows);
+    const dx0 = Math.round((targetCol * width) / cols);
+    const dx1 = Math.round(((targetCol + 1) * width) / cols);
+    const dy0 = Math.round((targetRow * height) / rows);
+    const dy1 = Math.round(((targetRow + 1) * height) / rows);
+    context.drawImage(image, sx0, sy0, sx1 - sx0, sy1 - sy0, dx0, dy0, dx1 - dx0, dy1 - dy0);
+  });
+}
+
+function drawJigsawGrid(context: CanvasRenderingContext2D, width: number, height: number, cols: number, rows: number) {
+  context.save();
+  context.lineWidth = 1;
+  context.strokeStyle = "rgba(148, 163, 184, 0.9)";
+  context.beginPath();
+  for (let col = 1; col < cols; col += 1) {
+    const x = Math.round((col * width) / cols) + 0.5;
+    context.moveTo(x, 0);
+    context.lineTo(x, height);
+  }
+  for (let row = 1; row < rows; row += 1) {
+    const y = Math.round((row * height) / rows) + 0.5;
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+  }
+  context.stroke();
+  context.strokeStyle = "rgba(255, 255, 255, 0.82)";
+  context.strokeRect(0.5, 0.5, width - 1, height - 1);
+  context.restore();
+}
+
+function drawJigsawSelection(context: CanvasRenderingContext2D, challenge: Challenge, tileIndex: number) {
+  const cols = jigsawCols(challenge);
+  const rows = jigsawRows(challenge);
+  const col = tileIndex % cols;
+  const row = Math.floor(tileIndex / cols);
+  const x = Math.round((col * challenge.view.width) / cols);
+  const y = Math.round((row * challenge.view.height) / rows);
+  const width = Math.round(((col + 1) * challenge.view.width) / cols) - x;
+  const height = Math.round(((row + 1) * challenge.view.height) / rows) - y;
+  context.save();
+  context.fillStyle = "rgba(37, 99, 235, 0.1)";
+  context.strokeStyle = "#2563eb";
+  context.lineWidth = 3;
+  context.fillRect(x, y, width, height);
+  context.strokeRect(x + 1.5, y + 1.5, Math.max(0, width - 3), Math.max(0, height - 3));
+  context.restore();
 }
 
 function stringParam(challenge: Challenge, name: keyof ChallengeParameters, fallback: string) {
@@ -1996,6 +2066,9 @@ function footerStatus(challenge: Challenge, ticket: string, status: string, poin
   const visibleStatus = visibleRuntimeStatus(status);
   if (ticket) return visibleStatus;
   if (visibleStatus) return visibleStatus;
+  if (isGridImageClickCaptcha(challenge) && pointCount > 0) {
+    return `已选择 ${pointCount}`;
+  }
   if (isClickCaptcha(challenge) && pointCount > 0) {
     return `已选择 ${pointCount}/${clickTargetCount(challenge)}`;
   }
@@ -2019,9 +2092,14 @@ function manualVerifyDisabled(challenge: Challenge, status: string, ticket: stri
   if (status === "验证中" || Boolean(ticket)) return true;
   if (isJigsawCaptcha(challenge)) return !jigsawTilesChanged(challenge, jigsawTiles);
   if (usesDragControl(challenge)) return value <= rangeBounds(challenge).min;
+  if (isGridImageClickCaptcha(challenge)) return pointCount < 1;
   if (isClickCaptcha(challenge)) return pointCount < clickTargetCount(challenge);
   if (isPathCaptcha(challenge)) return pointCount < 4;
   return false;
+}
+
+function gridTileCount(challenge: Challenge) {
+  return jigsawCols(challenge) * jigsawRows(challenge);
 }
 
 function normalizedJigsawTiles(challenge: Challenge, tiles: number[]) {
@@ -2048,7 +2126,11 @@ function usesDragControl(challenge: Challenge) {
 }
 
 function usesBoardDragControl(challenge: Challenge) {
-  return challenge.type === "SLIDER" || challenge.type === "SLIDER_V2" || challenge.type === "ROTATE" || challenge.type === "ROTATE_DEGREE";
+  return isSliderCaptcha(challenge) || challenge.type === "ROTATE" || challenge.type === "ROTATE_DEGREE";
+}
+
+function isSliderCaptcha(challenge: Challenge) {
+  return challenge.type === "SLIDER" || challenge.type === "SLIDER_V2";
 }
 
 function isClickCaptcha(challenge: Challenge) {
@@ -2057,6 +2139,10 @@ function isClickCaptcha(challenge: Challenge) {
 
 function isJigsawCaptcha(challenge: Challenge) {
   return challenge.type === "JIGSAW";
+}
+
+function isGridImageClickCaptcha(challenge: Challenge) {
+  return challenge.type === "GRID_IMAGE_CLICK";
 }
 
 function isPathCaptcha(challenge: Challenge) {

@@ -1,4 +1,7 @@
 PROTO_FILES := proto/captcha/v1/captcha.proto
+GENERATED_PROTO_FILES := gen/captcha/v1/captcha.pb.go gen/captcha/v1/captcha_grpc.pb.go
+DOCKER_GOPROXY ?= https://goproxy.cn,direct
+DOCKER_GOSUMDB ?= sum.golang.google.cn
 
 .PHONY: proto
 proto:
@@ -8,8 +11,21 @@ proto:
 		$(PROTO_FILES)
 
 .PHONY: proto-check
-proto-check: proto
-	git diff --exit-code -- gen/captcha/v1/captcha.pb.go gen/captcha/v1/captcha_grpc.pb.go
+proto-check:
+	tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	for file in $(GENERATED_PROTO_FILES); do \
+		mkdir -p "$$tmp_dir/$$(dirname "$$file")"; \
+		cp "$$file" "$$tmp_dir/$$file"; \
+	done; \
+	$(MAKE) proto; \
+	for file in $(GENERATED_PROTO_FILES); do \
+		if ! cmp -s "$$tmp_dir/$$file" "$$file"; then \
+			echo "Generated protobuf file is not up to date: $$file" >&2; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "PASS: generated protobuf files are up to date"
 
 .PHONY: smoke
 smoke:
@@ -65,12 +81,17 @@ doc-commands-contract:
 
 .PHONY: docker-build
 docker-build:
-	docker build -f deploy/docker/Dockerfile.server .
-	docker build -f deploy/docker/Dockerfile.gateway .
+	docker build --build-arg GOPROXY="$(DOCKER_GOPROXY)" --build-arg GOSUMDB="$(DOCKER_GOSUMDB)" -f deploy/docker/Dockerfile.server .
+	docker build --build-arg GOPROXY="$(DOCKER_GOPROXY)" --build-arg GOSUMDB="$(DOCKER_GOSUMDB)" -f deploy/docker/Dockerfile.gateway .
 
 .PHONY: release-audit
 release-audit:
 	bash scripts/release-audit.sh
+
+.PHONY: synthetic-bot-tracks
+synthetic-bot-tracks:
+	mkdir -p output
+	go run ./scripts/generate-bot-tracks.go -out output/synthetic-bot-tracks.jsonl
 
 .PHONY: clean
 clean:

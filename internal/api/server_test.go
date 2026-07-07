@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -265,7 +266,7 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 
 		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+decision.SessionID+"/verify", map[string]any{
 			"answer": answerForSession(session),
-			"track":  trackForX(180),
+			"track":  trackForX(session.Answer.X),
 			"route":  "/api/register",
 		})
 		var verified struct {
@@ -1159,6 +1160,93 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 		}
 	})
 
+	t.Run("force challenge route ignores valid site clearance", func(t *testing.T) {
+		const (
+			ip        = "198.51.100.65"
+			userAgent = "Mozilla/5.0 force-challenge"
+			account   = "acct_force_challenge"
+		)
+		memoryStore.UpsertRoutePolicy(types.RoutePolicy{
+			ID:              "route_sms_force_challenge",
+			ClientID:        "demo",
+			Name:            "sms force challenge",
+			PathPattern:     "/api/sms/send",
+			Method:          "POST",
+			Scene:           "sms",
+			Mode:            "force_challenge",
+			ChallengeType:   types.CaptchaSlider,
+			FailPolicy:      "fail_close",
+			Priority:        200,
+			Enabled:         true,
+			RolloutPercent:  100,
+			TokenTTLSeconds: 120,
+		})
+		defer memoryStore.DeleteRoutePolicies("demo", []string{"route_sms_force_challenge"})
+		clearance, err := tokens.IssueClearance("demo", "site", hashValue(ip), hashValue(userAgent), account, "")
+		if err != nil {
+			t.Fatalf("issue site clearance: %v", err)
+		}
+		response := requestWithHeaders(t, server, http.MethodPost, "/api/v1/policy/evaluate", types.PolicyEvaluateRequest{
+			ClientID:      "demo",
+			Scene:         "site",
+			Path:          "/api/sms/send",
+			Method:        "POST",
+			IP:            ip,
+			UserAgent:     userAgent,
+			AccountIDHash: account,
+			Clearance:     clearance.Value,
+		}, integrationHeaders())
+		var decision types.PolicyDecision
+		decode(t, response, &decision)
+		if decision.Action != types.DecisionChallenge || decision.Reason != "FORCE_CHALLENGE" || decision.Scene != "sms" || decision.SessionID == "" {
+			t.Fatalf("expected force challenge to override clearance, got %+v", decision)
+		}
+	})
+
+	t.Run("app wide route controls minted clearance ttl", func(t *testing.T) {
+		const (
+			ip        = "198.51.100.66"
+			userAgent = "Mozilla/5.0 app-clearance-ttl"
+		)
+		memoryStore.UpsertRoutePolicy(types.RoutePolicy{
+			ID:              "route_app_wide_clearance_ttl",
+			ClientID:        "demo",
+			Name:            "site protection ttl",
+			PathPattern:     "",
+			Method:          "",
+			Scene:           "site",
+			Mode:            "always",
+			ChallengeType:   types.CaptchaSlider,
+			FailPolicy:      "fail_open",
+			Priority:        150,
+			Enabled:         true,
+			RolloutPercent:  100,
+			TokenTTLSeconds: 45,
+		})
+		defer memoryStore.DeleteRoutePolicies("demo", []string{"route_app_wide_clearance_ttl"})
+		ticket, err := tokens.Issue("demo", "site", "/page/home", "", hashValue(ip), hashValue(userAgent))
+		if err != nil {
+			t.Fatalf("issue site ticket: %v", err)
+		}
+		response := requestWithHeaders(t, server, http.MethodPost, "/api/v1/policy/evaluate", types.PolicyEvaluateRequest{
+			ClientID:  "demo",
+			Scene:     "site",
+			Path:      "/page/home",
+			Method:    "GET",
+			IP:        ip,
+			UserAgent: userAgent,
+			Ticket:    ticket.Value,
+		}, integrationHeaders())
+		var decision types.PolicyDecision
+		decode(t, response, &decision)
+		if decision.Action != types.DecisionAllow || decision.Reason != "TICKET_CONSUMED" || decision.ClearanceToken == "" {
+			t.Fatalf("expected consumed site ticket to mint clearance, got %+v", decision)
+		}
+		if decision.ClearanceTTLSeconds != 45 {
+			t.Fatalf("expected app-wide clearance ttl 45 seconds, got %+v", decision)
+		}
+	})
+
 	t.Run("event report appends audit events", func(t *testing.T) {
 		forgedCreatedAt := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
 		response := requestWithHeaders(t, server, http.MethodPost, "/api/v1/events/report", types.EventBatch{
@@ -1456,6 +1544,104 @@ func TestPolicyEvaluateDegradesWhenRiskInferenceFails(t *testing.T) {
 	}
 }
 
+func TestDemoCollectionSummary(t *testing.T) {
+	t.Parallel()
+
+	server, memoryStore, _ := testServer()
+	memoryStore.AddRiskFeatureSnapshot(types.RiskFeatureSnapshot{
+		ID:             "feat_demo_mouse",
+		AttemptID:      "cap_sess_demo_mouse",
+		ClientID:       "demo",
+		Scene:          "human-demo-mouse-login",
+		ChallengeType:  types.CaptchaSlider,
+		FeatureVersion: "track-v1",
+		Features:       map[string]any{"sample_source": "human-demo", "input_device_hint": "mouse"},
+		Label:          "captcha_pass",
+		LabelSource:    "captcha_result",
+		ModelTrainable: false,
+	})
+	memoryStore.AddRiskFeatureSnapshot(types.RiskFeatureSnapshot{
+		ID:             "feat_demo_touch",
+		AttemptID:      "cap_sess_demo_touch",
+		ClientID:       "demo",
+		Scene:          "human-demo-touch-verify",
+		ChallengeType:  types.CaptchaGesture,
+		FeatureVersion: "track-v1",
+		Features:       map[string]any{"sample_source": "human-demo", "input_device_hint": "touch"},
+		Label:          "captcha_retry",
+		LabelSource:    "captcha_result",
+		ModelTrainable: false,
+	})
+	memoryStore.AddRiskFeatureSnapshot(types.RiskFeatureSnapshot{
+		ID:             "feat_collector",
+		AttemptID:      "collector:slider_medium",
+		ClientID:       "demo",
+		Scene:          "collector-mouse",
+		ChallengeType:  types.CaptchaSlider,
+		FeatureVersion: "track-v1",
+		Features:       map[string]any{"input_device_hint": "mouse"},
+		Label:          "likely_human",
+		LabelSource:    "collector",
+		ModelTrainable: false,
+	})
+
+	response := request(t, server, http.MethodGet, "/api/v1/risk/demo-collection-summary?sample_source=human-demo", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Total   int `json:"total"`
+		Devices map[string]struct {
+			Count     int `json:"count"`
+			Target    int `json:"target"`
+			Remaining int `json:"remaining"`
+		} `json:"devices"`
+		CaptchaTypes map[string]int `json:"captcha_types"`
+	}
+	decode(t, response, &body)
+	if body.Total != 2 || body.Devices["mouse"].Count != 1 || body.Devices["touch"].Count != 1 || body.Devices["trackpad"].Target != 2000 {
+		t.Fatalf("unexpected summary: %+v", body)
+	}
+	if body.CaptchaTypes[string(types.CaptchaSlider)] != 1 || body.CaptchaTypes[string(types.CaptchaGesture)] != 1 {
+		t.Fatalf("unexpected captcha type counts: %+v", body.CaptchaTypes)
+	}
+}
+
+func TestDemoCollectionSummaryPaginatesPastFirstPage(t *testing.T) {
+	t.Parallel()
+
+	server, memoryStore, _ := testServer()
+	for i := 0; i < 1205; i++ {
+		memoryStore.AddRiskFeatureSnapshot(types.RiskFeatureSnapshot{
+			ID:             fmt.Sprintf("feat_demo_mouse_%04d", i),
+			AttemptID:      fmt.Sprintf("cap_sess_demo_mouse_%04d", i),
+			ClientID:       "demo",
+			Scene:          "human-demo-mouse-login",
+			ChallengeType:  types.CaptchaSlider,
+			FeatureVersion: "track-v1",
+			Features:       map[string]any{"sample_source": "human-demo", "input_device_hint": "mouse"},
+			Label:          "captcha_pass",
+			LabelSource:    "captcha_result",
+			ModelTrainable: false,
+		})
+	}
+
+	response := request(t, server, http.MethodGet, "/api/v1/risk/demo-collection-summary?sample_source=human-demo", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Total   int `json:"total"`
+		Devices map[string]struct {
+			Count int `json:"count"`
+		} `json:"devices"`
+	}
+	decode(t, response, &body)
+	if body.Total != 1205 || body.Devices["mouse"].Count != 1205 {
+		t.Fatalf("summary should include records after first page: %+v", body)
+	}
+}
+
 func TestAdminTokenAuth(t *testing.T) {
 	t.Parallel()
 
@@ -1659,6 +1845,71 @@ func TestAdminUploadsResourceImages(t *testing.T) {
 		uploaded.Metadata["suitability"] != "horizontal_continuity" ||
 		uploaded.Metadata["difficulty"] != "hard" {
 		t.Fatalf("expected concat material metadata, got %+v", uploaded.Metadata)
+	}
+}
+
+func TestAdminListResourcesAddsTransientThumbnails(t *testing.T) {
+	t.Parallel()
+
+	handler, memoryStore, _ := testServerWithOptions(Options{})
+	path := writeAPITestPNG(t, color.RGBA{R: 40, G: 120, B: 210, A: 255})
+	memoryStore.UpsertResource(types.CaptchaResource{
+		ID:           "res_preview_file",
+		ClientID:     "demo",
+		CaptchaType:  types.CaptchaSlider,
+		ResourceType: "background_library",
+		StorageType:  "file",
+		URI:          "file://" + path,
+		Metadata:     map[string]any{"file_name": "preview.png"},
+		Status:       "active",
+	})
+
+	response := request(t, handler, http.MethodGet, "/api/v1/admin/resources?client_id=demo", nil)
+	var body struct {
+		Items []types.CaptchaResource `json:"items"`
+	}
+	decode(t, response, &body)
+	var listed types.CaptchaResource
+	for _, item := range body.Items {
+		if item.ID == "res_preview_file" {
+			listed = item
+			break
+		}
+	}
+	if listed.ID == "" {
+		t.Fatalf("expected preview resource in list, got %+v", body.Items)
+	}
+	if thumbnail, _ := listed.Metadata["thumbnail_data_url"].(string); !strings.HasPrefix(thumbnail, "data:image/png;base64,") {
+		t.Fatalf("expected transient thumbnail data URL, got %+v", listed.Metadata)
+	}
+	for _, item := range memoryStore.ListResources("demo") {
+		if item.ID == "res_preview_file" {
+			if item.Metadata["thumbnail_data_url"] != nil {
+				t.Fatalf("thumbnail should not be persisted into store metadata: %+v", item.Metadata)
+			}
+			return
+		}
+	}
+	t.Fatal("resource missing from store")
+}
+
+func TestAdminListResourcesHidesFallbackBackgroundWhenImagesExist(t *testing.T) {
+	t.Parallel()
+
+	handler, _, _ := testServerWithOptions(Options{})
+	response := request(t, handler, http.MethodGet, "/api/v1/admin/resources?client_id=demo", nil)
+	var body struct {
+		Items []types.CaptchaResource `json:"items"`
+	}
+	decode(t, response, &body)
+	if hasResourceIDForTest(body.Items, "res_background") {
+		t.Fatalf("fallback background should be hidden when gallery images exist: %+v", body.Items)
+	}
+	if !hasResourceIDForTest(body.Items, "res_demo_bg_01") {
+		t.Fatalf("expected demo gallery image to remain visible: %+v", body.Items)
+	}
+	if !hasResourceIDForTest(body.Items, "res_slider") {
+		t.Fatalf("non-image support resources should still be returned for config management: %+v", body.Items)
 	}
 }
 
@@ -2053,6 +2304,15 @@ func TestChallengeSessionSingleUseAndFailureLimit(t *testing.T) {
 		t.Fatalf("expected first verify to issue ticket, got %+v", verified)
 	}
 
+	response = request(t, server, http.MethodGet, "/api/v1/challenge/sessions/"+created.SessionID, nil)
+	var loadedVerified struct {
+		Status types.SessionStatus `json:"status"`
+	}
+	decode(t, response, &loadedVerified)
+	if loadedVerified.Status != types.SessionVerified {
+		t.Fatalf("expected verified session status for reload path, got %+v", loadedVerified)
+	}
+
 	response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/verify", map[string]any{
 		"answer": answerForSession(session),
 		"track":  trackForX(session.Answer.X),
@@ -2065,6 +2325,17 @@ func TestChallengeSessionSingleUseAndFailureLimit(t *testing.T) {
 	decode(t, response, &repeated)
 	if repeated.OK || repeated.ReasonCode != "SESSION_ALREADY_VERIFIED" {
 		t.Fatalf("expected verified session reuse rejection, got %+v", repeated)
+	}
+
+	response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/refresh", nil)
+	var verifiedRefresh struct {
+		OK         bool   `json:"ok"`
+		ReasonCode string `json:"reason_code"`
+		CanRefresh bool   `json:"can_refresh"`
+	}
+	decode(t, response, &verifiedRefresh)
+	if verifiedRefresh.OK || verifiedRefresh.ReasonCode != "SESSION_ALREADY_VERIFIED" || verifiedRefresh.CanRefresh {
+		t.Fatalf("expected verified session refresh rejection, got %+v", verifiedRefresh)
 	}
 
 	response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions", map[string]any{
@@ -2543,6 +2814,29 @@ func TestVerifySessionRecordsTrackFeatures(t *testing.T) {
 			{X: float64(session.Answer.X), Y: 21, T: 620, Type: "end"},
 		},
 		"route": "/api/login",
+		"viewport": map[string]any{
+			"width":  360,
+			"height": 220,
+		},
+		"runtime_meta": map[string]any{
+			"runtime_version":       "0.1.0",
+			"sample_source":         "Human Demo!",
+			"device_pixel_ratio":    2,
+			"input_device_hint":     "trackpad",
+			"input_device_inferred": "trackpad",
+			"pointer_type":          "mouse",
+			"primary_pointer_type":  "mouse",
+			"last_pointer_type":     "mouse",
+			"max_touch_points":      5,
+			"touch_capable":         true,
+			"coarse_pointer":        false,
+			"hover_capable":         true,
+			"keyboard_used":         false,
+			"pointer_counts": map[string]any{
+				"mouse": 5,
+				"touch": 0,
+			},
+		},
 	})
 	var verified struct {
 		OK bool `json:"ok"`
@@ -2566,6 +2860,15 @@ func TestVerifySessionRecordsTrackFeatures(t *testing.T) {
 	features := snapshots[0].Features
 	if features["path_length"] == nil || features["velocity_variance"] == nil || features["direction_changes"] == nil {
 		t.Fatalf("expected extracted track features, got %+v", features)
+	}
+	if features["input_device_hint"] != "trackpad" || features["input_device_inferred"] != "trackpad" || features["pointer_type"] != "mouse" {
+		t.Fatalf("expected runtime input metadata, got %+v", features)
+	}
+	if features["sample_source"] != "human-demo" {
+		t.Fatalf("expected sanitized sample source, got %+v", features)
+	}
+	if features["viewport_width"] != 360 || features["viewport_height"] != 220 || features["pointer_mouse_count"] != 5 || features["max_touch_points"] != 5 {
+		t.Fatalf("expected viewport and pointer counts, got %+v", features)
 	}
 	resources, ok := features["resources"].([]map[string]any)
 	if !ok || !hasFeatureResource(resources, "res_background") || !hasFeatureResource(resources, "res_slider") {
@@ -2712,6 +3015,85 @@ func TestAdminPolicySimulationIsDryRun(t *testing.T) {
 	}
 }
 
+func TestAdminPolicyRulesCRUDAndSimulation(t *testing.T) {
+	t.Parallel()
+
+	server, _, _ := testServer()
+	rule := types.PolicyRule{
+		ID:       "rule_api_trusted_subject",
+		ClientID: "demo",
+		Name:     "trusted subject",
+		Priority: 500,
+		Enabled:  true,
+		Scope: types.PolicyRuleScope{
+			PathPatterns: []string{"/api/register"},
+			Methods:      []string{"POST"},
+		},
+		Conditions: types.PolicyCondition{All: []types.PolicyCondition{
+			{Field: "account_id_hash", Op: "exists"},
+			{Field: "device_id_hash", Op: "exists"},
+			{Field: "risk_score", Op: "lt", Value: 30},
+		}},
+		Action: types.PolicyRuleAction{
+			Type:   types.DecisionSkipChallenge,
+			Reason: "TRUSTED_SUBJECT_LOW_RISK",
+		},
+	}
+	response := request(t, server, http.MethodPost, "/api/v1/admin/policies", rule)
+	var saved types.PolicyRule
+	decode(t, response, &saved)
+	if saved.ID != rule.ID || saved.Action.Type != types.DecisionSkipChallenge || saved.Status != "active" {
+		t.Fatalf("unexpected saved policy rule: %+v", saved)
+	}
+
+	var list struct {
+		Items []types.PolicyRule `json:"items"`
+	}
+	decode(t, request(t, server, http.MethodGet, "/api/v1/admin/policies?client_id=demo", nil), &list)
+	found := false
+	for _, item := range list.Items {
+		if item.ID == rule.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("saved policy rule not listed: %+v", list.Items)
+	}
+
+	var simulation struct {
+		DryRun      bool                 `json:"dry_run"`
+		Decision    types.PolicyDecision `json:"decision"`
+		MatchedRule *policyRuleSummary   `json:"matched_rule"`
+		Explanation []string             `json:"explanation"`
+	}
+	decode(t, request(t, server, http.MethodPost, "/api/v1/admin/policy/simulate", types.PolicyEvaluateRequest{
+		ClientID:      "demo",
+		Path:          "/api/register",
+		Method:        "POST",
+		AccountIDHash: "acct_trusted",
+		DeviceIDHash:  "device_trusted",
+		RiskScore:     12,
+	}), &simulation)
+	if !simulation.DryRun || simulation.Decision.Action != types.DecisionSkipChallenge || simulation.MatchedRule == nil || simulation.MatchedRule.ID != rule.ID {
+		t.Fatalf("expected dry-run matched policy rule, got %+v", simulation)
+	}
+	if len(simulation.Explanation) == 0 {
+		t.Fatalf("expected policy rule explanation, got %+v", simulation)
+	}
+
+	var deleted struct {
+		Deleted int `json:"deleted"`
+	}
+	decode(t, request(t, server, http.MethodPost, "/api/v1/admin/policies/delete", map[string]any{
+		"client_id": "demo",
+		"ids":       []string{rule.ID},
+	}), &deleted)
+	if deleted.Deleted != 1 {
+		t.Fatalf("expected one deleted policy rule, got %+v", deleted)
+	}
+}
+
 func TestAdminMetricsSummarizesOperationalState(t *testing.T) {
 	t.Parallel()
 
@@ -2745,6 +3127,7 @@ func TestAdminMetricsSummarizesOperationalState(t *testing.T) {
 			"resources": []map[string]any{
 				{"id": "res_background", "resource_type": "background_image", "captcha_type": string(types.CaptchaSlider), "tag": "default"},
 				{"id": "res_slider", "resource_type": "slider_template", "captcha_type": string(types.CaptchaSlider), "tag": "default"},
+				{"id": "res_demo_bg_01", "resource_type": "background_library", "captcha_type": string(types.CaptchaSlider), "tag": "default"},
 			},
 			"track_score": 92,
 		},
@@ -2778,8 +3161,8 @@ func TestAdminMetricsSummarizesOperationalState(t *testing.T) {
 	if metrics.Totals.RoutePolicies != 3 || metrics.Totals.EnabledRoutePolicies != 3 {
 		t.Fatalf("expected seeded route policy totals, got %+v", metrics.Totals)
 	}
-	if metrics.Totals.CaptchaResources != 6 || metrics.Totals.ActiveCaptchaResources != 6 {
-		t.Fatalf("expected seeded resource totals, got %+v", metrics.Totals)
+	if metrics.Totals.CaptchaResources != 57 || metrics.Totals.ActiveCaptchaResources != 57 {
+		t.Fatalf("expected seeded gallery resource totals, got %+v", metrics.Totals)
 	}
 	if metrics.Totals.RiskFeatureSnapshots != 1 || metrics.Totals.TrainableRiskFeatures != 1 {
 		t.Fatalf("expected risk feature totals, got %+v", metrics.Totals)
@@ -2796,13 +3179,13 @@ func TestAdminMetricsSummarizesOperationalState(t *testing.T) {
 	if metrics.ByChallengeType[string(types.CaptchaSlider)] != 2 || metrics.ByChallengeType[string(types.CaptchaRotate)] != 1 {
 		t.Fatalf("unexpected captcha type counts: %+v", metrics.ByChallengeType)
 	}
-	if metrics.RiskLabels["confirmed_bot"] != 1 || metrics.ResourceStatuses["active"] != 6 {
+	if metrics.RiskLabels["confirmed_bot"] != 1 || metrics.ResourceStatuses["active"] != 57 {
 		t.Fatalf("unexpected label/status counts: labels=%+v statuses=%+v", metrics.RiskLabels, metrics.ResourceStatuses)
 	}
 	if len(metrics.TopScenes) == 0 || metrics.TopScenes[0].Name != "login" || metrics.TopScenes[0].Count != 3 {
 		t.Fatalf("unexpected top scenes: %+v", metrics.TopScenes)
 	}
-	if len(metrics.TopResources) < 2 || metrics.TopResources[0].ID != "res_background" || metrics.TopResources[0].Attempts != 1 || metrics.TopResources[0].Retry != 1 || metrics.TopResources[0].FailureRate != 100 {
+	if len(metrics.TopResources) != 1 || metrics.TopResources[0].ID != "res_demo_bg_01" || metrics.TopResources[0].Attempts != 1 || metrics.TopResources[0].Retry != 1 || metrics.TopResources[0].FailureRate != 100 {
 		t.Fatalf("unexpected top resource metrics: %+v", metrics.TopResources)
 	}
 }
@@ -2906,6 +3289,214 @@ func TestAdminExportsRiskFeatureSnapshotsForOfflineTraining(t *testing.T) {
 	}
 	if count := response.Header().Get("X-Captcha-Export-Count"); count != "2" {
 		t.Fatalf("expected two export records when trainable_only=false, got count %q body=%s", count, response.Body.String())
+	}
+}
+
+func TestCollectTrackSampleRequiresCollectorToken(t *testing.T) {
+	t.Parallel()
+
+	server, memoryStore, _ := testServerWithOptions(Options{CollectorToken: "collector-secret"})
+	body := map[string]any{
+		"client_id":         "demo",
+		"scene":             "collector-mouse",
+		"task_type":         "slider_long",
+		"task_target":       map[string]any{"x": 280, "y": 24},
+		"input_device_hint": "mouse",
+		"track": []map[string]any{
+			{"x": 0, "y": 30, "t": 0, "type": "start"},
+			{"x": 80, "y": 32, "t": 260, "type": "move"},
+			{"x": 170, "y": 31, "t": 620, "type": "end"},
+		},
+	}
+
+	rec := request(t, server, http.MethodPost, "/api/v1/risk/track-samples", body)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized, got %d", rec.Code)
+	}
+	if got := memoryStore.ListRiskFeatureSnapshots("demo", 10); len(got) != 0 {
+		t.Fatalf("unexpected snapshots: %d", len(got))
+	}
+}
+
+func TestCollectTrackSampleRejectsClickTasks(t *testing.T) {
+	t.Parallel()
+
+	server, memoryStore, _ := testServerWithOptions(Options{CollectorToken: "collector-secret"})
+	body := map[string]any{
+		"client_id":         "demo",
+		"scene":             "collector-mouse",
+		"task_type":         "click_points",
+		"input_device_hint": "mouse",
+		"track": []map[string]any{
+			{"x": 20, "y": 20, "t": 0, "type": "start"},
+			{"x": 20, "y": 20, "t": 120, "type": "end"},
+		},
+	}
+
+	rec := requestWithHeaders(t, server, http.MethodPost, "/api/v1/risk/track-samples", body, map[string]string{
+		"X-Captcha-Collector-Token": "collector-secret",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := memoryStore.ListRiskFeatureSnapshots("demo", 10); len(got) != 0 {
+		t.Fatalf("unexpected snapshots: %d", len(got))
+	}
+}
+
+func TestCollectTrackSampleStoresLikelyHumanRiskFeature(t *testing.T) {
+	t.Parallel()
+
+	server, memoryStore, _ := testServerWithOptions(Options{CollectorToken: "collector-secret"})
+	body := map[string]any{
+		"client_id":         "demo",
+		"scene":             "collector-trackpad",
+		"task_type":         "slider_adjust",
+		"task_target":       map[string]any{"x": 240, "y": 24},
+		"input_device_hint": "trackpad",
+		"viewport":          map[string]any{"width": 360, "height": 180},
+		"runtime_meta": map[string]any{
+			"runtime_version":       "0.1.0",
+			"input_device_hint":     "trackpad",
+			"input_device_inferred": "trackpad",
+			"pointer_type":          "mouse",
+			"last_pointer_type":     "mouse",
+			"pointer_counts":        map[string]any{"mouse": 7},
+		},
+		"track": []map[string]any{
+			{"x": 8, "y": 98, "t": 0, "type": "start"},
+			{"x": 42, "y": 91, "t": 110, "type": "move"},
+			{"x": 86, "y": 80, "t": 220, "type": "move"},
+			{"x": 145, "y": 88, "t": 360, "type": "move"},
+			{"x": 198, "y": 104, "t": 520, "type": "end"},
+		},
+	}
+
+	rec := requestWithHeaders(t, server, http.MethodPost, "/api/v1/risk/track-samples", body, map[string]string{
+		"X-Captcha-Collector-Token": "collector-secret",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	snapshots := memoryStore.ListRiskFeatureSnapshots("demo", 10)
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one snapshot, got %d", len(snapshots))
+	}
+	snapshot := snapshots[0]
+	if snapshot.Label != "likely_human" || snapshot.LabelSource != "collector" || snapshot.ModelTrainable {
+		t.Fatalf("unexpected label metadata: label=%s source=%s trainable=%v", snapshot.Label, snapshot.LabelSource, snapshot.ModelTrainable)
+	}
+	if snapshot.ChallengeType != types.CaptchaSlider {
+		t.Fatalf("unexpected challenge type: %s", snapshot.ChallengeType)
+	}
+	if got := snapshot.Features["collector_task_type"]; got != "slider_adjust" {
+		t.Fatalf("unexpected task type: %v", got)
+	}
+	if got := snapshot.Features["input_device_hint"]; got != "trackpad" {
+		t.Fatalf("unexpected device hint: %v", got)
+	}
+	if got := snapshot.Features["viewport_width"]; got != 360 {
+		t.Fatalf("unexpected viewport width: %v", got)
+	}
+	if snapshot.Features["collector_target_x"] != 240 || snapshot.Features["collector_target_y"] != 24 {
+		t.Fatalf("unexpected collector target: %+v", snapshot.Features)
+	}
+	if _, ok := snapshot.Features["track_score"]; !ok {
+		t.Fatalf("expected track score feature")
+	}
+}
+
+func TestCollectTrackSampleStoresDrawAndRotateTypes(t *testing.T) {
+	t.Parallel()
+
+	server, memoryStore, _ := testServerWithOptions(Options{CollectorToken: "collector-secret"})
+	cases := []struct {
+		name          string
+		taskType      string
+		kind          string
+		variant       string
+		expectedType  types.CaptchaType
+		expectedInput string
+		expectedUA    string
+	}{
+		{
+			name:          "draw",
+			taskType:      "draw_wave",
+			kind:          "draw",
+			variant:       "wave",
+			expectedType:  types.CaptchaCurve,
+			expectedInput: "mouse",
+			expectedUA:    "pc",
+		},
+		{
+			name:          "rotate",
+			taskType:      "rotate_precise",
+			kind:          "rotate",
+			variant:       "precise",
+			expectedType:  types.CaptchaRotate,
+			expectedInput: "touch",
+			expectedUA:    "mobile",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			body := map[string]any{
+				"client_id":         "demo",
+				"scene":             "personality-" + tc.expectedInput,
+				"task_type":         tc.taskType,
+				"task_target":       map[string]any{"x": 180, "y": 80},
+				"input_device_hint": tc.expectedInput,
+				"viewport":          map[string]any{"width": 320, "height": 240},
+				"runtime_meta": map[string]any{
+					"runtime_version":        "collector-0.1.0",
+					"sample_source":          "personality-hk",
+					"input_device_hint":      tc.expectedInput,
+					"input_device_inferred":  tc.expectedInput,
+					"collector_task_kind":    tc.kind,
+					"collector_task_variant": tc.variant,
+					"ua_device":              tc.expectedUA,
+					"pointer_type":           tc.expectedInput,
+					"last_pointer_type":      tc.expectedInput,
+					"pointer_counts":         map[string]any{tc.expectedInput: 5},
+				},
+				"track": []map[string]any{
+					{"x": 8, "y": 98, "t": 0, "type": "start"},
+					{"x": 72, "y": 91, "t": 120, "type": "move"},
+					{"x": 148, "y": 102, "t": 260, "type": "move"},
+					{"x": 198, "y": 104, "t": 420, "type": "end"},
+				},
+			}
+
+			rec := requestWithHeaders(t, server, http.MethodPost, "/api/v1/risk/track-samples", body, map[string]string{
+				"X-Captcha-Collector-Token": "collector-secret",
+			})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected ok, got %d body=%s", rec.Code, rec.Body.String())
+			}
+
+			snapshots := memoryStore.ListRiskFeatureSnapshots("demo", 10)
+			var snapshot types.RiskFeatureSnapshot
+			for _, candidate := range snapshots {
+				if candidate.Features["collector_task_type"] == tc.taskType {
+					snapshot = candidate
+					break
+				}
+			}
+			if snapshot.ID == "" {
+				t.Fatalf("expected snapshot for %s, got %+v", tc.taskType, snapshots)
+			}
+			if snapshot.ChallengeType != tc.expectedType {
+				t.Fatalf("unexpected challenge type: %s", snapshot.ChallengeType)
+			}
+			if snapshot.Features["collector_task_kind"] != tc.kind || snapshot.Features["collector_task_variant"] != tc.variant {
+				t.Fatalf("unexpected task metadata: %+v", snapshot.Features)
+			}
+			if snapshot.Features["ua_device"] != tc.expectedUA || snapshot.Features["input_device_hint"] != tc.expectedInput {
+				t.Fatalf("unexpected device metadata: %+v", snapshot.Features)
+			}
+		})
 	}
 }
 
@@ -3032,6 +3623,15 @@ func hasRenderResource(resources []any, resourceType, id string) bool {
 			continue
 		}
 		if resource["resource_type"] == resourceType && resource["id"] == id {
+			return true
+		}
+	}
+	return false
+}
+
+func hasResourceIDForTest(resources []types.CaptchaResource, id string) bool {
+	for _, resource := range resources {
+		if resource.ID == id {
 			return true
 		}
 	}

@@ -407,29 +407,13 @@ button:disabled {
   cursor: grab;
 }
 
-.jigsaw-tiles {
+.jigsaw-canvas {
   position: absolute;
   inset: 0;
-  z-index: 2;
-  display: grid;
+  display: block;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-}
-
-.jigsaw-tile {
-  min-width: 0;
-  min-height: 0;
-  background-repeat: no-repeat;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 56%);
-  transition: background-position 120ms ease, box-shadow 120ms ease, filter 120ms ease;
-}
-
-.jigsaw-tile.selected {
-  z-index: 1;
-  filter: saturate(1.08) contrast(1.04);
-  box-shadow:
-    inset 0 0 0 3px #2563eb,
-    inset 0 0 0 999px rgb(37 99 235 / 10%),
-    0 0 0 2px rgb(255 255 255 / 86%);
 }
 
 .curve-board:active,
@@ -549,96 +533,6 @@ button:disabled {
   margin-top: 4px;
   color: #64748b;
   font-size: 13px;
-}
-
-.collection-dashboard {
-  max-width: 1120px;
-  margin: 0 auto 14px;
-  display: grid;
-  grid-template-columns: 210px 1fr;
-  gap: 12px;
-}
-
-.collection-total,
-.collection-target {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid #dce3ec;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.collection-total {
-  min-height: 86px;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  padding: 14px;
-}
-
-.collection-total span,
-.collection-target span {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.collection-total strong {
-  color: #0f172a;
-  font-size: 24px;
-  line-height: 1;
-}
-
-.collection-total small,
-.collection-target small {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.collection-targets {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.collection-target {
-  min-height: 86px;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  padding: 14px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.collection-target strong {
-  position: relative;
-  z-index: 1;
-  color: #0f172a;
-  font-size: 20px;
-}
-
-.collection-target i {
-  position: absolute;
-  inset: auto auto 0 0;
-  height: 4px;
-  background: #2563eb;
-}
-
-.collection-target.active {
-  border-color: #2563eb;
-}
-
-.collection-target.recommended::after {
-  content: "优先";
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  border-radius: 999px;
-  background: #ecfdf5;
-  color: #047857;
-  padding: 2px 8px;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .demo-layout {
@@ -946,10 +840,6 @@ button:disabled {
     padding: 12px;
   }
 
-  .collection-dashboard {
-    grid-template-columns: 1fr;
-  }
-
   .demo-layout {
     grid-template-columns: 1fr;
   }
@@ -977,10 +867,6 @@ button:disabled {
   }
 
   .type-tabs {
-    grid-template-columns: 1fr;
-  }
-
-  .collection-targets {
     grid-template-columns: 1fr;
   }
 

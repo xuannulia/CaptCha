@@ -38,6 +38,8 @@ type metricsTotals struct {
 	ActiveApplications      int `json:"active_applications"`
 	RoutePolicies           int `json:"route_policies"`
 	EnabledRoutePolicies    int `json:"enabled_route_policies"`
+	PolicyRules             int `json:"policy_rules"`
+	EnabledPolicyRules      int `json:"enabled_policy_rules"`
 	IPPolicies              int `json:"ip_policies"`
 	EnabledIPPolicies       int `json:"enabled_ip_policies"`
 	CaptchaResources        int `json:"captcha_resources"`
@@ -91,8 +93,9 @@ func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 func (s *Server) buildAdminMetrics(clientID string, limit int) adminMetricsResponse {
 	applications := applicationsForMetrics(s.store.ListApplications(), clientID)
 	routes := s.store.ListRoutePolicies(clientID)
+	policyRules := s.store.ListPolicyRules(clientID)
 	ipPolicies := s.store.ListIPPolicies(clientID)
-	resources := s.store.ListResources(clientID)
+	resources := adminMetricResources(s.store.ListResources(clientID))
 	auditEvents := s.store.ListAuditEventsFiltered(types.AuditEventFilter{ClientID: clientID, Limit: limit})
 	features := s.store.ListRiskFeatureSnapshotsFiltered(types.RiskFeatureSnapshotFilter{ClientID: clientID, Limit: limit})
 	models := s.store.ListRiskModelVersions("", 200)
@@ -119,6 +122,12 @@ func (s *Server) buildAdminMetrics(clientID string, limit int) adminMetricsRespo
 			response.Totals.EnabledRoutePolicies++
 		}
 	}
+	response.Totals.PolicyRules = len(policyRules)
+	for _, rule := range policyRules {
+		if rule.Enabled {
+			response.Totals.EnabledPolicyRules++
+		}
+	}
 	response.Totals.IPPolicies = len(ipPolicies)
 	for _, policy := range ipPolicies {
 		if policy.Enabled {
@@ -142,14 +151,14 @@ func (s *Server) buildAdminMetrics(clientID string, limit int) adminMetricsRespo
 		result := normalizedMetricName(event.Result, "unknown")
 		response.ByAction[action]++
 		response.ByResult[result]++
-		switch event.Action {
-		case types.DecisionAllow:
+		switch {
+		case event.Action == types.DecisionAllow || event.Action == types.DecisionPass || event.Action == types.DecisionSkipChallenge:
 			response.Recent.Allow++
-		case types.DecisionChallenge:
+		case types.IsChallengeLikeDecision(event.Action):
 			response.Recent.Challenge++
-		case types.DecisionBlock:
+		case types.IsBlockLikeDecision(event.Action):
 			response.Recent.Block++
-		case types.DecisionObserve:
+		case event.Action == types.DecisionObserve:
 			response.Recent.Observe++
 		}
 		switch result {
@@ -216,6 +225,8 @@ func prometheusMetrics(metrics adminMetricsResponse) string {
 	writePrometheusGauge(&out, "captcha_applications_active_total", "Active applications.", nil, metrics.Totals.ActiveApplications)
 	writePrometheusGauge(&out, "captcha_route_policies_total", "Configured route policies.", nil, metrics.Totals.RoutePolicies)
 	writePrometheusGauge(&out, "captcha_route_policies_enabled_total", "Enabled route policies.", nil, metrics.Totals.EnabledRoutePolicies)
+	writePrometheusGauge(&out, "captcha_policy_rules_total", "Configured policy rules.", nil, metrics.Totals.PolicyRules)
+	writePrometheusGauge(&out, "captcha_policy_rules_enabled_total", "Enabled policy rules.", nil, metrics.Totals.EnabledPolicyRules)
 	writePrometheusGauge(&out, "captcha_ip_policies_total", "Configured IP policies.", nil, metrics.Totals.IPPolicies)
 	writePrometheusGauge(&out, "captcha_ip_policies_enabled_total", "Enabled IP policies.", nil, metrics.Totals.EnabledIPPolicies)
 	writePrometheusGauge(&out, "captcha_resources_total", "Configured captcha resources.", nil, metrics.Totals.CaptchaResources)
@@ -393,6 +404,9 @@ func topResourceHits(features []types.RiskFeatureSnapshot, limit int) []resource
 	for _, feature := range features {
 		outcome := resourceFeatureOutcome(feature)
 		for _, ref := range featureResourceRefs(feature.Features) {
+			if !isAdminManagedResourceRef(ref) {
+				continue
+			}
 			item := byID[ref.ID]
 			if item == nil {
 				item = &resourceHit{
@@ -439,6 +453,14 @@ func topResourceHits(features []types.RiskFeatureSnapshot, limit int) []resource
 		return items[:limit]
 	}
 	return items
+}
+
+func isAdminManagedResourceRef(ref resourceFeatureRefMetric) bool {
+	switch strings.TrimSpace(ref.ID) {
+	case "res_background", "res_concat_background", "res_jigsaw_background":
+		return false
+	}
+	return isAdminManagedImageResourceType(ref.ResourceType)
 }
 
 type resourceFeatureRefMetric struct {

@@ -121,9 +121,23 @@ assert decision.get("session_id"), decision
 session_id = decision["session_id"]
 status, session = request("GET", f"/api/v1/challenge/sessions/{session_id}")
 assert status == 200, (status, session)
-body = json.dumps(session, ensure_ascii=False).lower()
 forbidden = ["answer", "target", "tolerance", "verify_rule", "score_rule", "score_threshold", "answer_seed", "initial_angle", "secret", "token"]
-leaks = [word for word in forbidden if word in body]
+
+def leaked_key_paths(value, path="$"):
+    leaks = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            key_text = str(key).lower()
+            child_path = f"{path}.{key}"
+            if any(word in key_text for word in forbidden):
+                leaks.append(child_path)
+            leaks.extend(leaked_key_paths(child, child_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            leaks.extend(leaked_key_paths(child, f"{path}[{index}]"))
+    return leaks
+
+leaks = leaked_key_paths(session)
 assert not leaks, leaks
 
 status, body = request("POST", f"/api/v1/challenge/sessions/{session_id}/verify", {

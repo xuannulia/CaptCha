@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import "./style.css";
 
-type InputDeviceHint = "mouse" | "touch";
+type InputDeviceHint = "mouse" | "trackpad" | "touch";
 type UADevice = "mobile" | "pc" | "unknown";
 type CollectorTheme = "light" | "dark";
 
@@ -236,7 +236,8 @@ function detectUADevice(): UADevice {
 
 function normalizePublicInputDevice(value: string, uaDevice: UADevice): InputDeviceHint {
   const normalized = value.trim().toLowerCase();
-  if (normalized === "touch" || normalized === "mobile") return "touch";
+  if (normalized === "trackpad" || normalized === "touchpad" || normalized === "pad") return "trackpad";
+  if (normalized === "touch" || normalized === "touchscreen" || normalized === "screen" || normalized === "mobile") return "touch";
   return uaDevice === "mobile" ? "touch" : "mouse";
 }
 

@@ -31,3 +31,26 @@ func TestPostgresMigrationContainsCoreTables(t *testing.T) {
 		}
 	}
 }
+
+func TestPostgresPolicyRuleMigrationContainsRuleTable(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile("../../migrations/postgres/010_policy_rules.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	sql := string(data)
+	required := []string{
+		"CREATE TABLE IF NOT EXISTS policy_rules",
+		"scope JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"conditions JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"aggregation JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"action JSONB NOT NULL DEFAULT '{}'::jsonb",
+		"idx_policy_rules_client_priority",
+	}
+	for _, fragment := range required {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("policy rule migration missing %q", fragment)
+		}
+	}
+}

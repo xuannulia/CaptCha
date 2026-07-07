@@ -39,13 +39,20 @@ reject_pattern() {
 
 for dockerfile in deploy/docker/Dockerfile.server deploy/docker/Dockerfile.gateway; do
 	require_pattern "$dockerfile" '^FROM golang:\$\{GO_VERSION\}-bookworm AS build$' "$dockerfile uses the pinned Go build stage"
-	require_pattern "$dockerfile" '^FROM alpine:' "$dockerfile uses a lightweight runtime stage"
+	require_pattern "$dockerfile" '^ARG GOPROXY=https://proxy.golang.org,direct$' "$dockerfile exposes a configurable Go module proxy"
+	require_pattern "$dockerfile" '^ARG GOSUMDB=sum.golang.org$' "$dockerfile exposes a configurable Go checksum database"
+	require_pattern "$dockerfile" '^FROM scratch$' "$dockerfile uses a minimal scratch runtime stage"
 	require_pattern "$dockerfile" 'CGO_ENABLED=0' "$dockerfile builds a static Go binary"
 	require_pattern "$dockerfile" 'go build -trimpath -ldflags="-s -w"' "$dockerfile strips build paths and symbols"
-	require_pattern "$dockerfile" 'adduser -S -G captcha captcha' "$dockerfile creates a non-root captcha user"
+	require_pattern "$dockerfile" "captcha:x:10001:10001" "$dockerfile defines a non-root captcha user"
+	require_pattern "$dockerfile" '^COPY --from=build /out/etc/passwd /etc/passwd$' "$dockerfile includes passwd data for the non-root user"
 	require_pattern "$dockerfile" '^USER captcha$' "$dockerfile runs as non-root"
-	require_pattern "$dockerfile" 'apk add --no-cache ca-certificates' "$dockerfile includes CA certificates"
+	require_pattern "$dockerfile" '^COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt$' "$dockerfile includes CA certificates"
 done
+
+require_pattern Makefile '^DOCKER_GOPROXY \?= https://goproxy.cn,direct$' "docker build target has a local-network friendly Go proxy default"
+require_pattern Makefile '^DOCKER_GOSUMDB \?= sum.golang.google.cn$' "docker build target has a local-network friendly checksum database default"
+require_pattern Makefile 'docker build --build-arg GOPROXY="\$\(DOCKER_GOPROXY\)" --build-arg GOSUMDB="\$\(DOCKER_GOSUMDB\)"' "docker build target passes Go module network settings"
 
 require_pattern deploy/docker/Dockerfile.server '^COPY migrations \./migrations$' "server image includes migrations"
 require_pattern deploy/docker/Dockerfile.server '^COPY configs \./configs$' "server image includes configs"

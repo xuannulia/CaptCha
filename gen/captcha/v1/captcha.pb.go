@@ -648,6 +648,7 @@ type ConfigSnapshot struct {
 	ApplicationStatus string                 `protobuf:"bytes,4,opt,name=application_status,json=applicationStatus,proto3" json:"application_status,omitempty"`
 	Resources         []*CaptchaResource     `protobuf:"bytes,5,rep,name=resources,proto3" json:"resources,omitempty"`
 	Version           int64                  `protobuf:"varint,6,opt,name=version,proto3" json:"version,omitempty"`
+	PolicyRules       []*PolicyRule          `protobuf:"bytes,7,rep,name=policy_rules,json=policyRules,proto3" json:"policy_rules,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -722,6 +723,13 @@ func (x *ConfigSnapshot) GetVersion() int64 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *ConfigSnapshot) GetPolicyRules() []*PolicyRule {
+	if x != nil {
+		return x.PolicyRules
+	}
+	return nil
 }
 
 type RoutePolicy struct {
@@ -973,6 +981,146 @@ func (x *RateLimit) GetStrategy() string {
 	return ""
 }
 
+type PolicyRule struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ClientId        string                 `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	Name            string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Description     string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	Priority        int32                  `protobuf:"varint,5,opt,name=priority,proto3" json:"priority,omitempty"`
+	Enabled         bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Status          string                 `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
+	Version         string                 `protobuf:"bytes,8,opt,name=version,proto3" json:"version,omitempty"`
+	ScopeJson       string                 `protobuf:"bytes,9,opt,name=scope_json,json=scopeJson,proto3" json:"scope_json,omitempty"`
+	ConditionsJson  string                 `protobuf:"bytes,10,opt,name=conditions_json,json=conditionsJson,proto3" json:"conditions_json,omitempty"`
+	AggregationJson string                 `protobuf:"bytes,11,opt,name=aggregation_json,json=aggregationJson,proto3" json:"aggregation_json,omitempty"`
+	ActionJson      string                 `protobuf:"bytes,12,opt,name=action_json,json=actionJson,proto3" json:"action_json,omitempty"`
+	RolloutPercent  int32                  `protobuf:"varint,13,opt,name=rollout_percent,json=rolloutPercent,proto3" json:"rollout_percent,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PolicyRule) Reset() {
+	*x = PolicyRule{}
+	mi := &file_captcha_v1_captcha_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PolicyRule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PolicyRule) ProtoMessage() {}
+
+func (x *PolicyRule) ProtoReflect() protoreflect.Message {
+	mi := &file_captcha_v1_captcha_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PolicyRule.ProtoReflect.Descriptor instead.
+func (*PolicyRule) Descriptor() ([]byte, []int) {
+	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *PolicyRule) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+func (x *PolicyRule) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *PolicyRule) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetScopeJson() string {
+	if x != nil {
+		return x.ScopeJson
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetConditionsJson() string {
+	if x != nil {
+		return x.ConditionsJson
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetAggregationJson() string {
+	if x != nil {
+		return x.AggregationJson
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetActionJson() string {
+	if x != nil {
+		return x.ActionJson
+	}
+	return ""
+}
+
+func (x *PolicyRule) GetRolloutPercent() int32 {
+	if x != nil {
+		return x.RolloutPercent
+	}
+	return 0
+}
+
 type IpPolicy struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -988,7 +1136,7 @@ type IpPolicy struct {
 
 func (x *IpPolicy) Reset() {
 	*x = IpPolicy{}
-	mi := &file_captcha_v1_captcha_proto_msgTypes[8]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1000,7 +1148,7 @@ func (x *IpPolicy) String() string {
 func (*IpPolicy) ProtoMessage() {}
 
 func (x *IpPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_captcha_v1_captcha_proto_msgTypes[8]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1013,7 +1161,7 @@ func (x *IpPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IpPolicy.ProtoReflect.Descriptor instead.
 func (*IpPolicy) Descriptor() ([]byte, []int) {
-	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{8}
+	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *IpPolicy) GetId() string {
@@ -1084,7 +1232,7 @@ type CaptchaResource struct {
 
 func (x *CaptchaResource) Reset() {
 	*x = CaptchaResource{}
-	mi := &file_captcha_v1_captcha_proto_msgTypes[9]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1096,7 +1244,7 @@ func (x *CaptchaResource) String() string {
 func (*CaptchaResource) ProtoMessage() {}
 
 func (x *CaptchaResource) ProtoReflect() protoreflect.Message {
-	mi := &file_captcha_v1_captcha_proto_msgTypes[9]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1109,7 +1257,7 @@ func (x *CaptchaResource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CaptchaResource.ProtoReflect.Descriptor instead.
 func (*CaptchaResource) Descriptor() ([]byte, []int) {
-	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{9}
+	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CaptchaResource) GetId() string {
@@ -1198,7 +1346,7 @@ type EventBatch struct {
 
 func (x *EventBatch) Reset() {
 	*x = EventBatch{}
-	mi := &file_captcha_v1_captcha_proto_msgTypes[10]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1210,7 +1358,7 @@ func (x *EventBatch) String() string {
 func (*EventBatch) ProtoMessage() {}
 
 func (x *EventBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_captcha_v1_captcha_proto_msgTypes[10]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1223,7 +1371,7 @@ func (x *EventBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventBatch.ProtoReflect.Descriptor instead.
 func (*EventBatch) Descriptor() ([]byte, []int) {
-	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{10}
+	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *EventBatch) GetEvents() []*AuditEvent {
@@ -1251,7 +1399,7 @@ type AuditEvent struct {
 
 func (x *AuditEvent) Reset() {
 	*x = AuditEvent{}
-	mi := &file_captcha_v1_captcha_proto_msgTypes[11]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1263,7 +1411,7 @@ func (x *AuditEvent) String() string {
 func (*AuditEvent) ProtoMessage() {}
 
 func (x *AuditEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_captcha_v1_captcha_proto_msgTypes[11]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1276,7 +1424,7 @@ func (x *AuditEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditEvent.ProtoReflect.Descriptor instead.
 func (*AuditEvent) Descriptor() ([]byte, []int) {
-	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{11}
+	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AuditEvent) GetClientId() string {
@@ -1358,7 +1506,7 @@ type ReportResult struct {
 
 func (x *ReportResult) Reset() {
 	*x = ReportResult{}
-	mi := &file_captcha_v1_captcha_proto_msgTypes[12]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1370,7 +1518,7 @@ func (x *ReportResult) String() string {
 func (*ReportResult) ProtoMessage() {}
 
 func (x *ReportResult) ProtoReflect() protoreflect.Message {
-	mi := &file_captcha_v1_captcha_proto_msgTypes[12]
+	mi := &file_captcha_v1_captcha_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1383,7 +1531,7 @@ func (x *ReportResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportResult.ProtoReflect.Descriptor instead.
 func (*ReportResult) Descriptor() ([]byte, []int) {
-	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{12}
+	return file_captcha_v1_captcha_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ReportResult) GetAccepted() int32 {
@@ -1464,7 +1612,7 @@ const file_captcha_v1_captcha_proto_rawDesc = "" +
 	"\x15clearance_expire_unix\x18\v \x01(\x03R\x13clearanceExpireUnix\x122\n" +
 	"\x15clearance_ttl_seconds\x18\f \x01(\x05R\x13clearanceTtlSeconds\",\n" +
 	"\rConfigRequest\x12\x1b\n" +
-	"\tclient_id\x18\x01 \x01(\tR\bclientId\"\x99\x02\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\"\xd4\x02\n" +
 	"\x0eConfigSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12/\n" +
 	"\x06routes\x18\x02 \x03(\v2\x17.captcha.v1.RoutePolicyR\x06routes\x125\n" +
@@ -1472,7 +1620,8 @@ const file_captcha_v1_captcha_proto_rawDesc = "" +
 	"ipPolicies\x12-\n" +
 	"\x12application_status\x18\x04 \x01(\tR\x11applicationStatus\x129\n" +
 	"\tresources\x18\x05 \x03(\v2\x1b.captcha.v1.CaptchaResourceR\tresources\x12\x18\n" +
-	"\aversion\x18\x06 \x01(\x03R\aversion\"\xa9\x05\n" +
+	"\aversion\x18\x06 \x01(\x03R\aversion\x129\n" +
+	"\fpolicy_rules\x18\a \x03(\v2\x16.captcha.v1.PolicyRuleR\vpolicyRules\"\xa9\x05\n" +
 	"\vRoutePolicy\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
@@ -1499,7 +1648,25 @@ const file_captcha_v1_captcha_proto_rawDesc = "" +
 	"\tRateLimit\x12%\n" +
 	"\x0ewindow_seconds\x18\x01 \x01(\x05R\rwindowSeconds\x12!\n" +
 	"\fmax_requests\x18\x02 \x01(\x05R\vmaxRequests\x12\x1a\n" +
-	"\bstrategy\x18\x03 \x01(\tR\bstrategy\"\xa9\x01\n" +
+	"\bstrategy\x18\x03 \x01(\tR\bstrategy\"\x94\x03\n" +
+	"\n" +
+	"PolicyRule\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12\x1a\n" +
+	"\bpriority\x18\x05 \x01(\x05R\bpriority\x12\x18\n" +
+	"\aenabled\x18\x06 \x01(\bR\aenabled\x12\x16\n" +
+	"\x06status\x18\a \x01(\tR\x06status\x12\x18\n" +
+	"\aversion\x18\b \x01(\tR\aversion\x12\x1d\n" +
+	"\n" +
+	"scope_json\x18\t \x01(\tR\tscopeJson\x12'\n" +
+	"\x0fconditions_json\x18\n" +
+	" \x01(\tR\x0econditionsJson\x12)\n" +
+	"\x10aggregation_json\x18\v \x01(\tR\x0faggregationJson\x12\x1f\n" +
+	"\vaction_json\x18\f \x01(\tR\n" +
+	"actionJson\x12'\n" +
+	"\x0frollout_percent\x18\r \x01(\x05R\x0erolloutPercent\"\xa9\x01\n" +
 	"\bIpPolicy\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04cidr\x18\x02 \x01(\tR\x04cidr\x12\x16\n" +
@@ -1572,7 +1739,7 @@ func file_captcha_v1_captcha_proto_rawDescGZIP() []byte {
 }
 
 var file_captcha_v1_captcha_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_captcha_v1_captcha_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_captcha_v1_captcha_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_captcha_v1_captcha_proto_goTypes = []any{
 	(DecisionAction)(0),          // 0: captcha.v1.DecisionAction
 	(*EvaluateRequest)(nil),      // 1: captcha.v1.EvaluateRequest
@@ -1583,40 +1750,42 @@ var file_captcha_v1_captcha_proto_goTypes = []any{
 	(*ConfigSnapshot)(nil),       // 6: captcha.v1.ConfigSnapshot
 	(*RoutePolicy)(nil),          // 7: captcha.v1.RoutePolicy
 	(*RateLimit)(nil),            // 8: captcha.v1.RateLimit
-	(*IpPolicy)(nil),             // 9: captcha.v1.IpPolicy
-	(*CaptchaResource)(nil),      // 10: captcha.v1.CaptchaResource
-	(*EventBatch)(nil),           // 11: captcha.v1.EventBatch
-	(*AuditEvent)(nil),           // 12: captcha.v1.AuditEvent
-	(*ReportResult)(nil),         // 13: captcha.v1.ReportResult
-	nil,                          // 14: captcha.v1.EvaluateRequest.HeadersEntry
-	nil,                          // 15: captcha.v1.CaptchaResource.MetadataEntry
+	(*PolicyRule)(nil),           // 9: captcha.v1.PolicyRule
+	(*IpPolicy)(nil),             // 10: captcha.v1.IpPolicy
+	(*CaptchaResource)(nil),      // 11: captcha.v1.CaptchaResource
+	(*EventBatch)(nil),           // 12: captcha.v1.EventBatch
+	(*AuditEvent)(nil),           // 13: captcha.v1.AuditEvent
+	(*ReportResult)(nil),         // 14: captcha.v1.ReportResult
+	nil,                          // 15: captcha.v1.EvaluateRequest.HeadersEntry
+	nil,                          // 16: captcha.v1.CaptchaResource.MetadataEntry
 }
 var file_captcha_v1_captcha_proto_depIdxs = []int32{
-	14, // 0: captcha.v1.EvaluateRequest.headers:type_name -> captcha.v1.EvaluateRequest.HeadersEntry
+	15, // 0: captcha.v1.EvaluateRequest.headers:type_name -> captcha.v1.EvaluateRequest.HeadersEntry
 	0,  // 1: captcha.v1.EvaluateResponse.action:type_name -> captcha.v1.DecisionAction
 	7,  // 2: captcha.v1.ConfigSnapshot.routes:type_name -> captcha.v1.RoutePolicy
-	9,  // 3: captcha.v1.ConfigSnapshot.ip_policies:type_name -> captcha.v1.IpPolicy
-	10, // 4: captcha.v1.ConfigSnapshot.resources:type_name -> captcha.v1.CaptchaResource
-	8,  // 5: captcha.v1.RoutePolicy.rate_limit:type_name -> captcha.v1.RateLimit
-	15, // 6: captcha.v1.CaptchaResource.metadata:type_name -> captcha.v1.CaptchaResource.MetadataEntry
-	12, // 7: captcha.v1.EventBatch.events:type_name -> captcha.v1.AuditEvent
-	1,  // 8: captcha.v1.PolicyService.Evaluate:input_type -> captcha.v1.EvaluateRequest
-	3,  // 9: captcha.v1.TicketService.VerifyTicket:input_type -> captcha.v1.VerifyTicketRequest
-	3,  // 10: captcha.v1.TicketService.ConsumeTicket:input_type -> captcha.v1.VerifyTicketRequest
-	5,  // 11: captcha.v1.ConfigService.GetConfig:input_type -> captcha.v1.ConfigRequest
-	5,  // 12: captcha.v1.ConfigService.WatchConfig:input_type -> captcha.v1.ConfigRequest
-	11, // 13: captcha.v1.EventService.Report:input_type -> captcha.v1.EventBatch
-	2,  // 14: captcha.v1.PolicyService.Evaluate:output_type -> captcha.v1.EvaluateResponse
-	4,  // 15: captcha.v1.TicketService.VerifyTicket:output_type -> captcha.v1.VerifyTicketResponse
-	4,  // 16: captcha.v1.TicketService.ConsumeTicket:output_type -> captcha.v1.VerifyTicketResponse
-	6,  // 17: captcha.v1.ConfigService.GetConfig:output_type -> captcha.v1.ConfigSnapshot
-	6,  // 18: captcha.v1.ConfigService.WatchConfig:output_type -> captcha.v1.ConfigSnapshot
-	13, // 19: captcha.v1.EventService.Report:output_type -> captcha.v1.ReportResult
-	14, // [14:20] is the sub-list for method output_type
-	8,  // [8:14] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	10, // 3: captcha.v1.ConfigSnapshot.ip_policies:type_name -> captcha.v1.IpPolicy
+	11, // 4: captcha.v1.ConfigSnapshot.resources:type_name -> captcha.v1.CaptchaResource
+	9,  // 5: captcha.v1.ConfigSnapshot.policy_rules:type_name -> captcha.v1.PolicyRule
+	8,  // 6: captcha.v1.RoutePolicy.rate_limit:type_name -> captcha.v1.RateLimit
+	16, // 7: captcha.v1.CaptchaResource.metadata:type_name -> captcha.v1.CaptchaResource.MetadataEntry
+	13, // 8: captcha.v1.EventBatch.events:type_name -> captcha.v1.AuditEvent
+	1,  // 9: captcha.v1.PolicyService.Evaluate:input_type -> captcha.v1.EvaluateRequest
+	3,  // 10: captcha.v1.TicketService.VerifyTicket:input_type -> captcha.v1.VerifyTicketRequest
+	3,  // 11: captcha.v1.TicketService.ConsumeTicket:input_type -> captcha.v1.VerifyTicketRequest
+	5,  // 12: captcha.v1.ConfigService.GetConfig:input_type -> captcha.v1.ConfigRequest
+	5,  // 13: captcha.v1.ConfigService.WatchConfig:input_type -> captcha.v1.ConfigRequest
+	12, // 14: captcha.v1.EventService.Report:input_type -> captcha.v1.EventBatch
+	2,  // 15: captcha.v1.PolicyService.Evaluate:output_type -> captcha.v1.EvaluateResponse
+	4,  // 16: captcha.v1.TicketService.VerifyTicket:output_type -> captcha.v1.VerifyTicketResponse
+	4,  // 17: captcha.v1.TicketService.ConsumeTicket:output_type -> captcha.v1.VerifyTicketResponse
+	6,  // 18: captcha.v1.ConfigService.GetConfig:output_type -> captcha.v1.ConfigSnapshot
+	6,  // 19: captcha.v1.ConfigService.WatchConfig:output_type -> captcha.v1.ConfigSnapshot
+	14, // 20: captcha.v1.EventService.Report:output_type -> captcha.v1.ReportResult
+	15, // [15:21] is the sub-list for method output_type
+	9,  // [9:15] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_captcha_v1_captcha_proto_init() }
@@ -1630,7 +1799,7 @@ func file_captcha_v1_captcha_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_captcha_v1_captcha_proto_rawDesc), len(file_captcha_v1_captcha_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   4,
 		},

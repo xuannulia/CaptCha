@@ -52,8 +52,15 @@ func (s *Service) Issue(clientID, scene, route, requestNonce, ipHash, userAgentH
 }
 
 func (s *Service) IssueClearance(clientID, scene, ipHash, userAgentHash, accountIDHash, deviceIDHash string) (types.Clearance, error) {
+	return s.IssueClearanceWithTTL(clientID, scene, ipHash, userAgentHash, accountIDHash, deviceIDHash, 0)
+}
+
+func (s *Service) IssueClearanceWithTTL(clientID, scene, ipHash, userAgentHash, accountIDHash, deviceIDHash string, ttl time.Duration) (types.Clearance, error) {
 	if s.clearances == nil {
 		return types.Clearance{}, errors.New("clearance store is unavailable")
+	}
+	if ttl <= 0 {
+		ttl = s.clearanceTTL
 	}
 	value, err := randomID("cap_clearance_", 32)
 	if err != nil {
@@ -68,7 +75,7 @@ func (s *Service) IssueClearance(clientID, scene, ipHash, userAgentHash, account
 		UserAgentHash: userAgentHash,
 		AccountIDHash: accountIDHash,
 		DeviceIDHash:  deviceIDHash,
-		ExpiresAt:     now.Add(s.clearanceTTL),
+		ExpiresAt:     now.Add(ttl),
 		CreatedAt:     now,
 	}
 	s.clearances.PutClearance(clearance)

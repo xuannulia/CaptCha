@@ -10,7 +10,9 @@ The project is currently pre-release. Security fixes apply to the current main b
 
 Do not publish exploit details, bypass recipes, or working attack payloads in public issues.
 
-Until a dedicated private reporting channel is configured, report vulnerabilities through the repository owner's private contact path on the hosting platform or an existing maintainer out-of-band channel. Before a public release, the project should configure an explicit security contact or private advisory process.
+Report vulnerabilities privately by email: loser@iloser.cn.
+
+Use the public issue tracker only for non-sensitive bug reports and hardening discussions that do not include exploit details, bypass recipes, or working payloads.
 
 Please include:
 

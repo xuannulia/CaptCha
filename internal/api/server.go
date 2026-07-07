@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -40,6 +41,7 @@ type Options struct {
 	RuntimeBaseURL          string
 	AdminToken              string
 	MetricsToken            string
+	CollectorToken          string
 	ResourceUploadDir       string
 	AllowedOrigins          []string
 	AllowedReturnURLOrigins []string
@@ -70,6 +72,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/challenge/sessions/{id}/refresh", s.handleRefreshSession)
 	mux.HandleFunc("POST /api/v1/tickets/verify", s.handleVerifyTicket)
 	mux.HandleFunc("POST /api/v1/policy/evaluate", s.handleEvaluatePolicy)
+	mux.HandleFunc("POST /api/v1/risk/track-samples", s.handleCollectTrackSample)
+	mux.HandleFunc("GET /api/v1/risk/demo-collection-summary", s.handleDemoCollectionSummary)
 	mux.HandleFunc("GET /api/v1/admin/auth/check", s.handleAdminAuthCheck)
 	mux.HandleFunc("GET /api/v1/admin/applications", s.handleListApplications)
 	mux.HandleFunc("POST /api/v1/admin/applications", s.handleUpsertApplication)
@@ -77,6 +81,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/route-policies", s.handleListRoutePolicies)
 	mux.HandleFunc("POST /api/v1/admin/route-policies", s.handleUpsertRoutePolicy)
 	mux.HandleFunc("POST /api/v1/admin/route-policies/delete", s.handleDeleteRoutePolicies)
+	mux.HandleFunc("GET /api/v1/admin/policies", s.handleListPolicyRules)
+	mux.HandleFunc("POST /api/v1/admin/policies", s.handleUpsertPolicyRule)
+	mux.HandleFunc("POST /api/v1/admin/policies/delete", s.handleDeletePolicyRules)
 	mux.HandleFunc("POST /api/v1/admin/policy/simulate", s.handleSimulatePolicy)
 	mux.HandleFunc("GET /api/v1/admin/ip-policies", s.handleListIPPolicies)
 	mux.HandleFunc("POST /api/v1/admin/ip-policies", s.handleUpsertIPPolicy)
@@ -180,6 +187,7 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		"session_id":    session.ID,
 		"client_id":     session.ClientID,
 		"scene":         session.Scene,
+		"status":        session.Status,
 		"expire_at":     session.ExpiresAt,
 		"route":         session.Route,
 		"request_nonce": session.RequestNonce,
@@ -195,6 +203,17 @@ type verifySessionRequest struct {
 	Viewport    map[string]any     `json:"viewport"`
 	RuntimeMeta map[string]any     `json:"runtime_meta"`
 	Route       string             `json:"route"`
+}
+
+type collectTrackSampleRequest struct {
+	ClientID        string             `json:"client_id"`
+	Scene           string             `json:"scene"`
+	TaskType        string             `json:"task_type"`
+	TaskTarget      *types.Point       `json:"task_target"`
+	InputDeviceHint string             `json:"input_device_hint"`
+	Track           []types.TrackPoint `json:"track"`
+	Viewport        map[string]any     `json:"viewport"`
+	RuntimeMeta     map[string]any     `json:"runtime_meta"`
 }
 
 func (s *Server) handleVerifySession(w http.ResponseWriter, r *http.Request) {
@@ -277,6 +296,169 @@ func (s *Server) handleVerifySession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleCollectTrackSample(w http.ResponseWriter, r *http.Request) {
+	if s.options.CollectorToken != "" && !validCollectorToken(r, s.options.CollectorToken) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
+		return
+	}
+	var req collectTrackSampleRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST")
+		return
+	}
+	if len(req.Track) < 2 {
+		writeError(w, http.StatusBadRequest, "TRACK_TOO_SHORT")
+		return
+	}
+	if len(req.Track) > 512 {
+		writeError(w, http.StatusBadRequest, "TRACK_TOO_LONG")
+		return
+	}
+
+	clientID := strings.TrimSpace(req.ClientID)
+	if clientID == "" {
+		clientID = "demo"
+	}
+	scene := strings.TrimSpace(req.Scene)
+	if scene == "" {
+		scene = "collector"
+	}
+	taskType := normalizeCollectorTaskType(req.TaskType)
+	if taskType == "" {
+		writeError(w, http.StatusBadRequest, "UNSUPPORTED_TASK_TYPE")
+		return
+	}
+	inputDeviceHint := normalizeCollectorInputDevice(req.InputDeviceHint)
+	if inputDeviceHint == "" {
+		inputDeviceHint = "unknown"
+	}
+
+	trackScore := engine.ScoreTrack(req.Track)
+	features := map[string]any{
+		"collector_task_type":  taskType,
+		"decision":             "observe",
+		"input_device_hint":    inputDeviceHint,
+		"reason_code":          "COLLECTOR_SAMPLE",
+		"result_ok":            true,
+		"source":               "collector_track_sample",
+		"track_bucket":         trackScore.Bucket,
+		"track_reason_count":   len(trackScore.Reasons),
+		"track_reasons":        trackScore.Reasons,
+		"track_score":          trackScore.Score,
+		"track_submit_points":  len(req.Track),
+		"track_score_duration": trackScore.DurationMS,
+	}
+	if req.TaskTarget != nil {
+		features["collector_target_x"] = clampInt(req.TaskTarget.X, 0, 10000)
+		features["collector_target_y"] = clampInt(req.TaskTarget.Y, 0, 10000)
+	}
+	for key, value := range engine.ExtractTrackFeatures(req.Track) {
+		features[key] = value
+	}
+	for key, value := range viewportRiskFeatures(req.Viewport) {
+		features[key] = value
+	}
+	for key, value := range runtimeMetaRiskFeatures(req.RuntimeMeta) {
+		features[key] = value
+	}
+
+	snapshot := types.RiskFeatureSnapshot{
+		AttemptID:      "collector:" + taskType,
+		ClientID:       clientID,
+		Scene:          scene,
+		ChallengeType:  collectorChallengeType(taskType),
+		FeatureVersion: "track-v1",
+		Features:       features,
+		Label:          "likely_human",
+		LabelSource:    "collector",
+		ModelTrainable: false,
+	}
+	s.attachRiskModelShadowScore(&snapshot)
+	stored := s.store.AddRiskFeatureSnapshot(snapshot)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true,
+		"id": stored.ID,
+	})
+}
+
+func (s *Server) handleDemoCollectionSummary(w http.ResponseWriter, r *http.Request) {
+	clientID := strings.TrimSpace(r.URL.Query().Get("client_id"))
+	if clientID == "" {
+		clientID = "demo"
+	}
+	source := runtimeTag(r.URL.Query().Get("sample_source"), 48)
+	if source == "" {
+		source = "human-demo"
+	}
+	devices := map[string]map[string]any{
+		"mouse":    demoCollectionDevice("鼠标", 5000),
+		"touch":    demoCollectionDevice("触屏", 3000),
+		"trackpad": demoCollectionDevice("触控板", 2000),
+	}
+	byType := make(map[string]int)
+	total := 0
+	for _, item := range s.listDemoCollectionSnapshots(clientID) {
+		if !isDemoCollectionSnapshot(item, source) {
+			continue
+		}
+		device := demoCollectionDeviceKey(item)
+		if _, ok := devices[device]; !ok {
+			device = "unknown"
+			if _, exists := devices[device]; !exists {
+				devices[device] = demoCollectionDevice("未知", 0)
+			}
+		}
+		devices[device]["count"] = intValue(devices[device]["count"]) + 1
+		captchaType := string(item.ChallengeType)
+		if captchaType == "" {
+			captchaType = "UNKNOWN"
+		}
+		byType[captchaType]++
+		total++
+	}
+	for key, item := range devices {
+		target := intValue(item["target"])
+		count := intValue(item["count"])
+		remaining := target - count
+		if remaining < 0 {
+			remaining = 0
+		}
+		item["remaining"] = remaining
+		item["progress"] = 0
+		if target > 0 {
+			item["progress"] = int(math.Round(float64(count) / float64(target) * 100))
+		}
+		devices[key] = item
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sample_source": source,
+		"client_id":     clientID,
+		"target_total":  10000,
+		"total":         total,
+		"remaining":     max(0, 10000-total),
+		"devices":       devices,
+		"captcha_types": byType,
+	})
+}
+
+func (s *Server) listDemoCollectionSnapshots(clientID string) []types.RiskFeatureSnapshot {
+	const pageSize = 5000
+	const maxPages = 20
+	items := make([]types.RiskFeatureSnapshot, 0, pageSize)
+	for page := 0; page < maxPages; page++ {
+		batch := s.store.ListRiskFeatureSnapshotsFiltered(types.RiskFeatureSnapshotFilter{
+			ClientID: clientID,
+			Limit:    pageSize,
+			Offset:   page * pageSize,
+		})
+		items = append(items, batch...)
+		if len(batch) < pageSize {
+			break
+		}
+	}
+	return items
+}
+
 func (s *Server) handleEvaluatePolicy(w http.ResponseWriter, r *http.Request) {
 	var req types.PolicyEvaluateRequest
 	if err := readJSON(r, &req); err != nil {
@@ -311,20 +493,6 @@ func (s *Server) handleEvaluatePolicy(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, decision)
 		return
 	}
-	if req.Clearance != "" {
-		if clearance, err := s.store.VerifyClearance(req.Clearance, req.ClientID, req.Scene, hashValue(req.IP), hashValue(req.UserAgent), req.AccountIDHash, req.DeviceIDHash); err == nil {
-			decision := types.PolicyDecision{
-				Action:              types.DecisionAllow,
-				Reason:              "CLEARANCE_VALID",
-				Scene:               clearance.Scene,
-				ClearanceToken:      clearance.Value,
-				ClearanceTTLSeconds: int(time.Until(clearance.ExpiresAt).Seconds()),
-			}
-			s.auditPolicyDecision(req, decision)
-			writeJSON(w, http.StatusOK, decision)
-			return
-		}
-	}
 	if req.Ticket != "" {
 		if _, err := s.store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Path, req.RequestNonce, hashValue(req.IP), hashValue(req.UserAgent), true); err == nil {
 			s.store.AddAuditEvent(types.AuditEvent{
@@ -355,48 +523,43 @@ func (s *Server) handleEvaluatePolicy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.Clearance != "" {
+		if evaluation, ok := s.policy.EvaluateClearanceOverride(req); ok {
+			decision, err := s.policyDecisionWithChallengeSession(req, evaluation)
+			if err != nil {
+				s.logger.Error("policy challenge session", "error", err)
+				writeError(w, http.StatusInternalServerError, "CREATE_SESSION_FAILED")
+				return
+			}
+			s.auditPolicyEvaluation(req, decision, evaluation)
+			writeJSON(w, http.StatusOK, decision)
+			return
+		}
+		if clearance, err := s.store.VerifyClearance(req.Clearance, req.ClientID, req.Scene, hashValue(req.IP), hashValue(req.UserAgent), req.AccountIDHash, req.DeviceIDHash); err == nil {
+			decision := types.PolicyDecision{
+				Action:              types.DecisionAllow,
+				Reason:              "CLEARANCE_VALID",
+				Scene:               clearance.Scene,
+				ClearanceToken:      clearance.Value,
+				ClearanceTTLSeconds: int(time.Until(clearance.ExpiresAt).Seconds()),
+			}
+			s.auditPolicyDecision(req, decision)
+			writeJSON(w, http.StatusOK, decision)
+			return
+		}
+	}
 
 	if err := risk.EnrichPolicyRequest(r.Context(), s.options.RiskInferencer, s.store, &req); err != nil {
 		s.logger.Warn("risk inference failed", "client_id", req.ClientID, "error", err)
 	}
 	evaluation := s.policy.Evaluate(req)
-	decision := policyDecisionFromEvaluation(req, evaluation)
-	if evaluation.Action == types.DecisionChallenge {
-		scene := req.Scene
-		if evaluation.Route != nil && evaluation.Route.Scene != "" {
-			scene = evaluation.Route.Scene
-		}
-		session, err := s.engine.NewSession(req.ClientID, scene, evaluation.ChallengeType)
-		if err != nil {
-			s.logger.Error("policy challenge session", "error", err)
-			writeError(w, http.StatusInternalServerError, "CREATE_SESSION_FAILED")
-			return
-		}
-		session.ChallengeEscalation = s.newSessionEscalation(evaluation.ChallengeEscalation)
-		session.RenderPayload = resourcepkg.ApplyVisualsAndAttachForStore(s.store, session.RenderPayload, session.Answer, session.ClientID, session.Scene, session.Type, req.ResourceTag)
-		session.Route = req.Path
-		session.RequestNonce = req.RequestNonce
-		session.ResourceTag = req.ResourceTag
-		session.IPHash = hashValue(req.IP)
-		session.UserAgentHash = hashValue(req.UserAgent)
-		session.AccountIDHash = req.AccountIDHash
-		session.DeviceIDHash = req.DeviceIDHash
-		s.store.PutSession(session)
-		decision.SessionID = session.ID
-		decision.ChallengeURL = s.challengeURL(session.ID, req.Path, req.RequestNonce, req.ResourceTag, "")
-		decision.TTLSeconds = int(session.ExpiresAt.Sub(session.CreatedAt).Seconds())
+	decision, err := s.policyDecisionWithChallengeSession(req, evaluation)
+	if err != nil {
+		s.logger.Error("policy challenge session", "error", err)
+		writeError(w, http.StatusInternalServerError, "CREATE_SESSION_FAILED")
+		return
 	}
-	s.store.AddAuditEvent(types.AuditEvent{
-		ClientID:       req.ClientID,
-		Scene:          decision.Scene,
-		Route:          req.Path,
-		AccountIDHash:  req.AccountIDHash,
-		DeviceIDHash:   req.DeviceIDHash,
-		Action:         evaluation.Action,
-		DecisionReason: evaluation.Reason,
-		ChallengeType:  evaluation.ChallengeType,
-		Result:         string(evaluation.Action),
-	})
+	s.auditPolicyEvaluation(req, decision, evaluation)
 	writeJSON(w, http.StatusOK, decision)
 }
 
@@ -405,9 +568,19 @@ type policySimulationResponse struct {
 	Request            types.PolicyEvaluateRequest `json:"request"`
 	Decision           types.PolicyDecision        `json:"decision"`
 	Route              *types.RoutePolicy          `json:"route,omitempty"`
+	MatchedRule        *policyRuleSummary          `json:"matched_rule,omitempty"`
+	Explanation        []string                    `json:"explanation,omitempty"`
 	RateLimitEvaluated bool                        `json:"rate_limit_evaluated"`
 	SideEffects        []string                    `json:"side_effects"`
 	Notes              []string                    `json:"notes,omitempty"`
+}
+
+type policyRuleSummary struct {
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	Priority int            `json:"priority"`
+	Action   types.Decision `json:"action"`
+	Reason   string         `json:"reason"`
 }
 
 func (s *Server) handleSimulatePolicy(w http.ResponseWriter, r *http.Request) {
@@ -441,29 +614,97 @@ func (s *Server) handleSimulatePolicy(w http.ResponseWriter, r *http.Request) {
 		rateLimitEvaluated = false
 		notes = append(notes, "rate_limit_counter_not_read_or_incremented")
 	}
+	if evaluation.PolicyRule != nil && ruleAggregationConfigured(evaluation.PolicyRule.Aggregation) {
+		rateLimitEvaluated = false
+		notes = append(notes, "policy_rule_aggregation_counter_not_read_or_incremented")
+	}
 	writeJSON(w, http.StatusOK, policySimulationResponse{
 		DryRun:             true,
 		Request:            req,
 		Decision:           decision,
 		Route:              evaluation.Route,
+		MatchedRule:        policyRuleSummaryFromEvaluation(evaluation),
+		Explanation:        evaluation.RuleExplanation,
 		RateLimitEvaluated: rateLimitEvaluated,
 		SideEffects:        policySimulationSideEffects(),
 		Notes:              notes,
 	})
 }
 
+func policyRuleSummaryFromEvaluation(evaluation policy.Evaluation) *policyRuleSummary {
+	if evaluation.PolicyRule == nil {
+		return nil
+	}
+	return &policyRuleSummary{
+		ID:       evaluation.PolicyRule.ID,
+		Name:     evaluation.PolicyRule.Name,
+		Priority: evaluation.PolicyRule.Priority,
+		Action:   evaluation.PolicyRule.Action.Type,
+		Reason:   evaluation.Reason,
+	}
+}
+
+func ruleAggregationConfigured(aggregation types.PolicyRuleAggregation) bool {
+	return aggregation.WindowSeconds > 0 && aggregation.MaxRequests > 0 && len(aggregation.Dimensions) > 0
+}
+
+func (s *Server) policyDecisionWithChallengeSession(req types.PolicyEvaluateRequest, evaluation policy.Evaluation) (types.PolicyDecision, error) {
+	decision := policyDecisionFromEvaluation(req, evaluation)
+	if !types.IsChallengeLikeDecision(evaluation.Action) {
+		return decision, nil
+	}
+	scene := req.Scene
+	if evaluation.Route != nil && evaluation.Route.Scene != "" {
+		scene = evaluation.Route.Scene
+	}
+	session, err := s.engine.NewSession(req.ClientID, scene, evaluation.ChallengeType)
+	if err != nil {
+		return types.PolicyDecision{}, err
+	}
+	session.ChallengeEscalation = s.newSessionEscalation(evaluation.ChallengeEscalation)
+	session.RenderPayload = resourcepkg.ApplyVisualsAndAttachForStore(s.store, session.RenderPayload, session.Answer, session.ClientID, session.Scene, session.Type, req.ResourceTag)
+	session.Route = req.Path
+	session.RequestNonce = req.RequestNonce
+	session.ResourceTag = req.ResourceTag
+	session.IPHash = hashValue(req.IP)
+	session.UserAgentHash = hashValue(req.UserAgent)
+	session.AccountIDHash = req.AccountIDHash
+	session.DeviceIDHash = req.DeviceIDHash
+	s.store.PutSession(session)
+	decision.SessionID = session.ID
+	decision.ChallengeURL = s.challengeURL(session.ID, req.Path, req.RequestNonce, req.ResourceTag, "")
+	decision.TTLSeconds = int(session.ExpiresAt.Sub(session.CreatedAt).Seconds())
+	return decision, nil
+}
+
 func policyDecisionFromEvaluation(req types.PolicyEvaluateRequest, evaluation policy.Evaluation) types.PolicyDecision {
 	decision := types.PolicyDecision{
-		Action:        evaluation.Action,
-		Reason:        evaluation.Reason,
-		Scene:         req.Scene,
-		ChallengeType: evaluation.ChallengeType,
-		TTLSeconds:    evaluation.TTLSeconds,
+		Action:             evaluation.Action,
+		Reason:             evaluation.Reason,
+		Scene:              req.Scene,
+		ChallengeType:      evaluation.ChallengeType,
+		TTLSeconds:         evaluation.TTLSeconds,
+		CooldownSeconds:    evaluation.CooldownSeconds,
+		BusinessVerifyType: evaluation.BusinessVerifyType,
 	}
 	if evaluation.Route != nil {
 		decision.Scene = evaluation.Route.Scene
 	}
 	return decision
+}
+
+func (s *Server) auditPolicyEvaluation(req types.PolicyEvaluateRequest, decision types.PolicyDecision, evaluation policy.Evaluation) {
+	s.store.AddAuditEvent(types.AuditEvent{
+		ClientID:       req.ClientID,
+		Scene:          decision.Scene,
+		Route:          req.Path,
+		AccountIDHash:  req.AccountIDHash,
+		DeviceIDHash:   req.DeviceIDHash,
+		Action:         evaluation.Action,
+		DecisionReason: evaluation.Reason,
+		ChallengeType:  evaluation.ChallengeType,
+		Result:         string(evaluation.Action),
+	})
 }
 
 func (s *Server) ipPolicyDecision(req types.PolicyEvaluateRequest) (types.PolicyDecision, bool) {
@@ -498,7 +739,7 @@ func (s *Server) withClearance(decision types.PolicyDecision, req types.PolicyEv
 	if ipHash == "" || userAgentHash == "" {
 		return decision
 	}
-	clearance, err := s.tokens.IssueClearance(req.ClientID, scene, ipHash, userAgentHash, req.AccountIDHash, req.DeviceIDHash)
+	clearance, err := s.tokens.IssueClearanceWithTTL(req.ClientID, scene, ipHash, userAgentHash, req.AccountIDHash, req.DeviceIDHash, s.clearanceTTLForPolicyRequest(req))
 	if err != nil {
 		if s.logger != nil {
 			s.logger.Warn("issue clearance", "client_id", req.ClientID, "scene", scene, "error", err)
@@ -526,7 +767,7 @@ func (s *Server) addClearanceFields(body map[string]any, req types.PolicyEvaluat
 	if ipHash == "" || userAgentHash == "" {
 		return
 	}
-	clearance, err := s.tokens.IssueClearance(req.ClientID, req.Scene, ipHash, userAgentHash, req.AccountIDHash, req.DeviceIDHash)
+	clearance, err := s.tokens.IssueClearanceWithTTL(req.ClientID, req.Scene, ipHash, userAgentHash, req.AccountIDHash, req.DeviceIDHash, s.clearanceTTLForPolicyRequest(req))
 	if err != nil {
 		if s.logger != nil {
 			s.logger.Warn("issue clearance", "client_id", req.ClientID, "scene", req.Scene, "error", err)
@@ -536,6 +777,17 @@ func (s *Server) addClearanceFields(body map[string]any, req types.PolicyEvaluat
 	body["clearance_token"] = clearance.Value
 	body["clearance_expire_at"] = clearance.ExpiresAt
 	body["clearance_ttl_seconds"] = ttlSeconds(clearance.ExpiresAt, clearance.CreatedAt)
+}
+
+func (s *Server) clearanceTTLForPolicyRequest(req types.PolicyEvaluateRequest) time.Duration {
+	if s.policy == nil {
+		return 0
+	}
+	route := s.policy.MatchRoute(req)
+	if route == nil || route.TokenTTLSeconds <= 0 {
+		return 0
+	}
+	return time.Duration(route.TokenTTLSeconds) * time.Second
 }
 
 func ttlSeconds(expiresAt, createdAt time.Time) int {
@@ -650,6 +902,55 @@ func (s *Server) handleDeleteRoutePolicies(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 }
 
+func (s *Server) handleListPolicyRules(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"items": s.store.ListPolicyRules(r.URL.Query().Get("client_id"))})
+}
+
+func (s *Server) handleUpsertPolicyRule(w http.ResponseWriter, r *http.Request) {
+	var rule types.PolicyRule
+	if err := readJSON(r, &rule); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST")
+		return
+	}
+	if rule.ClientID == "" {
+		rule.ClientID = "demo"
+	}
+	if rule.Action.Type == "" {
+		writeError(w, http.StatusBadRequest, "ACTION_REQUIRED")
+		return
+	}
+	if !isSupportedPolicyRuleAction(rule.Action.Type) {
+		writeError(w, http.StatusBadRequest, "UNSUPPORTED_ACTION")
+		return
+	}
+	saved := s.store.UpsertPolicyRule(rule)
+	s.recordConfigAuditEvent(r, saved.ClientID, "CONFIG_POLICY_RULE_UPSERT", saved.ID, "", saved.Action.ChallengeType)
+	s.notifyConfigChanged()
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) handleDeletePolicyRules(w http.ResponseWriter, r *http.Request) {
+	var req deleteItemsRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST")
+		return
+	}
+	if req.ClientID == "" || len(req.IDs) == 0 {
+		writeError(w, http.StatusBadRequest, "CLIENT_AND_IDS_REQUIRED")
+		return
+	}
+	deleted := s.store.DeletePolicyRules(req.ClientID, req.IDs)
+	if deleted > 0 {
+		s.recordConfigAuditEvent(r, req.ClientID, "CONFIG_POLICY_RULE_DELETE", r.URL.Path, "", "")
+		s.notifyConfigChanged()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
+}
+
+func isSupportedPolicyRuleAction(action types.Decision) bool {
+	return types.IsAllowLikeDecision(action) || types.IsChallengeLikeDecision(action) || types.IsBlockLikeDecision(action)
+}
+
 func (s *Server) handleListIPPolicies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": s.store.ListIPPolicies(r.URL.Query().Get("client_id"))})
 }
@@ -688,7 +989,127 @@ func (s *Server) handleDeleteIPPolicies(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"items": s.store.ListResources(r.URL.Query().Get("client_id"))})
+	resources := s.store.ListResources(r.URL.Query().Get("client_id"))
+	writeJSON(w, http.StatusOK, map[string]any{"items": resourcesWithAdminThumbnails(resourcesForAdminList(resources))})
+}
+
+func resourcesForAdminList(resources []types.CaptchaResource) []types.CaptchaResource {
+	if !hasActiveManagedImageResource(resources) {
+		return resources
+	}
+	out := make([]types.CaptchaResource, 0, len(resources))
+	for _, resource := range resources {
+		if isFallbackBackgroundResource(resource) {
+			continue
+		}
+		out = append(out, resource)
+	}
+	return out
+}
+
+func hasActiveManagedImageResource(resources []types.CaptchaResource) bool {
+	for _, resource := range resources {
+		if isFallbackBackgroundResource(resource) || !strings.EqualFold(strings.TrimSpace(resource.Status), "active") {
+			continue
+		}
+		if isAdminManagedImageResource(resource) {
+			return true
+		}
+	}
+	return false
+}
+
+func resourcesWithAdminThumbnails(resources []types.CaptchaResource) []types.CaptchaResource {
+	out := make([]types.CaptchaResource, len(resources))
+	for i, resource := range resources {
+		out[i] = resource
+		if !shouldAttachAdminResourceThumbnail(resource) || resourceMetadataString(resource.Metadata, "thumbnail_data_url") != "" {
+			continue
+		}
+		data, _, ok := resourcepkg.StoredResourceBytes(resource)
+		if !ok {
+			continue
+		}
+		thumbnail := thumbnailDataURL(data)
+		if thumbnail == "" {
+			continue
+		}
+		metadata := cloneResourceMetadata(resource.Metadata)
+		metadata["thumbnail_data_url"] = thumbnail
+		out[i].Metadata = metadata
+	}
+	return out
+}
+
+func cloneResourceMetadata(input map[string]any) map[string]any {
+	out := make(map[string]any, len(input)+1)
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func resourceMetadataString(metadata map[string]any, key string) string {
+	value, ok := metadata[key]
+	if !ok {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return ""
+}
+
+func shouldAttachAdminResourceThumbnail(resource types.CaptchaResource) bool {
+	return isAdminManagedImageResourceType(resource.ResourceType)
+}
+
+func adminMetricResources(resources []types.CaptchaResource) []types.CaptchaResource {
+	out := make([]types.CaptchaResource, 0, len(resources))
+	for _, resource := range resources {
+		if isAdminManagedImageResource(resource) {
+			out = append(out, resource)
+		}
+	}
+	return out
+}
+
+func isAdminManagedImageResource(resource types.CaptchaResource) bool {
+	return !isFallbackBackgroundResource(resource) && isAdminManagedImageResourceType(resource.ResourceType)
+}
+
+func isAdminManagedImageResourceType(resourceType string) bool {
+	switch strings.TrimSpace(resourceType) {
+	case "background_image",
+		"background_library",
+		"concat_background_image",
+		"concat_background_library",
+		"jigsaw_background_image",
+		"jigsaw_background_library",
+		"rotate_library",
+		"grid_category_library",
+		"icon",
+		"icon_library":
+		return true
+	default:
+		return false
+	}
+}
+
+func isFallbackBackgroundResource(resource types.CaptchaResource) bool {
+	if !strings.EqualFold(strings.TrimSpace(resource.StorageType), "embedded") || !isAdminManagedImageResourceType(resource.ResourceType) {
+		return false
+	}
+	switch strings.TrimSpace(resource.ID) {
+	case "res_background", "res_concat_background", "res_jigsaw_background":
+		return true
+	}
+	switch strings.TrimSpace(resource.URI) {
+	case "embedded://default-backgrounds", "embedded://backgrounds", "embedded://concat-backgrounds", "embedded://jigsaw-backgrounds":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) handleUpsertResource(w http.ResponseWriter, r *http.Request) {
@@ -921,6 +1342,7 @@ func (s *Server) recordRiskFeatureSnapshot(session types.ChallengeSession, req v
 		"result_ok":           result.OK,
 		"track_bucket":        result.TrackScore.Bucket,
 		"track_reason_count":  len(result.TrackScore.Reasons),
+		"track_reasons":       result.TrackScore.Reasons,
 		"track_score":         result.TrackScore.Score,
 		"track_submit_points": len(req.Track),
 	}
@@ -928,6 +1350,12 @@ func (s *Server) recordRiskFeatureSnapshot(session types.ChallengeSession, req v
 		features["resources"] = resources
 	}
 	for key, value := range engine.ExtractTrackFeatures(req.Track) {
+		features[key] = value
+	}
+	for key, value := range viewportRiskFeatures(req.Viewport) {
+		features[key] = value
+	}
+	for key, value := range runtimeMetaRiskFeatures(req.RuntimeMeta) {
 		features[key] = value
 	}
 	snapshot := types.RiskFeatureSnapshot{
@@ -1037,6 +1465,262 @@ func resourceFeatureRef(id, resourceType, storageType, captchaType, scene, tag s
 		ref["tag"] = tag
 	}
 	return ref
+}
+
+func viewportRiskFeatures(viewport map[string]any) map[string]any {
+	features := make(map[string]any, 2)
+	if width, ok := runtimeInt(viewport["width"], 0, 10000); ok {
+		features["viewport_width"] = width
+	}
+	if height, ok := runtimeInt(viewport["height"], 0, 10000); ok {
+		features["viewport_height"] = height
+	}
+	return features
+}
+
+func runtimeMetaRiskFeatures(meta map[string]any) map[string]any {
+	features := make(map[string]any, 16)
+	if value := runtimeVersion(meta["runtime_version"]); value != "" {
+		features["runtime_version"] = value
+	}
+	if value := runtimeTag(meta["sample_source"], 48); value != "" {
+		features["sample_source"] = value
+	}
+	if value := runtimeEnum(meta["pointer_type"], "unknown", "mouse", "touch", "keyboard", "unknown"); value != "" {
+		features["pointer_type"] = value
+	}
+	if value := runtimeEnum(meta["primary_pointer_type"], "unknown", "mouse", "touch", "keyboard", "unknown"); value != "" {
+		features["primary_pointer_type"] = value
+	}
+	if value := runtimeEnum(meta["last_pointer_type"], "unknown", "mouse", "touch", "keyboard", "unknown"); value != "" {
+		features["last_pointer_type"] = value
+	}
+	if value := runtimeEnum(meta["input_device_hint"], "unknown", "mouse", "trackpad", "touch", "unknown"); value != "" {
+		features["input_device_hint"] = value
+	}
+	if value := runtimeEnum(meta["input_device_inferred"], "unknown", "mouse", "mouse_like", "trackpad", "touch", "keyboard", "unknown"); value != "" {
+		features["input_device_inferred"] = value
+	}
+	if value := runtimeEnum(meta["ua_device"], "", "mobile", "pc", "unknown"); value != "" {
+		features["ua_device"] = value
+	}
+	if value := runtimeEnum(meta["collector_task_kind"], "", "slider", "draw", "rotate"); value != "" {
+		features["collector_task_kind"] = value
+	}
+	if value := runtimeTag(meta["collector_task_variant"], 48); value != "" {
+		features["collector_task_variant"] = value
+	}
+	if value, ok := runtimeFloat(meta["device_pixel_ratio"], 0.1, 8); ok {
+		features["device_pixel_ratio"] = roundRuntimeFloat(value)
+	}
+	if value, ok := runtimeInt(meta["max_touch_points"], 0, 16); ok {
+		features["max_touch_points"] = value
+	}
+	for key, featureKey := range map[string]string{
+		"touch_capable":  "touch_capable",
+		"coarse_pointer": "coarse_pointer",
+		"hover_capable":  "hover_capable",
+		"keyboard_used":  "keyboard_used",
+	} {
+		if value, ok := meta[key].(bool); ok {
+			features[featureKey] = value
+		}
+	}
+	if counts, ok := meta["pointer_counts"].(map[string]any); ok {
+		addPointerCountFeatures(features, counts)
+	}
+	return features
+}
+
+func normalizeCollectorTaskType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "drag", "drag_linear", "drag_slow", "drag_fast", "drag_adjust", "drag_curve":
+		return strings.ToLower(strings.TrimSpace(value))
+	case "draw_curve", "draw_wave", "draw_loop", "draw_angle":
+		return strings.ToLower(strings.TrimSpace(value))
+	case "slider", "slider_short", "slider_medium", "slider_long", "slider_slow", "slider_fast", "slider_adjust":
+		return strings.ToLower(strings.TrimSpace(value))
+	case "rotate", "rotate_short", "rotate_long", "rotate_precise", "rotate_reverse":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
+func normalizeCollectorInputDevice(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "mouse", "trackpad", "touch", "unknown":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
+func collectorChallengeType(taskType string) types.CaptchaType {
+	switch taskType {
+	case "drag_curve", "draw_curve", "draw_wave", "draw_loop", "draw_angle":
+		return types.CaptchaCurve
+	case "rotate", "rotate_short", "rotate_long", "rotate_precise", "rotate_reverse":
+		return types.CaptchaRotate
+	default:
+		return types.CaptchaSlider
+	}
+}
+
+func demoCollectionDevice(label string, target int) map[string]any {
+	return map[string]any{
+		"label":     label,
+		"target":    target,
+		"count":     0,
+		"remaining": target,
+		"progress":  0,
+	}
+}
+
+func isDemoCollectionSnapshot(snapshot types.RiskFeatureSnapshot, source string) bool {
+	if snapshot.LabelSource != "captcha_result" {
+		return false
+	}
+	if strings.HasPrefix(snapshot.Scene, source+"-") {
+		return true
+	}
+	if snapshot.Features == nil {
+		return false
+	}
+	return stringFeature(snapshot.Features, "sample_source") == source
+}
+
+func demoCollectionDeviceKey(snapshot types.RiskFeatureSnapshot) string {
+	if snapshot.Features != nil {
+		if value := runtimeEnum(snapshot.Features["input_device_hint"], "", "mouse", "trackpad", "touch", "unknown"); value != "" && value != "unknown" {
+			return value
+		}
+	}
+	for _, device := range []string{"trackpad", "mouse", "touch"} {
+		if strings.Contains(snapshot.Scene, "-"+device+"-") || strings.HasSuffix(snapshot.Scene, "-"+device) {
+			return device
+		}
+	}
+	return "unknown"
+}
+
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
+}
+
+func addPointerCountFeatures(features map[string]any, counts map[string]any) {
+	for _, key := range []string{"mouse", "touch", "keyboard", "unknown"} {
+		if value, ok := runtimeInt(counts[key], 0, 100000); ok {
+			features["pointer_"+key+"_count"] = value
+		}
+	}
+}
+
+func runtimeVersion(value any) string {
+	text := strings.TrimSpace(stringValue(value))
+	if text == "" {
+		return ""
+	}
+	if len(text) > 32 {
+		text = text[:32]
+	}
+	return text
+}
+
+func runtimeTag(value any, maxLength int) string {
+	text := strings.ToLower(strings.TrimSpace(stringValue(value)))
+	if text == "" {
+		return ""
+	}
+	var builder strings.Builder
+	for _, ch := range text {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			builder.WriteRune(ch)
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte('-')
+		}
+	}
+	out := strings.Trim(builder.String(), "-")
+	if maxLength > 0 && len(out) > maxLength {
+		out = out[:maxLength]
+	}
+	return out
+}
+
+func runtimeEnum(value any, fallback string, allowed ...string) string {
+	text := strings.ToLower(strings.TrimSpace(stringValue(value)))
+	for _, item := range allowed {
+		if text == item {
+			return text
+		}
+	}
+	return fallback
+}
+
+func runtimeInt(value any, minValue, maxValue int) (int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return clampInt(typed, minValue, maxValue), true
+	case int64:
+		return clampInt(int(typed), minValue, maxValue), true
+	case float64:
+		return clampInt(int(typed), minValue, maxValue), true
+	case float32:
+		return clampInt(int(typed), minValue, maxValue), true
+	default:
+		return 0, false
+	}
+}
+
+func runtimeFloat(value any, minValue, maxValue float64) (float64, bool) {
+	var parsed float64
+	switch typed := value.(type) {
+	case float64:
+		parsed = typed
+	case float32:
+		parsed = float64(typed)
+	case int:
+		parsed = float64(typed)
+	case int64:
+		parsed = float64(typed)
+	default:
+		return 0, false
+	}
+	if parsed < minValue {
+		parsed = minValue
+	}
+	if parsed > maxValue {
+		parsed = maxValue
+	}
+	return parsed, true
+}
+
+func clampInt(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func roundRuntimeFloat(value float64) float64 {
+	if value >= 0 {
+		return float64(int(value*100+0.5)) / 100
+	}
+	return float64(int(value*100-0.5)) / 100
 }
 
 func stringValue(value any) string {
@@ -1298,6 +1982,7 @@ func (s *Server) handleVerifyTicket(w http.ResponseWriter, r *http.Request) {
 		s.addClearanceFields(body, types.PolicyEvaluateRequest{
 			ClientID:      req.ClientID,
 			Scene:         req.Scene,
+			Path:          ticket.Route,
 			IP:            req.IPHash,
 			UserAgent:     req.UserAgentHash,
 			AccountIDHash: req.AccountIDHash,
@@ -1704,7 +2389,7 @@ func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 				w.Header().Add("Vary", "Origin")
 			}
 		}
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Captcha-Admin-Token, X-Captcha-Scene, X-Captcha-Ticket, X-Captcha-Clearance, X-Captcha-Request-Nonce, X-Captcha-Resource-Tag, X-Captcha-Account-ID-Hash, X-Captcha-Device-ID-Hash")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Captcha-Admin-Token, X-Captcha-Collector-Token, X-Captcha-Scene, X-Captcha-Ticket, X-Captcha-Clearance, X-Captcha-Request-Nonce, X-Captcha-Resource-Tag, X-Captcha-Account-ID-Hash, X-Captcha-Device-ID-Hash")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if strings.EqualFold(r.Method, http.MethodOptions) {
 			w.WriteHeader(http.StatusNoContent)
@@ -1759,6 +2444,20 @@ func withAdminAuth(next http.Handler, token string) http.Handler {
 
 func validAdminToken(r *http.Request, expected string) bool {
 	return validNamedToken(r, "X-Captcha-Admin-Token", expected)
+}
+
+func validCollectorToken(r *http.Request, expected string) bool {
+	if validNamedToken(r, "X-Captcha-Collector-Token", expected) {
+		return true
+	}
+	actual := strings.TrimSpace(r.URL.Query().Get("collector_token"))
+	if actual == "" {
+		actual = strings.TrimSpace(r.URL.Query().Get("token"))
+	}
+	if actual == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
 }
 
 func validNamedToken(r *http.Request, headerName, expected string) bool {

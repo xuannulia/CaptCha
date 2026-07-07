@@ -258,6 +258,18 @@ func TestGRPCPolicyAndTicketServices(t *testing.T) {
 		t.Fatalf("expected consumed ticket rejection, got %+v", verified)
 	}
 
+	memoryStore.UpsertPolicyRule(types.PolicyRule{
+		ID:       "rule_grpc_config",
+		ClientID: "demo",
+		Name:     "grpc config",
+		Priority: 100,
+		Enabled:  true,
+		Scope: types.PolicyRuleScope{
+			PathPatterns: []string{"/api/config-rule"},
+			Methods:      []string{"POST"},
+		},
+		Action: types.PolicyRuleAction{Type: types.DecisionSkipChallenge, Reason: "GRPC_CONFIG_RULE"},
+	})
 	configPB, err := configClient.GetConfig(ctx, &captchav1.ConfigRequest{ClientId: "demo"})
 	if err != nil {
 		t.Fatalf("get config: %v", err)
@@ -265,6 +277,9 @@ func TestGRPCPolicyAndTicketServices(t *testing.T) {
 	config := grpccontract.ConfigSnapshotFromProto(configPB)
 	if config.ClientID != "demo" || len(config.Routes) == 0 || len(config.IPPolicies) == 0 || len(config.Resources) == 0 {
 		t.Fatalf("unexpected config snapshot: %+v", config)
+	}
+	if len(config.PolicyRules) != 1 || config.PolicyRules[0].ID != "rule_grpc_config" || config.PolicyRules[0].Action.Type != types.DecisionSkipChallenge {
+		t.Fatalf("expected policy rules in config snapshot, got %+v", config.PolicyRules)
 	}
 	if config.ApplicationStatus != "active" {
 		t.Fatalf("expected active app status in config snapshot, got %+v", config)

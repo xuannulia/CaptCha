@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"captcha/internal/policy"
 	"captcha/internal/routepolicy"
 	"captcha/internal/types"
 )
@@ -409,14 +410,14 @@ func (g *Gateway) ticketScene(req types.PolicyEvaluateRequest) string {
 
 func (g *Gateway) handleDecision(w http.ResponseWriter, r *http.Request, decision types.PolicyDecision) {
 	switch decision.Action {
-	case types.DecisionAllow, types.DecisionObserve, types.DecisionPass:
-		g.proxy.ServeHTTP(w, r)
-	case types.DecisionChallenge, types.DecisionChallengeHarder:
+	case types.DecisionChallenge, types.DecisionChallengeHarder, types.DecisionStepUpChallenge, types.DecisionRateLimit:
 		g.writeChallenge(w, decision)
-	case types.DecisionBlock:
+	case types.DecisionBlock, types.DecisionCooldown, types.DecisionBusinessVerify:
 		writeJSON(w, http.StatusForbidden, map[string]any{
-			"action": "block",
-			"reason": decision.Reason,
+			"action":               decision.Action,
+			"reason":               decision.Reason,
+			"cooldown_seconds":     decision.CooldownSeconds,
+			"business_verify_type": decision.BusinessVerifyType,
 		})
 	default:
 		g.proxy.ServeHTTP(w, r)
@@ -505,6 +506,9 @@ func (g *Gateway) localDecision(req types.PolicyEvaluateRequest) (types.PolicyDe
 		default:
 			return types.PolicyDecision{}, false
 		}
+	}
+	if decision, ok := evaluateCachedPolicyRules(snapshot, req); ok {
+		return decision, true
 	}
 	route := matchCachedRoute(snapshot.Routes, req, true)
 	if route == nil {
@@ -692,6 +696,31 @@ func (c *ConfigCache) Snapshot() (types.ConfigSnapshot, bool) {
 	return c.snapshot, true
 }
 
+func evaluateCachedPolicyRules(snapshot types.ConfigSnapshot, req types.PolicyEvaluateRequest) (types.PolicyDecision, bool) {
+	evaluation := policy.EvaluatePolicyRules(snapshot.PolicyRules, req, time.Now().UTC())
+	if !evaluation.Matched || evaluation.Rule == nil {
+		return types.PolicyDecision{}, false
+	}
+	if cachedRuleAggregationConfigured(evaluation.Rule.Aggregation) || types.IsChallengeLikeDecision(evaluation.Action.Type) {
+		return types.PolicyDecision{}, false
+	}
+	decision := types.PolicyDecision{
+		Action:             evaluation.Action.Type,
+		Reason:             evaluation.Reason,
+		Scene:              req.Scene,
+		CooldownSeconds:    evaluation.Action.CooldownSeconds,
+		BusinessVerifyType: evaluation.Action.BusinessVerifyType,
+	}
+	if decision.Action == types.DecisionCooldown && decision.CooldownSeconds <= 0 {
+		decision.CooldownSeconds = evaluation.Rule.Aggregation.CooldownSeconds
+	}
+	return decision, types.IsAllowLikeDecision(decision.Action) || types.IsBlockLikeDecision(decision.Action)
+}
+
+func cachedRuleAggregationConfigured(aggregation types.PolicyRuleAggregation) bool {
+	return aggregation.WindowSeconds > 0 && aggregation.MaxRequests > 0 && len(aggregation.Dimensions) > 0
+}
+
 func evaluateCachedIP(snapshot types.ConfigSnapshot, ip string) (types.Decision, string, bool) {
 	if ip == "" {
 		return "", "", false
@@ -779,6 +808,11 @@ func matchCachedRoute(routes []types.RoutePolicy, req types.PolicyEvaluateReques
 }
 
 func matchCachedPath(pattern, path string) bool {
+	pattern = strings.TrimSpace(pattern)
+	path = strings.TrimSpace(path)
+	if pattern == "" || pattern == "*" {
+		return true
+	}
 	if pattern == path {
 		return true
 	}

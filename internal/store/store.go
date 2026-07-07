@@ -39,6 +39,9 @@ type ControlStore interface {
 	ListRoutePolicies(clientID string) []types.RoutePolicy
 	UpsertRoutePolicy(route types.RoutePolicy) types.RoutePolicy
 	DeleteRoutePolicies(clientID string, ids []string) int
+	ListPolicyRules(clientID string) []types.PolicyRule
+	UpsertPolicyRule(rule types.PolicyRule) types.PolicyRule
+	DeletePolicyRules(clientID string, ids []string) int
 	ListIPPolicies(clientID string) []types.IPPolicy
 	UpsertIPPolicy(policy types.IPPolicy) types.IPPolicy
 	DeleteIPPolicies(clientID string, ids []string) int

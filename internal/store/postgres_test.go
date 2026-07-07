@@ -195,6 +195,73 @@ func TestPostgresControlStoreListRoutePolicies(t *testing.T) {
 	}
 }
 
+func TestPostgresControlStoreListPolicyRules(t *testing.T) {
+	t.Parallel()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now().UTC()
+	rows := sqlmock.NewRows([]string{
+		"id",
+		"client_id",
+		"name",
+		"description",
+		"priority",
+		"enabled",
+		"status",
+		"version",
+		"scope",
+		"conditions",
+		"aggregation",
+		"action",
+		"rollout_percent",
+		"created_at",
+		"updated_at",
+	}).AddRow(
+		"rule_trusted",
+		"demo",
+		"trusted",
+		"trusted subject",
+		100,
+		true,
+		"active",
+		"v1",
+		[]byte(`{"client_id":"demo","path_patterns":["/api/login"],"methods":["POST"]}`),
+		[]byte(`{"field":"risk_score","op":"lt","value":30}`),
+		[]byte(`{"dimensions":["account_id_hash"],"window_seconds":60,"max_requests":5}`),
+		[]byte(`{"type":"skip_challenge","reason":"TRUSTED_SUBJECT_LOW_RISK"}`),
+		75,
+		now,
+		now,
+	)
+	mock.ExpectQuery("SELECT id, client_id, name, description, priority, enabled, status, version, scope, conditions, aggregation, action,\\s+rollout_percent, created_at, updated_at\\s+FROM policy_rules\\s+WHERE client_id = \\$1\\s+ORDER BY priority DESC, created_at ASC").
+		WithArgs("demo").
+		WillReturnRows(rows)
+
+	store := NewPostgresControlStore(db, slog.Default())
+	rules := store.ListPolicyRules("demo")
+	if len(rules) != 1 {
+		t.Fatalf("expected one policy rule, got %+v", rules)
+	}
+	rule := rules[0]
+	if rule.Action.Type != types.DecisionSkipChallenge || rule.Action.Reason != "TRUSTED_SUBJECT_LOW_RISK" {
+		t.Fatalf("expected action mapping, got %+v", rule.Action)
+	}
+	if len(rule.Scope.PathPatterns) != 1 || rule.Scope.PathPatterns[0] != "/api/login" || rule.Conditions.Field != "risk_score" {
+		t.Fatalf("expected scope and condition mapping, got %+v", rule)
+	}
+	if rule.Aggregation.MaxRequests != 5 || rule.RolloutPercent != 75 {
+		t.Fatalf("expected aggregation and rollout mapping, got %+v", rule)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations: %v", err)
+	}
+}
+
 func TestPostgresControlStoreDeleteRoutePolicies(t *testing.T) {
 	t.Parallel()
 

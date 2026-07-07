@@ -8,7 +8,7 @@
 |---|---|
 | `make verify` | Go/Docker 工具链版本一致性检查、CI 工作流契约检查、前端框架契约检查、Docker 交付合约检查、HTTP/gRPC API 文档契约检查、验证码类型契约检查、Browser smoke 路由覆盖契约检查、文档命令契约检查、Go 全量测试、protobuf drift 检查、生产安全闸门 smoke、HTTP/gRPC 平台和 Gateway smoke、workspace 测试、workspace 构建、Runtime gzip 预算检查、Docker Compose 配置校验、构建产物和本地浏览器产物清理 |
 | `make smoke` | 真实进程级平台 HTTP/gRPC、Gateway HTTP/gRPC、challenge payload 脱敏、非法 verify 字段拒绝、生产误配置启动失败 |
-| `make browser-smoke` | 真实浏览器打开 Runtime 和 Admin，验证 `RANDOM` 请求入口以及 `GESTURE`/`CURVE`/`CURVE_V2`/`CURVE_V3`/`SLIDER`/`SLIDER_V2`/`ROTATE`/`CONCAT`/`ROTATE_DEGREE`/`WORD_IMAGE_CLICK`/`IMAGE_CLICK`/`JIGSAW`/`GRID_IMAGE_CLICK` Runtime 渲染和基础反馈、Admin React Router 深链、菜单导航、应用数据以及应用/路由策略/IP 策略/策略模拟/资源图库/审计/样本复核/模型管理主页面渲染 |
+| `make browser-smoke` | 真实浏览器打开 Runtime 和 Admin，验证 `RANDOM` 请求入口以及 `GESTURE`/`CURVE`/`CURVE_V2`/`CURVE_V3`/`SLIDER`/`SLIDER_V2`/`ROTATE`/`CONCAT`/`WORD_IMAGE_CLICK`/`IMAGE_CLICK`/`JIGSAW`/`GRID_IMAGE_CLICK` Runtime 渲染和基础反馈、Admin React Router 深链、菜单导航、应用数据以及应用/路由策略/IP 策略/策略模拟/资源图库/审计/样本复核/模型管理主页面渲染 |
 | `make docker-build` | 构建后端和 Gateway Docker 镜像，需要本机或 CI Docker daemon |
 | `make release-audit` | 发布前检查许可证、安全报告渠道、CI 工作流契约、HTTP/gRPC API 文档契约、验证码类型契约、Browser smoke 路由覆盖契约、文档命令契约、构建产物、本地浏览器产物、git remote、Docker daemon 和常见密钥模式 |
 | `make clean` | 清理前端、集成中间件、本地浏览器 smoke 和输出目录的生成产物 |
@@ -19,7 +19,7 @@
 |---|---|
 | 托管验证运行时、Iframe 模式 | `web/runtime`；`make browser-smoke` 验证 Runtime 可创建并渲染完整 Tianai 具体验证码矩阵，并覆盖基础反馈 |
 | 后端 ticket 校验 API | `internal/api/server.go`；`internal/api/server_test.go`、`internal/store/ticket_test.go`、`make smoke` 覆盖 ticket 绑定和消费 |
-| Tianai 具体验证码矩阵 | `internal/engine/engine.go`；`TestGenerateAndVerifyAllCaptchaTypes`、`web/runtime/src/main.tsx` 覆盖 `GESTURE`、`CURVE`、`CURVE_V2`、`CURVE_V3`、`SLIDER`、`SLIDER_V2`、`ROTATE`、`CONCAT`、`ROTATE_DEGREE`、`WORD_IMAGE_CLICK`、`IMAGE_CLICK`、`JIGSAW`、`GRID_IMAGE_CLICK` 展示和提交；`WORD_ORDER_IMAGE_CLICK` 作为兼容别名映射到文字点选，不再作为独立类型维护；`PROOF_OF_WORK` 已从验证码矩阵移除 |
+| Tianai 具体验证码矩阵 | `internal/engine/engine.go`；`TestGenerateAndVerifyAllCaptchaTypes`、`web/runtime/src/main.tsx` 覆盖 `GESTURE`、`CURVE`、`CURVE_V2`、`CURVE_V3`、`SLIDER`、`SLIDER_V2`、`ROTATE`、`CONCAT`、`ROTATE_DEGREE`、`WORD_IMAGE_CLICK`、`IMAGE_CLICK`、`JIGSAW`、`GRID_IMAGE_CLICK` 展示和提交；`ROTATE_DEGREE` 仅保留兼容支持，不进入 Demo 随机候选和 Admin 新增选项；`WORD_ORDER_IMAGE_CLICK` 作为兼容别名映射到文字点选，不再作为独立类型维护；`PROOF_OF_WORK` 已从验证码矩阵移除 |
 | 验证码资源管理 | `internal/resource`、`internal/api/server.go`；资源 validator/selector/renderer 测试覆盖本地文件、URL、classpath、object storage、database base64、模板和字体 |
 | 预生成和短 TTL 缓存 | `internal/engine`、`internal/token`；`TestPreGeneratedChallengePool` 和 session/ticket TTL 配置路径 |
 | 应用和密钥管理 | `internal/api/server.go`、`internal/secret`；密钥轮换、hash、只返回一次和 client secret 鉴权测试 |
@@ -60,7 +60,7 @@
 
 | 项目 | 状态 |
 |---|---|
-| 许可证 | 需要项目所有者选择并添加 `LICENSE`。当前 README 和 release checklist 已阻止误认为可直接开源发布。 |
-| 私有安全报告渠道 | 需要项目所有者配置邮箱、平台私有安全 advisory 或其他私有通道，并更新 `SECURITY.md`。 |
-| Docker 镜像本机构建 | 当前本机 Docker daemon 未运行；CI 已接入 `make docker-build`，有 Docker 环境时可验证。 |
+| 许可证 | 已选择 AGPL-3.0-only，并已添加根目录 `LICENSE`。 |
+| 私有安全报告渠道 | 已在 `SECURITY.md` 配置 `loser@iloser.cn`。 |
+| Docker 镜像本机构建 | `make docker-build` 已在本机 Docker daemon 通过；CI 也接入 `make docker-build`。 |
 | 生产真实依赖联调 | PostgreSQL/Redis 真实部署、TLS/mTLS、真实域名 CORS、真实上游 Gateway 依赖部署环境。 |

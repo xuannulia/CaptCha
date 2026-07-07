@@ -561,6 +561,112 @@ func TestGatewayLocalCacheObservesWithoutRemotePolicy(t *testing.T) {
 	}
 }
 
+func TestGatewayLocalCacheAppWideManualBypass(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("app-wide"))
+	}))
+	defer upstream.Close()
+
+	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionBlock, Reason: "SHOULD_NOT_CALL"}}
+	events := newFakeEventClient()
+	gateway, err := NewWithClientsAndEvent(Config{
+		ClientID:          "demo",
+		PlatformURL:       "http://platform.local",
+		UpstreamURL:       upstream.URL,
+		RequestTimeout:    time.Second,
+		EnableConfigCache: true,
+	}, policy, nil, events, nil)
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+	gateway.cache.Update(types.ConfigSnapshot{
+		ClientID: "demo",
+		Version:  3,
+		Routes: []types.RoutePolicy{
+			{ID: "route_app_wide_gateway", ClientID: "demo", PathPattern: "", Method: "", Scene: "app", Mode: "manual_bypass", Priority: 100, Enabled: true, RolloutPercent: 100},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/any/path", nil)
+	req.RemoteAddr = "198.51.100.9:12345"
+	rec := httptest.NewRecorder()
+	gateway.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted || rec.Body.String() != "app-wide" {
+		t.Fatalf("expected app-wide proxy response, got %d %q", rec.Code, rec.Body.String())
+	}
+	if policy.calls != 0 {
+		t.Fatalf("expected no remote policy calls, got %d", policy.calls)
+	}
+	reported := receiveEvent(t, events)
+	if reported.Action != types.DecisionAllow || reported.DecisionReason != "LOCAL_MANUAL_BYPASS" || reported.Scene != "app" || reported.Route != "/any/path" {
+		t.Fatalf("unexpected app-wide audit event: %+v", reported)
+	}
+}
+
+func TestGatewayCachedPolicyRuleSkipChallenge(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("trusted"))
+	}))
+	defer upstream.Close()
+
+	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionBlock, Reason: "SHOULD_NOT_CALL"}}
+	events := newFakeEventClient()
+	gateway, err := NewWithClientsAndEvent(Config{
+		ClientID:          "demo",
+		PlatformURL:       "http://platform.local",
+		UpstreamURL:       upstream.URL,
+		RequestTimeout:    time.Second,
+		EnableConfigCache: true,
+	}, policy, nil, events, nil)
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+	gateway.cache.Update(types.ConfigSnapshot{
+		ClientID: "demo",
+		Version:  4,
+		PolicyRules: []types.PolicyRule{{
+			ID:       "rule_gateway_skip",
+			ClientID: "demo",
+			Name:     "gateway skip",
+			Priority: 100,
+			Enabled:  true,
+			Scope: types.PolicyRuleScope{
+				PathPatterns: []string{"/api/register"},
+				Methods:      []string{http.MethodPost},
+			},
+			Conditions: types.PolicyCondition{All: []types.PolicyCondition{
+				{Field: "account_id_hash", Op: "exists"},
+				{Field: "device_id_hash", Op: "exists"},
+			}},
+			Action: types.PolicyRuleAction{Type: types.DecisionSkipChallenge, Reason: "TRUSTED_SUBJECT_LOW_RISK"},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/register", nil)
+	req.Header.Set("X-Captcha-Account-ID-Hash", "acct_trusted")
+	req.Header.Set("X-Captcha-Device-ID-Hash", "device_trusted")
+	rec := httptest.NewRecorder()
+	gateway.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted || rec.Body.String() != "trusted" {
+		t.Fatalf("expected trusted proxy response, got %d %q", rec.Code, rec.Body.String())
+	}
+	if policy.calls != 0 {
+		t.Fatalf("cached skip policy should not call remote policy, got %d calls", policy.calls)
+	}
+	reported := receiveEvent(t, events)
+	if reported.Action != types.DecisionSkipChallenge || reported.DecisionReason != "TRUSTED_SUBJECT_LOW_RISK" || reported.Route != "/api/register" {
+		t.Fatalf("unexpected cached policy rule audit event: %+v", reported)
+	}
+}
+
 func TestGatewayLocalCacheSkipsRouteOutsideRollout(t *testing.T) {
 	t.Parallel()
 

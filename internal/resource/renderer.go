@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"captcha/internal/glyphs"
@@ -31,6 +32,9 @@ import (
 
 	"github.com/srwiley/oksvg"
 	"github.com/srwiley/rasterx"
+	xfont "golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
 	_ "golang.org/x/image/webp"
 )
 
@@ -38,15 +42,20 @@ const maxResourceImageBytes = 20 * 1024 * 1024
 const (
 	sliderPieceSizeFallback  = 47
 	slider2PieceSizeFallback = sliderPieceSizeFallback
+	sliderRenderScale        = 2
 	sliderMaskOpacity        = 0.46
-	sliderPieceBorder        = 0.72
-	sliderBorderRadius       = 4
-	sliderBorderFalloff      = 1.65
+	sliderMaskSolidAlpha     = 72
+	sliderBorderRadius       = 2
+	sliderBorderFalloff      = 1.25
+	sliderPieceBorderOpacity = 0.75
 	sliderBorderOutsideAlpha = 8
 	iconClickRenderScale     = 2
+	wordClickRenderScale     = 2
 	iconClickResourceSize    = 44
 	iconClickEdgeRadius      = 2
 	iconClickEdgeDarken      = 0.24
+	wordGlyphDefaultDistort  = 0.18
+	wordBlockGlyphMaxDistort = 0.04
 	rotateRenderScale        = 2
 	concatMaxMovement        = 160
 )
@@ -60,6 +69,8 @@ var resourceHTTPClient = &http.Client{
 		return nil
 	},
 }
+
+var wordFontFileCache sync.Map
 
 //go:embed assets/slider/*.svg
 var sliderMaskAssets embed.FS
@@ -93,6 +104,10 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 			payload.Image = pngDataURL(composed)
 			payload.Prompt = "选择所有包含" + label + "的图片"
 			payload.Words = []string{label}
+			parameters := cloneParameters(payload.Parameters)
+			parameters["target_count"] = len(answer.Points)
+			parameters["target_label"] = label
+			payload.Parameters = parameters
 			return payload
 		}
 	}
@@ -103,22 +118,27 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		if !ok {
 			return payload
 		}
-		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		base := coverResizeNearest(background, payload.View.Width, payload.View.Height)
 		payload.Image = pngDataURL(composeGestureImage(base, answer.Points, payload.View))
 	case types.CaptchaSlider, types.CaptchaSlider2:
 		background, ok := loadBackgroundResourceImage(resources)
 		if !ok {
 			return payload
 		}
-		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		renderScale := sliderRenderScale
+		renderWidth := max(1, payload.View.Width*renderScale)
+		renderHeight := max(1, payload.View.Height*renderScale)
+		base := coverResizeBilinear(background, renderWidth, renderHeight)
 		sliderTemplate, _ := loadResourceImageByType(resources, "slider_template")
 		size := sliderPieceSize(payload.Parameters, sliderPieceSizeFallbackFor(payload.Type))
+		renderSize := size * renderScale
+		renderAnswer := scaleSliderAnswer(answer, renderScale)
 		if sliderTemplate == nil {
-			sliderTemplate = defaultSliderTemplateFactory(size)
+			sliderTemplate = defaultSliderTemplateFactory(renderSize)
 		}
-		composed, piece := composeSlider(base, answer, sliderTemplate, size)
+		composed, piece := composeSlider(base, renderAnswer, sliderTemplate, renderSize)
 		if payload.Type == types.CaptchaSlider2 {
-			composed = composeSliderDecoys(composed, answer, sliderTemplate, size)
+			composed = composeSliderDecoys(composed, renderAnswer, sliderTemplate, renderSize)
 		}
 		payload.Image = pngDataURL(composed)
 		payload.Piece = pngDataURL(piece)
@@ -130,7 +150,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		if !ok {
 			return payload
 		}
-		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		base := coverResizeNearest(background, payload.View.Width, payload.View.Height)
 		payload.Image = pngDataURL(composeCurveImage(base, payload, answer))
 	case types.CaptchaRotate:
 		rotateSource, ok := loadRotateResourceImage(resources)
@@ -154,7 +174,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		if !ok {
 			return payload
 		}
-		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		base := coverResizeNearest(background, payload.View.Width, payload.View.Height)
 		composed, piece, splitY := composeConcat(base, answer.Offset, loadConcatTemplate(resources))
 		payload.Image = pngDataURL(composed)
 		payload.Piece = pngDataURL(piece)
@@ -171,14 +191,14 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		if !ok {
 			return payload
 		}
-		base := resizeNearest(background, payload.View.Width, payload.View.Height)
-		payload.Image = pngDataURL(composeWordImage(base, payload.Words, answer.Points, loadFontOptions(resources)))
+		base := coverResizeBilinear(background, payload.View.Width*wordClickRenderScale, payload.View.Height*wordClickRenderScale)
+		payload.Image = pngDataURL(composeWordImage(base, payload.Words, scalePoints(answer.Points, wordClickRenderScale), loadFontOptions(resources)))
 	case types.CaptchaImageClick:
 		background, ok := loadBackgroundResourceImage(resources)
 		if !ok {
 			return payload
 		}
-		base := resizeBilinear(background, payload.View.Width*iconClickRenderScale, payload.View.Height*iconClickRenderScale)
+		base := coverResizeBilinear(background, payload.View.Width*iconClickRenderScale, payload.View.Height*iconClickRenderScale)
 		image, words := composeIconClickImage(base, payload, answer.Points, resources)
 		payload.Image = pngDataURL(image)
 		if len(words) > 0 {
@@ -190,7 +210,7 @@ func ApplyVisuals(payload types.RenderPayload, answer types.Answer, resources []
 		if !ok {
 			return payload
 		}
-		base := resizeNearest(background, payload.View.Width, payload.View.Height)
+		base := coverResizeNearest(background, payload.View.Width, payload.View.Height)
 		payload.Image = pngDataURL(composeJigsawImage(base, answer, payload.Parameters))
 	}
 	return payload
@@ -217,10 +237,18 @@ func loadJigsawBackgroundResourceImage(resources []types.CaptchaResource) (image
 }
 
 func loadTypedBackgroundResourceImage(resources []types.CaptchaResource, singleType, libraryType string) (image.Image, bool) {
-	if img, ok := loadResourceImageByType(resources, singleType); ok {
+	singleItems := loadResourceImagesByType(resources, singleType)
+	libraryItems := loadResourceImagesByType(resources, libraryType)
+	if img, ok := chooseLoadedImage(nonEmbeddedResources(singleItems)); ok {
 		return img, true
 	}
-	return loadResourceImageByType(resources, libraryType)
+	if img, ok := chooseLoadedImage(nonEmbeddedResources(libraryItems)); ok {
+		return img, true
+	}
+	if img, ok := chooseLoadedImage(singleItems); ok {
+		return img, true
+	}
+	return chooseLoadedImage(libraryItems)
 }
 
 func loadRotateResourceImage(resources []types.CaptchaResource) (image.Image, bool) {
@@ -247,6 +275,24 @@ func loadResourceImagesByType(resources []types.CaptchaResource, resourceType st
 		}
 	}
 	return images
+}
+
+func chooseLoadedImage(items []loadedImageResource) (image.Image, bool) {
+	if len(items) == 0 {
+		return nil, false
+	}
+	return items[randomIndex(len(items))].Image, true
+}
+
+func nonEmbeddedResources(items []loadedImageResource) []loadedImageResource {
+	out := make([]loadedImageResource, 0, len(items))
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item.Resource.StorageType), "embedded") {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func composeGridImageFromCategoryLibrary(payload types.RenderPayload, answer types.Answer, resources []types.CaptchaResource) (image.Image, string, bool) {
@@ -309,16 +355,22 @@ func composeGridImageFromCategoryLibrary(payload types.RenderPayload, answer typ
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	fillRect(img, 0, 0, width, height, color.RGBA{R: 248, G: 250, B: 252, A: 255})
-	targetImages := byCategory[targetCategory]
+	targetImages := chooseGridImages(byCategory[targetCategory], len(targets))
+	decoyImages := chooseGridImages(decoys, cols*rows-len(targets))
+	targetIndex := 0
+	decoyIndex := 0
 	for row := 0; row < rows; row++ {
 		for col := 0; col < cols; col++ {
 			index := row*cols + col
 			rect := image.Rect(col*tileWidth, row*tileHeight, (col+1)*tileWidth, (row+1)*tileHeight)
-			choices := decoys
 			if _, ok := targets[index]; ok {
-				choices = targetImages
+				tile := targetImages[targetIndex]
+				targetIndex++
+				draw.Draw(img, rect, resizeNearest(tile.Image, tileWidth, tileHeight), image.Point{}, draw.Src)
+				continue
 			}
-			tile := choices[randomIndex(len(choices))]
+			tile := decoyImages[decoyIndex]
+			decoyIndex++
 			draw.Draw(img, rect, resizeNearest(tile.Image, tileWidth, tileHeight), image.Point{}, draw.Src)
 		}
 	}
@@ -330,6 +382,20 @@ func composeGridImageFromCategoryLibrary(payload types.RenderPayload, answer typ
 	}
 	strokeRect(img, 0, 0, width, height, 1, color.RGBA{R: 203, G: 213, B: 225, A: 255})
 	return img, targetLabel, true
+}
+
+func chooseGridImages(pool []loadedImageResource, count int) []loadedImageResource {
+	if len(pool) == 0 || count <= 0 {
+		return nil
+	}
+	out := make([]loadedImageResource, 0, count)
+	for _, index := range randomIndexes(len(pool), min(count, len(pool))) {
+		out = append(out, pool[index])
+	}
+	for len(out) < count {
+		out = append(out, pool[randomIndex(len(pool))])
+	}
+	return out
 }
 
 func gridResourceCategory(metadata map[string]any) (string, string, bool) {
@@ -399,6 +465,19 @@ func loadStoredResourceBytes(resource types.CaptchaResource) ([]byte, string, bo
 	default:
 		return nil, "", false
 	}
+}
+
+func StoredResourceBytes(resource types.CaptchaResource) ([]byte, string, bool) {
+	return loadStoredResourceBytes(resource)
+}
+
+func scaleSliderAnswer(answer types.Answer, scale int) types.Answer {
+	if scale <= 1 {
+		return answer
+	}
+	answer.X *= scale
+	answer.Y *= scale
+	return answer
 }
 
 func loadEmbeddedResourceImage(resource types.CaptchaResource) (image.Image, bool) {
@@ -1070,6 +1149,24 @@ func resizeNearest(src image.Image, width, height int) *image.RGBA {
 	return dst
 }
 
+func coverResizeNearest(src image.Image, width, height int) *image.RGBA {
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	crop := coverCropRect(src.Bounds(), width, height)
+	cropWidth := crop.Dx()
+	cropHeight := crop.Dy()
+	if width <= 0 || height <= 0 || cropWidth <= 0 || cropHeight <= 0 {
+		return dst
+	}
+	for y := 0; y < height; y++ {
+		sy := crop.Min.Y + y*cropHeight/height
+		for x := 0; x < width; x++ {
+			sx := crop.Min.X + x*cropWidth/width
+			dst.Set(x, y, src.At(sx, sy))
+		}
+	}
+	return dst
+}
+
 func resizeBilinear(src image.Image, width, height int) *image.RGBA {
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
 	bounds := src.Bounds()
@@ -1086,6 +1183,42 @@ func resizeBilinear(src image.Image, width, height int) *image.RGBA {
 		}
 	}
 	return dst
+}
+
+func coverResizeBilinear(src image.Image, width, height int) *image.RGBA {
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	crop := coverCropRect(src.Bounds(), width, height)
+	cropWidth := crop.Dx()
+	cropHeight := crop.Dy()
+	if width <= 0 || height <= 0 || cropWidth <= 0 || cropHeight <= 0 {
+		return dst
+	}
+	for y := 0; y < height; y++ {
+		sy := float64(crop.Min.Y) + (float64(y)+0.5)*float64(cropHeight)/float64(height) - 0.5
+		for x := 0; x < width; x++ {
+			sx := float64(crop.Min.X) + (float64(x)+0.5)*float64(cropWidth)/float64(width) - 0.5
+			dst.SetRGBA(x, y, sampleBilinearRGBA(src, sx, sy))
+		}
+	}
+	return dst
+}
+
+func coverCropRect(bounds image.Rectangle, width, height int) image.Rectangle {
+	srcWidth := bounds.Dx()
+	srcHeight := bounds.Dy()
+	if width <= 0 || height <= 0 || srcWidth <= 0 || srcHeight <= 0 {
+		return image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Min.X, bounds.Min.Y)
+	}
+	targetRatio := float64(width) / float64(height)
+	sourceRatio := float64(srcWidth) / float64(srcHeight)
+	if sourceRatio > targetRatio {
+		cropWidth := clamp(int(math.Round(float64(srcHeight)*targetRatio)), 1, srcWidth)
+		x0 := bounds.Min.X + (srcWidth-cropWidth)/2
+		return image.Rect(x0, bounds.Min.Y, x0+cropWidth, bounds.Max.Y)
+	}
+	cropHeight := clamp(int(math.Round(float64(srcWidth)/targetRatio)), 1, srcHeight)
+	y0 := bounds.Min.Y + (srcHeight-cropHeight)/2
+	return image.Rect(bounds.Min.X, y0, bounds.Max.X, y0+cropHeight)
 }
 
 func resizeAlphaMask(src image.Image, width, height int) *image.RGBA {
@@ -1112,7 +1245,7 @@ func resizeAlphaMask(src image.Image, width, height int) *image.RGBA {
 			dst.SetRGBA(x, y, color.RGBA{R: alpha, G: alpha, B: alpha, A: alpha})
 		}
 	}
-	return softenAlphaMask(dst)
+	return dst
 }
 
 func bilinearAlpha(src image.Image, x0, y0, x1, y1 int, wx, wy float64) uint8 {
@@ -1123,38 +1256,6 @@ func bilinearAlpha(src image.Image, x0, y0, x1, y1 int, wx, wy float64) uint8 {
 	top := a00*(1-wx) + a10*wx
 	bottom := a01*(1-wx) + a11*wx
 	return uint8(math.Round(top*(1-wy) + bottom*wy))
-}
-
-func softenAlphaMask(src *image.RGBA) *image.RGBA {
-	bounds := src.Bounds()
-	dst := image.NewRGBA(bounds)
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			var weighted, weight int
-			for dy := -1; dy <= 1; dy++ {
-				for dx := -1; dx <= 1; dx++ {
-					sx, sy := x+dx, y+dy
-					if sx < bounds.Min.X || sx >= bounds.Max.X || sy < bounds.Min.Y || sy >= bounds.Max.Y {
-						continue
-					}
-					w := 1
-					if dx == 0 && dy == 0 {
-						w = 4
-					} else if dx == 0 || dy == 0 {
-						w = 2
-					}
-					weighted += int(colorAlpha(src.At(sx, sy))) * w
-					weight += w
-				}
-			}
-			if weight == 0 {
-				continue
-			}
-			alpha := uint8(weighted / weight)
-			dst.SetRGBA(x, y, color.RGBA{R: alpha, G: alpha, B: alpha, A: alpha})
-		}
-	}
-	return dst
 }
 
 func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, size int) (*image.RGBA, *image.RGBA) {
@@ -1174,21 +1275,26 @@ func composeSlider(base *image.RGBA, answer types.Answer, template image.Image, 
 				continue
 			}
 			source := rgbaAt(base, x+px, y+py)
-			img.Set(x+px, y+py, sliderBlackMaskPixel(source, alpha, sliderMaskOpacity))
+			if alpha > sliderMaskSolidAlpha {
+				img.Set(x+px, y+py, sliderBlackMaskPixel(source, sliderMaskOpacity))
+			}
 			border := sliderTemplateEdgeBandStrength(mask, px, py, sliderBorderRadius)
-			piecePixel := sliderPieceBorderPixel(source, border)
+			piecePixel := sliderPiecePixel(source, border)
 			piece.Set(px, py, color.NRGBA{R: piecePixel.R, G: piecePixel.G, B: piecePixel.B, A: alpha})
 		}
 	}
 	return img, piece
 }
 
-func sliderBlackMaskPixel(source color.RGBA, alpha uint8, opacity float64) color.RGBA {
-	return mixRGBA(source, color.RGBA{A: 255}, clampFloat(opacity*float64(alpha)/255, 0, 1))
+func sliderBlackMaskPixel(source color.RGBA, opacity float64) color.RGBA {
+	return mixRGBA(source, color.RGBA{A: 255}, clampFloat(opacity, 0, 1))
 }
 
-func sliderPieceBorderPixel(source color.RGBA, border float64) color.RGBA {
-	return mixRGBA(source, color.RGBA{A: 255}, clampFloat(border*sliderPieceBorder, 0, sliderPieceBorder))
+func sliderPiecePixel(source color.RGBA, border float64) color.RGBA {
+	if border > 0 {
+		return mixRGBA(source, color.RGBA{A: 255}, clampFloat(border*sliderPieceBorderOpacity, 0, sliderPieceBorderOpacity))
+	}
+	return source
 }
 
 func drawSliderGapAmbient(img *image.RGBA, ox, oy, size int, alphaAt func(int, int) uint8) {
@@ -1288,9 +1394,13 @@ func sliderDecoyPointsForImage(img image.Image, size int) []image.Point {
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
+	sideMargin := max(8, int(math.Round(float64(size)*0.38)))
+	topMargin := max(8, int(math.Round(float64(size)*0.51)))
+	bottomMargin := max(8, int(math.Round(float64(size)*0.47)))
+	lowerBand := max(size+bottomMargin, height*8/9)
 	return []image.Point{
-		{X: 18, Y: 24},
-		{X: max(0, width-size-18), Y: max(0, height-size-22)},
+		{X: sideMargin, Y: topMargin},
+		{X: max(0, width-size-sideMargin), Y: max(0, lowerBand-size-bottomMargin)},
 	}
 }
 
@@ -1298,15 +1408,15 @@ func drawSliderMaskGhost(img *image.RGBA, mask image.Image, ox, oy, size int, op
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			alpha := colorAlpha(mask.At(x, y))
-			if alpha <= 4 {
-				continue
-			}
 			gx, gy := ox+x, oy+y
 			if !image.Pt(gx, gy).In(img.Bounds()) {
 				continue
 			}
+			if alpha <= sliderMaskSolidAlpha {
+				continue
+			}
 			source := rgbaAt(img, gx, gy)
-			img.Set(gx, gy, sliderBlackMaskPixel(source, alpha, opacity))
+			img.Set(gx, gy, sliderBlackMaskPixel(source, opacity))
 		}
 	}
 }
@@ -1334,7 +1444,7 @@ func defaultSliderTemplate(size int) image.Image {
 			}
 		}
 	}
-	return softenAlphaMask(mask)
+	return mask
 }
 
 func renderEmbeddedSliderMask(filename string, size int) (image.Image, bool) {
@@ -1517,7 +1627,7 @@ func sliderInnerBorderStrength(distance float64, radius int) float64 {
 	if radius <= 0 || distance > float64(radius) {
 		return 0
 	}
-	strength := clampFloat((float64(radius)+0.5-distance)/float64(radius), 0, 1)
+	strength := clampFloat((float64(radius)+0.35-distance)/float64(radius), 0, 1)
 	return math.Pow(strength, sliderBorderFalloff)
 }
 
@@ -1904,6 +2014,17 @@ func renderScaleForView(img image.Image, view types.View) (float64, float64) {
 	return float64(bounds.Dx()) / float64(view.Width), float64(bounds.Dy()) / float64(view.Height)
 }
 
+func scalePoints(points []types.Point, factor int) []types.Point {
+	if factor <= 1 || len(points) == 0 {
+		return points
+	}
+	out := make([]types.Point, 0, len(points))
+	for _, point := range points {
+		out = append(out, types.Point{X: point.X * factor, Y: point.Y * factor})
+	}
+	return out
+}
+
 func scalePointX(point types.Point, scale float64) int {
 	return int(math.Round(float64(point.X) * scale))
 }
@@ -2013,12 +2134,12 @@ func composeJigsawImage(base *image.RGBA, answer types.Answer, parameters map[st
 		draw.Draw(out, second, base, first.Min, draw.Src)
 	}
 	for x := tileWidth; x < width; x += tileWidth {
-		fillRectOver(out, x-1, 0, 2, height, color.RGBA{R: 255, G: 255, B: 255, A: 145})
+		fillRectOver(out, x-1, 0, 2, height, color.RGBA{R: 100, G: 116, B: 139, A: 255})
 	}
 	for y := tileHeight; y < height; y += tileHeight {
-		fillRectOver(out, 0, y-1, width, 2, color.RGBA{R: 255, G: 255, B: 255, A: 145})
+		fillRectOver(out, 0, y-1, width, 2, color.RGBA{R: 100, G: 116, B: 139, A: 255})
 	}
-	strokeRect(out, 0, 0, width, height, 1, color.RGBA{R: 203, G: 213, B: 225, A: 190})
+	strokeRect(out, 0, 0, width, height, 1, color.RGBA{R: 148, G: 163, B: 184, A: 255})
 	return out
 }
 
@@ -2173,18 +2294,27 @@ func concatControlMax(offset, viewWidth, splitX, pieceWidth int) int {
 }
 
 type fontOptions struct {
-	Scale  int
-	Colors []color.RGBA
-	Glyphs map[string][]string
+	Scale              int
+	FontSize           float64
+	FontPath           string
+	FontBytes          []byte
+	Colors             []color.RGBA
+	Glyphs             map[string][]string
+	DistortionStrength float64
 }
 
 func loadFontOptions(resources []types.CaptchaResource) fontOptions {
-	options := fontOptions{Scale: 5}
+	options := fontOptions{Scale: 5, DistortionStrength: wordGlyphDefaultDistort}
 	for _, item := range resources {
 		if item.ResourceType != "font" || !strings.EqualFold(item.Status, "active") {
 			continue
 		}
 		options = mergeFontMetadata(options, item.Metadata)
+		if !strings.EqualFold(strings.TrimSpace(item.StorageType), "embedded") {
+			if data, contentType, ok := loadStoredResourceBytes(item); ok && looksLikeFontBytes(data, contentType) {
+				options.FontBytes = data
+			}
+		}
 		break
 	}
 	return options
@@ -2197,45 +2327,340 @@ func mergeFontMetadata(options fontOptions, metadata map[string]any) fontOptions
 	if scale, ok, err := metadataInt(cloneMetadata(metadata), "glyph_scale", "scale"); err == nil && ok {
 		options.Scale = clamp(int(scale), 2, 12)
 	}
+	if size, ok := metadataFloat(metadata, "font_size", "text_size", "size"); ok {
+		options.FontSize = clampFloat(size, 18, 96)
+	}
+	if path, ok := metadataString(metadata, "font_path", "path", "file_path"); ok {
+		options.FontPath = strings.TrimSpace(path)
+	}
 	if colors := metadataColors(metadata, "palette", "colors"); len(colors) > 0 {
 		options.Colors = colors
 	}
 	if glyphs := metadataGlyphs(metadata, "glyphs", "patterns"); len(glyphs) > 0 {
 		options.Glyphs = glyphs
 	}
+	if strength, ok := metadataFloat(metadata, "distortion_strength", "warp_strength", "distortion"); ok {
+		options.DistortionStrength = clampFloat(strength, 0, 1.5)
+	}
+	if enabled, ok := metadataBool(metadata, "distortion_enabled", "warp_enabled", "distort"); ok {
+		if !enabled {
+			options.DistortionStrength = 0
+		} else if options.DistortionStrength <= 0 {
+			options.DistortionStrength = wordGlyphDefaultDistort
+		}
+	}
 	return options
 }
 
 func composeWordImage(base *image.RGBA, words []string, points []types.Point, options fontOptions) *image.RGBA {
 	img := cloneRGBA(base)
-	colors := []color.RGBA{
-		{R: 31, G: 41, B: 55, A: 255},
-		{R: 37, G: 99, B: 235, A: 255},
-		{R: 190, G: 24, B: 93, A: 255},
-		{R: 126, G: 34, B: 206, A: 255},
-	}
+	colors := defaultWordTextColors()
 	if len(options.Colors) > 0 {
 		colors = options.Colors
 	}
-	scale := options.Scale
+	scale := options.Scale * wordImageRenderScale(img.Bounds())
 	if scale <= 0 {
 		scale = 5
 	}
 	decoyWords := randomGlyphWordsExcluding(glyphs.WordClickBank, 2+randomIndex(3), words)
 	decoyPoints := wordDecoyPoints(img.Bounds().Dx(), img.Bounds().Dy(), points, len(decoyWords))
+	allWords := append(append([]string{}, words...), decoyWords...)
+	wordColors := shuffledWordTextColors(colors, len(allWords))
+	if len(options.Glyphs) == 0 {
+		if face, ok := loadWordFontFace(options, allWords, img.Bounds()); ok {
+			defer face.Close()
+			for i, word := range decoyWords {
+				if i >= len(decoyPoints) {
+					break
+				}
+				drawFontGlyph(img, word, decoyPoints[i].X, decoyPoints[i].Y, face, wordColors[len(words)+i], options.DistortionStrength)
+			}
+			for i, word := range words {
+				if i >= len(points) {
+					break
+				}
+				drawFontGlyph(img, word, points[i].X, points[i].Y, face, wordColors[i], options.DistortionStrength)
+			}
+			return img
+		}
+	}
 	for i, word := range decoyWords {
 		if i >= len(decoyPoints) {
 			break
 		}
-		drawBlockGlyph(img, word, decoyPoints[i].X, decoyPoints[i].Y, max(2, scale-1), color.RGBA{R: 100, G: 116, B: 139, A: 205}, options.Glyphs)
+		drawBlockGlyph(img, word, decoyPoints[i].X, decoyPoints[i].Y, max(2, scale-1), wordColors[len(words)+i], options.Glyphs, options.DistortionStrength)
 	}
 	for i, word := range words {
 		if i >= len(points) {
 			break
 		}
-		drawBlockGlyph(img, word, points[i].X, points[i].Y, scale, colors[i%len(colors)], options.Glyphs)
+		drawBlockGlyph(img, word, points[i].X, points[i].Y, scale, wordColors[i], options.Glyphs, options.DistortionStrength)
 	}
 	return img
+}
+
+func defaultWordTextColors() []color.RGBA {
+	return []color.RGBA{
+		{R: 255, G: 255, B: 255, A: 252},
+		{R: 254, G: 240, B: 138, A: 252},
+		{R: 125, G: 211, B: 252, A: 252},
+		{R: 94, G: 234, B: 212, A: 252},
+		{R: 134, G: 239, B: 172, A: 252},
+		{R: 253, G: 186, B: 116, A: 252},
+		{R: 252, G: 165, B: 165, A: 252},
+		{R: 216, G: 180, B: 254, A: 252},
+	}
+}
+
+func shuffledWordTextColors(colors []color.RGBA, count int) []color.RGBA {
+	if count <= 0 {
+		return nil
+	}
+	if len(colors) == 0 {
+		colors = defaultWordTextColors()
+	}
+	out := make([]color.RGBA, 0, count)
+	order := randomIndexes(len(colors), len(colors))
+	for len(out) < count {
+		if len(out) > 0 {
+			order = randomIndexes(len(colors), len(colors))
+		}
+		for _, index := range order {
+			out = append(out, colors[index%len(colors)])
+			if len(out) >= count {
+				break
+			}
+		}
+	}
+	return out
+}
+
+func looksLikeFontBytes(data []byte, contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if strings.Contains(contentType, "font") || strings.Contains(contentType, "opentype") || strings.Contains(contentType, "truetype") {
+		return true
+	}
+	if len(data) < 4 {
+		return false
+	}
+	header := string(data[:4])
+	return header == "\x00\x01\x00\x00" || header == "OTTO" || header == "ttcf" || header == "true"
+}
+
+func loadWordFontFace(options fontOptions, words []string, bounds image.Rectangle) (xfont.Face, bool) {
+	size := wordFontSize(options, bounds)
+	if len(options.FontBytes) > 0 {
+		if face, ok := newWordFontFace(options.FontBytes, size, words); ok {
+			return face, true
+		}
+	}
+	if options.FontPath != "" {
+		if data, ok := readWordFontFile(options.FontPath); ok {
+			if face, ok := newWordFontFace(data, size, words); ok {
+				return face, true
+			}
+		}
+	}
+	for _, path := range systemCJKFontPaths() {
+		if data, ok := readWordFontFile(path); ok {
+			if face, ok := newWordFontFace(data, size, words); ok {
+				return face, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func wordFontSize(options fontOptions, bounds image.Rectangle) float64 {
+	if options.FontSize > 0 {
+		return clampFloat(options.FontSize, 18, 96)
+	}
+	return clampFloat(float64(bounds.Dy())*0.20, 22, 76)
+}
+
+func readWordFontFile(path string) ([]byte, bool) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, false
+	}
+	if cached, ok := wordFontFileCache.Load(path); ok {
+		data, ok := cached.([]byte)
+		return data, ok && len(data) > 0
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return nil, false
+	}
+	wordFontFileCache.Store(path, data)
+	return data, true
+}
+
+func newWordFontFace(data []byte, size float64, words []string) (xfont.Face, bool) {
+	collection, err := opentype.ParseCollection(data)
+	if err == nil {
+		for i := 0; i < collection.NumFonts(); i++ {
+			font, err := collection.Font(i)
+			if err != nil {
+				continue
+			}
+			face, err := opentype.NewFace(font, &opentype.FaceOptions{
+				Size:    size,
+				DPI:     96,
+				Hinting: xfont.HintingNone,
+			})
+			if err != nil {
+				continue
+			}
+			if fontFaceSupports(face, words) {
+				return face, true
+			}
+			face.Close()
+		}
+	}
+	font, err := opentype.Parse(data)
+	if err != nil {
+		return nil, false
+	}
+	face, err := opentype.NewFace(font, &opentype.FaceOptions{
+		Size:    size,
+		DPI:     96,
+		Hinting: xfont.HintingNone,
+	})
+	if err != nil {
+		return nil, false
+	}
+	if !fontFaceSupports(face, words) {
+		face.Close()
+		return nil, false
+	}
+	return face, true
+}
+
+func fontFaceSupports(face xfont.Face, words []string) bool {
+	for _, word := range words {
+		for _, r := range word {
+			if r == ' ' {
+				continue
+			}
+			if _, ok := face.GlyphAdvance(r); !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func systemCJKFontPaths() []string {
+	return []string{
+		"/System/Library/Fonts/STHeiti Medium.ttc",
+		"/System/Library/Fonts/Hiragino Sans GB.ttc",
+		"/System/Library/Fonts/STHeiti Light.ttc",
+		"/Library/Fonts/Arial Unicode.ttf",
+		"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+		"/System/Library/Fonts/Supplemental/Songti.ttc",
+		"/System/Library/Fonts/PingFang.ttc",
+		"/Library/Fonts/NotoSansCJK-Regular.ttc",
+		"/Library/Fonts/SourceHanSansSC-Regular.otf",
+		"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+		"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.otf",
+		"/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
+		"/usr/share/fonts/noto/NotoSansCJK-Regular.otf",
+		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
+		"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+		"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.otf",
+		"/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+		"/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+		"/usr/share/fonts/truetype/arphic/uming.ttc",
+		`C:\Windows\Fonts\msyh.ttc`,
+		`C:\Windows\Fonts\simhei.ttf`,
+		`C:\Windows\Fonts\simsun.ttc`,
+	}
+}
+
+func drawFontGlyph(img *image.RGBA, value string, cx, cy int, face xfont.Face, c color.RGBA, distortionStrength float64) bool {
+	if strings.TrimSpace(value) == "" || !fontFaceSupports(face, []string{value}) {
+		return false
+	}
+	textBounds, _ := xfont.BoundString(face, value)
+	if textBounds.Empty() {
+		return false
+	}
+	textWidth := max(1, (textBounds.Max.X - textBounds.Min.X).Ceil())
+	textHeight := max(1, (textBounds.Max.Y - textBounds.Min.Y).Ceil())
+	pad := max(12, int(math.Ceil(float64(max(textWidth, textHeight))*0.28)))
+	layer := image.NewRGBA(image.Rect(0, 0, textWidth+pad*2, textHeight+pad*2))
+	dot := fixed.Point26_6{
+		X: fixed.I(pad) - textBounds.Min.X,
+		Y: fixed.I(pad) - textBounds.Min.Y,
+	}
+	shadow := color.RGBA{R: 15, G: 23, B: 42, A: 80}
+	edge := color.RGBA{R: 15, G: 23, B: 42, A: 190}
+	for _, offset := range []image.Point{{X: 2, Y: 2}} {
+		drawStringAt(layer, value, face, moveFixedPoint(dot, offset.X, offset.Y), shadow)
+	}
+	for dy := -1; dy <= 1; dy++ {
+		for dx := -1; dx <= 1; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+			drawStringAt(layer, value, face, moveFixedPoint(dot, dx, dy), edge)
+		}
+	}
+	drawStringAt(layer, value, face, dot, c)
+	distorted := distortWordGlyphLayer(layer, randomWordGlyphDistortion(distortionStrength, max(textWidth, textHeight)))
+	blendGlyphLayerAt(img, distorted, cx, cy)
+	return true
+}
+
+func blockGlyphDistortionStrength(strength float64) float64 {
+	if strength <= 0 {
+		return 0
+	}
+	return clampFloat(strength, 0, wordBlockGlyphMaxDistort)
+}
+
+func wordImageRenderScale(bounds image.Rectangle) int {
+	return max(1, int(math.Round(float64(bounds.Dx())/float64(320))))
+}
+
+func clampTextDot(bounds image.Rectangle, textBounds fixed.Rectangle26_6, dot fixed.Point26_6) fixed.Point26_6 {
+	pad := fixed.I(5)
+	minX := fixed.I(bounds.Min.X) + pad
+	maxX := fixed.I(bounds.Max.X) - pad
+	minY := fixed.I(bounds.Min.Y) + pad
+	maxY := fixed.I(bounds.Max.Y) - pad
+	left := dot.X + textBounds.Min.X
+	right := dot.X + textBounds.Max.X
+	top := dot.Y + textBounds.Min.Y
+	bottom := dot.Y + textBounds.Max.Y
+	if left < minX {
+		dot.X += minX - left
+	}
+	if right > maxX {
+		dot.X -= right - maxX
+	}
+	if top < minY {
+		dot.Y += minY - top
+	}
+	if bottom > maxY {
+		dot.Y -= bottom - maxY
+	}
+	return dot
+}
+
+func moveFixedPoint(point fixed.Point26_6, dx, dy int) fixed.Point26_6 {
+	return fixed.Point26_6{X: point.X + fixed.I(dx), Y: point.Y + fixed.I(dy)}
+}
+
+func drawStringAt(img *image.RGBA, value string, face xfont.Face, dot fixed.Point26_6, c color.RGBA) {
+	drawer := xfont.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(c),
+		Face: face,
+		Dot:  dot,
+	}
+	drawer.DrawString(value)
 }
 
 func randomGlyphWordsExcluding(pool []string, count int, excluded []string) []string {
@@ -2275,11 +2700,12 @@ func wordDecoyPoints(width, height int, targetPoints []types.Point, count int) [
 	}
 	indexes := randomIndexes(len(anchors), len(anchors))
 	out := make([]types.Point, 0, count)
+	minDistance := wordPointMinDistance(width)
 	for _, index := range indexes {
 		point := anchors[index]
 		point.X = clamp(point.X+randomJitter(-4, 4), 20, max(20, width-20))
 		point.Y = clamp(point.Y+randomJitter(-4, 4), 20, max(20, height-20))
-		if tooCloseToWordPoint(point, targetPoints) || tooCloseToWordPoint(point, out) {
+		if tooCloseToWordPoint(point, targetPoints, minDistance) || tooCloseToWordPoint(point, out, minDistance) {
 			continue
 		}
 		out = append(out, point)
@@ -2290,9 +2716,13 @@ func wordDecoyPoints(width, height int, targetPoints []types.Point, count int) [
 	return out
 }
 
-func tooCloseToWordPoint(point types.Point, others []types.Point) bool {
+func wordPointMinDistance(width int) float64 {
+	return math.Max(52, float64(width)*0.16)
+}
+
+func tooCloseToWordPoint(point types.Point, others []types.Point, minDistance float64) bool {
 	for _, other := range others {
-		if pointDistance(point, other) < 52 {
+		if pointDistance(point, other) < minDistance {
 			return true
 		}
 	}
@@ -2537,6 +2967,25 @@ func metadataFloat(metadata map[string]any, keys ...string) (float64, bool) {
 	return 0, false
 }
 
+func metadataBool(metadata map[string]any, keys ...string) (bool, bool) {
+	for _, key := range keys {
+		value, ok := metadata[key]
+		if !ok {
+			continue
+		}
+		switch typed := value.(type) {
+		case bool:
+			return typed, true
+		case string:
+			parsed, err := strconv.ParseBool(strings.TrimSpace(typed))
+			return parsed, err == nil
+		default:
+			return false, false
+		}
+	}
+	return false, false
+}
+
 func metadataColors(metadata map[string]any, keys ...string) []color.RGBA {
 	for _, key := range keys {
 		value, ok := metadata[key]
@@ -2651,7 +3100,8 @@ func validGlyphPattern(pattern []string) bool {
 	return true
 }
 
-func drawBlockGlyph(img *image.RGBA, value string, cx, cy, scale int, c color.RGBA, custom map[string][]string) {
+func drawBlockGlyph(img *image.RGBA, value string, cx, cy, scale int, c color.RGBA, custom map[string][]string, distortionStrength float64) {
+	distortionStrength = blockGlyphDistortionStrength(distortionStrength)
 	pattern, ok := custom[value]
 	if !ok {
 		pattern, ok = glyphs.Pattern(value)
@@ -2659,12 +3109,17 @@ func drawBlockGlyph(img *image.RGBA, value string, cx, cy, scale int, c color.RG
 	if !ok {
 		return
 	}
-	width := len(pattern[0]) * scale
-	height := len(pattern) * scale
-	startX := cx - width/2
-	startY := cy - height/2
+	width, height := blockGlyphSize(pattern, scale)
+	if width <= 0 || height <= 0 {
+		return
+	}
+	pad := max(8, scale*2)
+	layer := image.NewRGBA(image.Rect(0, 0, width+pad*2, height+pad*2))
+	startX := pad
+	startY := pad
 	shadow := color.RGBA{R: 255, G: 255, B: 255, A: 235}
-	darkEdge := color.RGBA{R: 15, G: 23, B: 42, A: 84}
+	halo := color.RGBA{R: 255, G: 255, B: 255, A: 170}
+	darkEdge := color.RGBA{R: 15, G: 23, B: 42, A: 96}
 	for row, line := range pattern {
 		for col, pixel := range line {
 			if pixel != '1' {
@@ -2672,14 +3127,198 @@ func drawBlockGlyph(img *image.RGBA, value string, cx, cy, scale int, c color.RG
 			}
 			x := startX + col*scale
 			y := startY + row*scale
-			fillRect(img, x-1, y, scale, scale, darkEdge)
-			fillRect(img, x+1, y, scale, scale, darkEdge)
-			fillRect(img, x, y-1, scale, scale, darkEdge)
-			fillRect(img, x, y+1, scale, scale, darkEdge)
-			fillRect(img, x+2, y+2, scale, scale, shadow)
-			fillRect(img, x, y, scale, scale, c)
+			fillRect(layer, x-2, y, scale, scale, halo)
+			fillRect(layer, x+2, y, scale, scale, halo)
+			fillRect(layer, x, y-2, scale, scale, halo)
+			fillRect(layer, x, y+2, scale, scale, halo)
+			fillRect(layer, x-1, y, scale, scale, darkEdge)
+			fillRect(layer, x+1, y, scale, scale, darkEdge)
+			fillRect(layer, x, y-1, scale, scale, darkEdge)
+			fillRect(layer, x, y+1, scale, scale, darkEdge)
+			fillRect(layer, x+2, y+2, scale, scale, shadow)
+			fillRect(layer, x, y, scale, scale, c)
 		}
 	}
+	distorted := distortWordGlyphLayer(layer, randomWordGlyphDistortion(distortionStrength, max(width, height)))
+	blendGlyphLayerAt(img, distorted, cx, cy)
+}
+
+type wordGlyphDistortionStyle struct {
+	Strength   float64
+	Angle      float64
+	ShearX     float64
+	ShearY     float64
+	ScaleX     float64
+	ScaleY     float64
+	WaveX      float64
+	WaveY      float64
+	WaveLength float64
+	PhaseX     float64
+	PhaseY     float64
+}
+
+func randomWordGlyphDistortion(strength float64, glyphSize int) wordGlyphDistortionStyle {
+	strength = clampFloat(strength, 0, 1.5)
+	if strength <= 0 {
+		return wordGlyphDistortionStyle{ScaleX: 1, ScaleY: 1}
+	}
+	sizeScale := math.Max(1, float64(glyphSize)/32)
+	return wordGlyphDistortionStyle{
+		Strength:   strength,
+		Angle:      randomFloat(-0.32, 0.32) * strength,
+		ShearX:     randomFloat(-0.20, 0.20) * strength,
+		ShearY:     randomFloat(-0.12, 0.12) * strength,
+		ScaleX:     1 + randomFloat(-0.10, 0.14)*strength,
+		ScaleY:     1 + randomFloat(-0.10, 0.12)*strength,
+		WaveX:      randomFloat(-2.0, 2.0) * sizeScale * strength,
+		WaveY:      randomFloat(-1.4, 1.4) * sizeScale * strength,
+		WaveLength: randomFloat(14, 28) * sizeScale,
+		PhaseX:     randomFloat(0, math.Pi*2),
+		PhaseY:     randomFloat(0, math.Pi*2),
+	}
+}
+
+func distortWordGlyphLayer(src *image.RGBA, style wordGlyphDistortionStyle) *image.RGBA {
+	if style.Strength <= 0 {
+		return src
+	}
+	bounds := src.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width <= 0 || height <= 0 {
+		return src
+	}
+	pad := max(5, int(math.Ceil(float64(max(width, height))*0.24*style.Strength))+5)
+	dst := image.NewRGBA(image.Rect(0, 0, width+pad*2, height+pad*2))
+	sin, cos := math.Sin(style.Angle), math.Cos(style.Angle)
+	a := cos*style.ScaleX - sin*style.ShearY
+	b := cos*style.ShearX - sin*style.ScaleY
+	c := sin*style.ScaleX + cos*style.ShearY
+	d := sin*style.ShearX + cos*style.ScaleY
+	det := a*d - b*c
+	if math.Abs(det) < 0.0001 {
+		return src
+	}
+	srcCX := float64(bounds.Min.X) + float64(width)/2
+	srcCY := float64(bounds.Min.Y) + float64(height)/2
+	dstCX := float64(dst.Bounds().Dx()) / 2
+	dstCY := float64(dst.Bounds().Dy()) / 2
+	for y := 0; y < dst.Bounds().Dy(); y++ {
+		for x := 0; x < dst.Bounds().Dx(); x++ {
+			dx := float64(x) + 0.5 - dstCX
+			dy := float64(y) + 0.5 - dstCY
+			sx := (d*dx - b*dy) / det
+			sy := (-c*dx + a*dy) / det
+			if style.WaveLength > 0 {
+				sx += style.WaveX * math.Sin((sy+style.PhaseX)/style.WaveLength)
+				sy += style.WaveY * math.Sin((sx+style.PhaseY)/style.WaveLength)
+			}
+			pixel := sampleWordGlyphPixel(src, srcCX+sx, srcCY+sy)
+			if pixel.A > 0 {
+				dst.SetRGBA(x, y, pixel)
+			}
+		}
+	}
+	return dst
+}
+
+func sampleWordGlyphPixel(src *image.RGBA, x, y float64) color.RGBA {
+	bounds := src.Bounds()
+	if x < float64(bounds.Min.X) || y < float64(bounds.Min.Y) || x > float64(bounds.Max.X-1) || y > float64(bounds.Max.Y-1) {
+		return color.RGBA{}
+	}
+	x0 := int(math.Floor(x))
+	y0 := int(math.Floor(y))
+	x1 := min(x0+1, bounds.Max.X-1)
+	y1 := min(y0+1, bounds.Max.Y-1)
+	tx := x - float64(x0)
+	ty := y - float64(y0)
+	c00 := rgbaAt(src, x0, y0)
+	c10 := rgbaAt(src, x1, y0)
+	c01 := rgbaAt(src, x0, y1)
+	c11 := rgbaAt(src, x1, y1)
+	return color.RGBA{
+		R: bilinearByte(c00.R, c10.R, c01.R, c11.R, tx, ty),
+		G: bilinearByte(c00.G, c10.G, c01.G, c11.G, tx, ty),
+		B: bilinearByte(c00.B, c10.B, c01.B, c11.B, tx, ty),
+		A: bilinearByte(c00.A, c10.A, c01.A, c11.A, tx, ty),
+	}
+}
+
+func bilinearByte(c00, c10, c01, c11 uint8, tx, ty float64) uint8 {
+	top := float64(c00)*(1-tx) + float64(c10)*tx
+	bottom := float64(c01)*(1-tx) + float64(c11)*tx
+	return uint8(math.Round(top*(1-ty) + bottom*ty))
+}
+
+func blendGlyphLayerAt(dst *image.RGBA, layer *image.RGBA, cx, cy int) {
+	bounds := dst.Bounds()
+	layerBounds := layer.Bounds()
+	originX, originY := glyphLayerOrigin(bounds, layerBounds.Dx(), layerBounds.Dy(), cx, cy)
+	paintBounds := bounds.Inset(1)
+	for y := layerBounds.Min.Y; y < layerBounds.Max.Y; y++ {
+		for x := layerBounds.Min.X; x < layerBounds.Max.X; x++ {
+			pixel := rgbaAt(layer, x, y)
+			if pixel.A == 0 {
+				continue
+			}
+			gx := originX + x - layerBounds.Min.X
+			gy := originY + y - layerBounds.Min.Y
+			if gx < paintBounds.Min.X || gx >= paintBounds.Max.X || gy < paintBounds.Min.Y || gy >= paintBounds.Max.Y {
+				continue
+			}
+			blendPixelOver(dst, gx, gy, pixel)
+		}
+	}
+}
+
+func glyphLayerOrigin(bounds image.Rectangle, layerWidth, layerHeight, cx, cy int) (int, int) {
+	const pad = 3
+	minX := bounds.Min.X + pad
+	maxX := bounds.Max.X - pad - layerWidth
+	minY := bounds.Min.Y + pad
+	maxY := bounds.Max.Y - pad - layerHeight
+	if maxX < minX {
+		minX, maxX = bounds.Min.X, bounds.Max.X-layerWidth
+	}
+	if maxY < minY {
+		minY, maxY = bounds.Min.Y, bounds.Max.Y-layerHeight
+	}
+	return clamp(cx-layerWidth/2, minX, maxX), clamp(cy-layerHeight/2, minY, maxY)
+}
+
+func randomFloat(minValue, maxValue float64) float64 {
+	if maxValue <= minValue {
+		return minValue
+	}
+	return minValue + (maxValue-minValue)*float64(randomIndex(10001))/10000
+}
+
+func blockGlyphSize(pattern []string, scale int) (int, int) {
+	if scale <= 0 || len(pattern) == 0 {
+		return 0, 0
+	}
+	cols := 0
+	for _, line := range pattern {
+		if len(line) > cols {
+			cols = len(line)
+		}
+	}
+	return cols * scale, len(pattern) * scale
+}
+
+func clampBlockGlyphCenter(bounds image.Rectangle, glyphWidth, glyphHeight, cx, cy int) (int, int) {
+	const pad = 3
+	minX := bounds.Min.X + pad + glyphWidth/2
+	maxX := bounds.Max.X - pad - (glyphWidth - glyphWidth/2)
+	minY := bounds.Min.Y + pad + glyphHeight/2
+	maxY := bounds.Max.Y - pad - (glyphHeight - glyphHeight/2)
+	if maxX < minX {
+		minX, maxX = bounds.Min.X, bounds.Max.X
+	}
+	if maxY < minY {
+		minY, maxY = bounds.Min.Y, bounds.Max.Y
+	}
+	return clamp(cx, minX, maxX), clamp(cy, minY, maxY)
 }
 
 var glyphPatterns = map[string][]string{

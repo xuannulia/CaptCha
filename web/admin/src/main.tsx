@@ -4,6 +4,7 @@ import {
   BarChartOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
+  GlobalOutlined,
   PlusOutlined,
   ProjectOutlined,
   SafetyOutlined
@@ -11,6 +12,7 @@ import {
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Checkbox, Collapse, ConfigProvider, Form, Input, InputNumber, Layout, Menu, message, Modal, Select, Space, Statistic, Switch, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import zhCN from "antd/locale/zh_CN";
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes as RouterRoutes, useLocation, useNavigate } from "react-router-dom";
@@ -258,7 +260,6 @@ const captchaTypes = [
   "SLIDER_V2",
   "ROTATE",
   "CONCAT",
-  "ROTATE_DEGREE",
   "WORD_IMAGE_CLICK",
   "IMAGE_CLICK",
   "JIGSAW",
@@ -313,12 +314,14 @@ const statusLabels: Record<string, string> = {
   disabled: "停用"
 };
 const policyModeLabels: Record<string, string> = {
-  always: "固定验证",
+  always: "无通行态时验证",
+  force_challenge: "永远验证",
+  always_challenge: "永远验证",
   risk_based: "风险较高",
   rate_limit: "访问过快",
   observe: "观察放行",
   silent: "静默观察",
-  manual_bypass: "手动放行"
+  manual_bypass: "无限制放行"
 };
 const failPolicyLabels: Record<string, string> = {
   fail_open: "异常时放行",
@@ -404,6 +407,7 @@ const decisionReasonLabels: Record<string, string> = {
   RATE_LIMIT_DRY_RUN: "访问过快",
   RATE_LIMIT_NOT_CONFIGURED: "频控未配置",
   UNDER_RATE_LIMIT: "未超过频控",
+  FORCE_CHALLENGE: "永远验证",
   RISK_BASED: "风险验证",
   RISK_SCORE: "风险分触发",
   RISK_SCORE_BLOCK: "风险分拦截",
@@ -422,10 +426,10 @@ const decisionReasonLabels: Record<string, string> = {
   LOCAL_IP_ALLOWLIST: "本地 IP 放行名单",
   LOCAL_IP_BLOCKLIST: "本地 IP 拦截名单",
   LOCAL_NO_ROUTE_POLICY: "本地未命中策略",
-  LOCAL_MANUAL_BYPASS: "本地手动放行",
+  LOCAL_MANUAL_BYPASS: "本地无限制放行",
   LOCAL_SILENT: "本地静默观察",
   LOCAL_OBSERVE: "本地观察放行",
-  MANUAL_BYPASS: "手动放行",
+  MANUAL_BYPASS: "无限制放行",
   SILENT: "静默观察",
   OBSERVE: "观察放行",
   CONFIG_APPLICATION_UPSERT: "应用配置变更",
@@ -466,7 +470,7 @@ const resourceFileFilters = [
   { key: "grid", label: "图片格子图库" },
   { key: "icon", label: "图标图库" }
 ];
-const routeTriggerModes = ["always", "rate_limit", "risk_based"];
+const routeTriggerModes = ["always", "force_challenge", "rate_limit", "risk_based", "manual_bypass"];
 const galleryUploadTypes = [
   { value: "background", label: "背景图库" },
   { value: "concatBackground", label: "滑动还原专用图库" },
@@ -486,6 +490,7 @@ const galleryUploadNotes: Record<string, string> = {
 const adminRoutes = [
   { key: "overview", path: "/overview", icon: <BarChartOutlined />, label: "概览", element: <Overview /> },
   { key: "applications", path: "/applications", icon: <ProjectOutlined />, label: "应用", element: <Applications /> },
+  { key: "site-protection", path: "/site-protection", icon: <GlobalOutlined />, label: "全站防护", element: <SiteProtection /> },
   { key: "routes", path: "/routes", icon: <ApiOutlined />, label: "路由策略", element: <Routes /> },
   { key: "ip", path: "/ip-policies", icon: <SafetyOutlined />, label: "IP 策略", element: <IpPolicies /> },
   { key: "simulate", path: "/policy-simulate", icon: <SafetyOutlined />, label: "策略模拟", element: <PolicySimulator /> },
@@ -497,7 +502,7 @@ const adminRoutes = [
 
 function App() {
   return (
-    <ConfigProvider theme={{ token: { borderRadius: 6, colorPrimary: "#2563eb" } }}>
+    <ConfigProvider locale={zhCN} theme={{ token: { borderRadius: 6, colorPrimary: "#2563eb" } }}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <AdminShell />
@@ -907,7 +912,7 @@ function Applications() {
   };
   return (
     <Card title="应用" extra={<Button type="primary" onClick={openCreateApplication}>新增应用</Button>}>
-      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
+      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} scroll={{ x: "max-content" }} />
       <Modal
         title="应用密钥"
         open={Boolean(secret)}
@@ -962,6 +967,174 @@ function Applications() {
   );
 }
 
+function SiteProtection() {
+  const { applications, appOptions, selectedClientID, defaultClientID } = useApplicationScope();
+  const { data, isLoading } = useList<RoutePolicy>("routes", scopedPath("/api/v1/admin/route-policies", selectedClientID));
+  const sitePolicies = useMemo(() => (data || []).filter(routeIsAppWide), [data]);
+  const [open, setOpen] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState<RoutePolicy | null>(null);
+  const [pendingPolicyID, setPendingPolicyID] = useState("");
+  const [form] = Form.useForm();
+  const mutation = usePost<RoutePolicy>("routes");
+  const toggleMutation = usePost<RoutePolicy>("routes");
+  const deleteMutation = usePost<{ deleted: number }>("routes");
+  const mode = Form.useWatch("mode", form) || "always";
+  const showChallengeFields = routeIssuesChallenge(mode);
+  const showRiskFields = mode === "risk_based";
+  const sceneRequired = mode !== "manual_bypass";
+  const openCreate = () => {
+    setEditingPolicy(null);
+    form.resetFields();
+    form.setFieldsValue(siteProtectionDefaults(defaultClientID));
+    setOpen(true);
+  };
+  const closeModal = () => {
+    setOpen(false);
+    setEditingPolicy(null);
+    form.resetFields();
+  };
+  const deletePolicy = (row: RoutePolicy) => {
+    Modal.confirm({
+      title: "删除全站防护",
+      content: `删除后 ${row.name || "全站防护"} 不再作为站点默认策略。`,
+      okText: "删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setPendingPolicyID(row.id);
+        try {
+          await deleteMutation.mutateAsync({
+            path: "/api/v1/admin/route-policies/delete",
+            body: { client_id: row.client_id, ids: [row.id] }
+          });
+        } catch {
+          message.error("全站防护删除失败");
+        } finally {
+          setPendingPolicyID("");
+        }
+      }
+    });
+  };
+  const columns: ColumnsType<RoutePolicy> = [
+    { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
+    { title: "名称", dataIndex: "name" },
+    { title: "防护模式", render: (_, row) => policyModeLabel(row.mode) },
+    { title: "场景", render: (_, row) => row.scene || "-" },
+    { title: "验证方式", render: (_, row) => routeIssuesChallenge(row.mode) ? routeChallengeLabel(row) : "-" },
+    { title: "通行态有效期", render: (_, row) => row.token_ttl_seconds ? `${row.token_ttl_seconds} 秒` : "-" },
+    { title: "生效范围", render: (_, row) => `${row.rollout_percent || 100}%` },
+    { title: "触发规则", render: (_, row) => routePolicyParameter(row) },
+    {
+      title: "启用",
+      render: (_, row) => (
+        <Switch
+          checked={row.enabled}
+          size="small"
+          loading={toggleMutation.isPending && pendingPolicyID === row.id}
+          onChange={async (checked) => {
+            setPendingPolicyID(row.id);
+            try {
+              await toggleMutation.mutateAsync({
+                path: "/api/v1/admin/route-policies",
+                body: { ...row, enabled: checked }
+              });
+            } catch {
+              message.error("全站防护保存失败");
+            } finally {
+              setPendingPolicyID("");
+            }
+          }}
+        />
+      )
+    },
+    {
+      title: "操作",
+      width: 150,
+      render: (_, row) => (
+        <Space>
+          <Button size="small" onClick={() => {
+            setEditingPolicy(row);
+            form.setFieldsValue({
+              ...row,
+              challenge_escalation: row.challenge_escalation || []
+            });
+            setOpen(true);
+          }}>编辑</Button>
+          <Button size="small" danger loading={deleteMutation.isPending && pendingPolicyID === row.id} onClick={() => deletePolicy(row)}>删除</Button>
+        </Space>
+      )
+    }
+  ];
+  return (
+    <Card title="全站防护" extra={<Button type="primary" onClick={openCreate}>新增全站防护</Button>}>
+      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={sitePolicies} pagination={false} scroll={{ x: "max-content" }} />
+      <Modal title={editingPolicy ? "编辑全站防护" : "新增全站防护"} open={open} onCancel={closeModal} onOk={() => form.submit()} okText="保存全站防护" confirmLoading={mutation.isPending}>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={siteProtectionDefaults(defaultClientID)}
+          onFinish={async (values) => {
+            const issuesChallenge = routeIssuesChallenge(values.mode);
+            const body = {
+              ...(editingPolicy || {}),
+              ...values,
+              path_pattern: "",
+              method: "",
+              scene: values.scene || "",
+              rate_limit: undefined
+            };
+            if (values.mode !== "risk_based") {
+              body.risk_challenge_type = undefined;
+              body.risk_observe_score = 0;
+              body.risk_challenge_score = 0;
+              body.risk_block_score = 0;
+            }
+            if (!issuesChallenge) {
+              body.risk_challenge_type = undefined;
+              body.challenge_escalation = [];
+            }
+            if (!body.challenge_escalation?.length) {
+              delete body.challenge_escalation;
+            }
+            try {
+              await mutation.mutateAsync({ path: "/api/v1/admin/route-policies", body });
+              closeModal();
+            } catch {
+              message.error("全站防护保存失败");
+            }
+          }}
+        >
+          <Form.Item name="client_id" label="应用" rules={[{ required: true }]}>
+            <Select showSearch disabled={Boolean(editingPolicy)} optionFilterProp="searchText" options={appOptions} />
+          </Form.Item>
+          <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="mode" label="防护模式"><Select options={siteProtectionModeOptions(mode)} /></Form.Item>
+          <Form.Item name="scene" label="场景" rules={sceneRequired ? [{ required: true }] : []}><Input /></Form.Item>
+          {showChallengeFields && (
+            <>
+              <Form.Item name="challenge_type" label="验证方式"><Select options={selectOptions(captchaTypes)} /></Form.Item>
+              {showRiskFields && <Form.Item name="risk_challenge_type" label="风险验证方式"><Select allowClear options={selectOptions(captchaTypes)} /></Form.Item>}
+              <Form.Item name="challenge_escalation" label="失败后升级"><Select mode="multiple" allowClear options={selectOptions(captchaTypes)} /></Form.Item>
+              <Form.Item name="fail_policy" label="异常处理"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
+              <Form.Item name="token_ttl_seconds" label="通行态有效期"><InputNumber className="field-number" suffix="秒" /></Form.Item>
+            </>
+          )}
+          {showRiskFields && (
+            <Space.Compact block>
+              <Form.Item name="risk_observe_score" label="观察阈值" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
+              <Form.Item name="risk_challenge_score" label="验证阈值" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
+              <Form.Item name="risk_block_score" label="拦截阈值" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
+            </Space.Compact>
+          )}
+          <Form.Item name="priority" label="优先级"><InputNumber className="field-number" /></Form.Item>
+          <Form.Item name="rollout_percent" label="生效范围"><InputNumber className="field-number" min={1} max={100} suffix="%" /></Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
+        </Form>
+      </Modal>
+    </Card>
+  );
+}
+
 function Routes() {
   const { applications, appOptions, selectedClientID, defaultClientID } = useApplicationScope();
   const { data, isLoading } = useList<RoutePolicy>("routes", scopedPath("/api/v1/admin/route-policies", selectedClientID));
@@ -973,13 +1146,15 @@ function Routes() {
   const toggleMutation = usePost<RoutePolicy>("routes");
   const deleteMutation = usePost<{ deleted: number }>("routes");
   const routeMode = Form.useWatch("mode", form) || "always";
+  const appWideRoute = Boolean(Form.useWatch("app_wide", form));
   const showChallengeFields = routeIssuesChallenge(routeMode);
   const showRiskFields = routeMode === "risk_based";
   const showRateLimitFields = routeMode === "rate_limit";
+  const sceneRequired = !(appWideRoute && routeMode === "manual_bypass");
   const deleteRoutePolicy = (row: RoutePolicy) => {
     Modal.confirm({
       title: "删除路由策略",
-      content: `删除后 ${row.path_pattern} 不再参与策略匹配。`,
+      content: `删除后 ${routeScopeLabel(row)} 不再参与策略匹配。`,
       okText: "删除",
       cancelText: "取消",
       okButtonProps: { danger: true },
@@ -1001,8 +1176,8 @@ function Routes() {
   const columns: ColumnsType<RoutePolicy> = [
     { title: "应用", width: 180, render: (_, row) => <ApplicationCell clientID={row.client_id} applications={applications} /> },
     { title: "名称", dataIndex: "name" },
-    { title: "路径", dataIndex: "path_pattern" },
-    { title: "方法", dataIndex: "method", width: 90 },
+    { title: "路径", render: (_, row) => routeScopeLabel(row) },
+    { title: "方法", width: 90, render: (_, row) => routeMethodLabel(row) },
     { title: "场景", dataIndex: "scene" },
     { title: "验证方式", render: (_, row) => routeIssuesChallenge(row.mode) ? routeChallengeLabel(row) : "-" },
     { title: "失败后升级", render: (_, row) => routeIssuesChallenge(row.mode) && row.challenge_escalation?.length ? row.challenge_escalation.map(captchaLabel).join(" > ") : "-" },
@@ -1041,6 +1216,7 @@ function Routes() {
             setEditingRoute(row);
             form.setFieldsValue({
               ...row,
+              app_wide: routeIsAppWide(row),
               challenge_escalation: row.challenge_escalation || [],
               rate_window_seconds: row.rate_limit?.window_seconds,
               rate_max_requests: row.rate_limit?.max_requests,
@@ -1066,6 +1242,7 @@ function Routes() {
     form.setFieldsValue({
       client_id: defaultClientID,
       method: "POST",
+      app_wide: false,
       mode: "always",
       challenge_type: "SLIDER",
       risk_challenge_type: undefined,
@@ -1089,7 +1266,7 @@ function Routes() {
   };
   return (
     <Card title="路由策略" extra={<Button type="primary" onClick={openCreateRoute}>新增策略</Button>}>
-      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
+      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} scroll={{ x: "max-content" }} />
       <Modal title={editingRoute ? "编辑路由策略" : "新增路由策略"} open={open} onCancel={closeRouteModal} onOk={() => form.submit()} okText="保存策略" confirmLoading={mutation.isPending}>
         <Form
           form={form}
@@ -1097,6 +1274,7 @@ function Routes() {
           initialValues={{
             client_id: defaultClientID,
             method: "POST",
+            app_wide: false,
             mode: "always",
             challenge_type: "SLIDER",
             risk_challenge_type: undefined,
@@ -1113,6 +1291,12 @@ function Routes() {
           }}
           onFinish={async (values) => {
             const issuesChallenge = routeIssuesChallenge(values.mode);
+            const isAppWide = Boolean(values.app_wide);
+            const pathPattern = String(values.path_pattern || "").trim();
+            if (!isAppWide && !pathPattern) {
+              message.error("请填写路径或选择全站防护");
+              return;
+            }
             const body = {
               ...(editingRoute || {}),
               ...values,
@@ -1120,6 +1304,8 @@ function Routes() {
                 ? { window_seconds: values.rate_window_seconds, max_requests: values.rate_max_requests, strategy: values.rate_strategy || "fixed_window" }
                 : undefined
             };
+            body.path_pattern = isAppWide ? "" : pathPattern;
+            body.method = isAppWide ? "" : values.method;
             if (values.mode !== "risk_based") {
               body.risk_challenge_type = undefined;
               body.risk_observe_score = 0;
@@ -1136,6 +1322,7 @@ function Routes() {
             delete body.rate_window_seconds;
             delete body.rate_max_requests;
             delete body.rate_strategy;
+            delete body.app_wide;
             try {
               await mutation.mutateAsync({ path: "/api/v1/admin/route-policies", body });
               closeRouteModal();
@@ -1148,9 +1335,14 @@ function Routes() {
             <Select showSearch disabled={Boolean(editingRoute)} optionFilterProp="searchText" options={appOptions} />
           </Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="path_pattern" label="路径" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
-          <Form.Item name="scene" label="场景" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="app_wide" valuePropName="checked"><Checkbox>全站防护</Checkbox></Form.Item>
+          {!appWideRoute && (
+            <>
+              <Form.Item name="path_pattern" label="路径" rules={[{ required: true }]}><Input /></Form.Item>
+              <Form.Item name="method" label="方法"><Select options={selectOptions(["GET", "POST", "PUT", "DELETE", "PATCH"])} /></Form.Item>
+            </>
+          )}
+          <Form.Item name="scene" label="场景" rules={sceneRequired ? [{ required: true }] : []}><Input /></Form.Item>
           <Form.Item name="mode" label="触发条件"><Select options={routeModeOptions(routeMode)} /></Form.Item>
           {showChallengeFields && (
             <>
@@ -1158,11 +1350,11 @@ function Routes() {
               {showRiskFields && <Form.Item name="risk_challenge_type" label="风险验证方式"><Select allowClear options={selectOptions(captchaTypes)} /></Form.Item>}
               <Form.Item name="challenge_escalation" label="失败后升级"><Select mode="multiple" allowClear options={selectOptions(captchaTypes)} /></Form.Item>
               <Form.Item name="fail_policy" label="异常处理"><Select options={selectOptions(["fail_open", "fail_close"])} /></Form.Item>
-              <Form.Item name="token_ttl_seconds" label="通行有效期"><InputNumber className="field-number" addonAfter="秒" /></Form.Item>
+              <Form.Item name="token_ttl_seconds" label="通行态有效期"><InputNumber className="field-number" suffix="秒" /></Form.Item>
             </>
           )}
           <Form.Item name="priority" label="优先级"><InputNumber className="field-number" /></Form.Item>
-          <Form.Item name="rollout_percent" label="生效范围"><InputNumber className="field-number" min={1} max={100} addonAfter="%" /></Form.Item>
+          <Form.Item name="rollout_percent" label="生效范围"><InputNumber className="field-number" min={1} max={100} suffix="%" /></Form.Item>
           {showRiskFields && (
             <Space.Compact block>
               <Form.Item name="risk_observe_score" label="观察阈值" style={{ width: "33.33%" }}><InputNumber className="field-number" min={0} max={100} /></Form.Item>
@@ -1279,7 +1471,7 @@ function IpPolicies() {
   };
   return (
     <Card title="IP 策略" extra={<Button type="primary" onClick={openCreatePolicy}>添加名单</Button>}>
-      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
+      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} scroll={{ x: "max-content" }} />
       <Modal title={editingPolicy ? "编辑 IP 名单" : "添加 IP 名单"} open={open} onCancel={closePolicyModal} onOk={() => form.submit()} okText="保存名单" confirmLoading={mutation.isPending}>
         <Form
           form={form}
@@ -1472,8 +1664,59 @@ function routeModeOptions(currentMode?: string) {
   return selectOptions(values);
 }
 
+function siteProtectionModeOptions(currentMode?: string) {
+  const values = ["always", "risk_based", "manual_bypass"];
+  if (currentMode && !values.includes(currentMode)) {
+    values.push(currentMode);
+  }
+  return selectOptions(values);
+}
+
+function siteProtectionDefaults(clientID: string) {
+  return {
+    client_id: clientID,
+    name: "全站默认防护",
+    mode: "always",
+    scene: "site",
+    challenge_type: "SLIDER",
+    risk_challenge_type: undefined,
+    challenge_escalation: [],
+    fail_policy: "fail_open",
+    priority: 1,
+    rollout_percent: 100,
+    risk_observe_score: 0,
+    risk_challenge_score: 0,
+    risk_block_score: 0,
+    enabled: true,
+    token_ttl_seconds: 600
+  };
+}
+
 function routeIssuesChallenge(mode: string) {
-  return ["always", "risk_based", "rate_limit"].includes(mode);
+  return ["always", "force_challenge", "always_challenge", "risk_based", "rate_limit"].includes(mode);
+}
+
+function routePathIsAppWide(path?: string) {
+  const value = String(path || "").trim();
+  return value === "" || value === "*";
+}
+
+function routeIsAppWide(row: RoutePolicy) {
+  return routePathIsAppWide(row.path_pattern) && String(row.method || "").trim() === "";
+}
+
+function routeScopeLabel(row: RoutePolicy) {
+  if (routeIsAppWide(row)) {
+    return "全站";
+  }
+  if (routePathIsAppWide(row.path_pattern)) {
+    return "全部路径";
+  }
+  return row.path_pattern || "全部路径";
+}
+
+function routeMethodLabel(row: RoutePolicy) {
+  return row.method || "全部";
 }
 
 function routeChallengeLabel(row: RoutePolicy) {
@@ -1484,6 +1727,15 @@ function routeChallengeLabel(row: RoutePolicy) {
 }
 
 function routePolicyParameter(row: RoutePolicy) {
+  if (row.mode === "manual_bypass") {
+    return "不验证、不限流";
+  }
+  if (row.mode === "force_challenge" || row.mode === "always_challenge") {
+    return "忽略通行态，每次验证";
+  }
+  if (row.mode === "always") {
+    return "无通行态时验证";
+  }
   if (row.mode === "risk_based") {
     return riskThresholdSummary(row);
   }
@@ -2086,6 +2338,7 @@ function Audit() {
         loading={isLoading}
         columns={columns}
         dataSource={rows}
+        scroll={{ x: "max-content" }}
         pagination={{
           current: pageState.page,
           pageSize: pageState.pageSize,
@@ -2244,6 +2497,7 @@ function RiskFeatures() {
         loading={isLoading}
         columns={columns}
         dataSource={rows}
+        scroll={{ x: "max-content" }}
         pagination={{
           current: pageState.page,
           pageSize: pageState.pageSize,
@@ -2321,7 +2575,7 @@ function RiskModels() {
   ];
   return (
     <Card title="模型管理" extra={<Button type="primary" onClick={openCreateModel}>登记模型</Button>}>
-      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} />
+      <Table rowKey="id" loading={isLoading} columns={columns} dataSource={data || []} pagination={false} scroll={{ x: "max-content" }} />
       <Modal title="登记模型" open={open} onCancel={closeCreateModel} onOk={() => form.submit()} okText="保存模型">
         <Form
           form={form}
@@ -2353,7 +2607,7 @@ function RiskModels() {
           <Form.Item name="artifact_uri" label="模型文件" rules={[{ required: true }]}><Input placeholder="输入模型文件地址" /></Form.Item>
           <Form.Item name="mode" label="上线方式"><Select options={selectOptions(["shadow", "observe", "enforce"])} /></Form.Item>
           <Space.Compact block>
-            <Form.Item name="auc" label="准确率" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
+            <Form.Item name="auc" label="区分度" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="false_positive_rate" label="误伤率" style={{ width: "50%" }}><InputNumber min={0} max={1} step={0.01} style={{ width: "100%" }} /></Form.Item>
           </Space.Compact>
         </Form>
@@ -2416,13 +2670,19 @@ function selectOptions(values: string[]) {
 }
 
 function modelQualityText(row: RiskModelVersion) {
-  const accuracy = metricPercent(row.metrics?.auc);
+  const discrimination = metricScore(row.metrics?.auc);
   const falsePositive = metricPercent(row.metrics?.false_positive_rate);
-  if (!accuracy && !falsePositive) return "-";
+  if (!discrimination && !falsePositive) return "-";
   return [
-    accuracy ? `准确率 ${accuracy}` : "",
+    discrimination ? `区分度 ${discrimination}` : "",
     falsePositive ? `误伤率 ${falsePositive}` : ""
   ].filter(Boolean).join(" / ");
+}
+
+function metricScore(value: unknown) {
+  const number = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isFinite(number)) return "";
+  return number <= 1 ? number.toFixed(3) : number.toFixed(1);
 }
 
 function metricPercent(value: unknown) {
@@ -2473,6 +2733,7 @@ function titleFor(key: string) {
   const titles: Record<string, string> = {
     overview: "概览",
     applications: "应用",
+    "site-protection": "全站防护",
     routes: "路由策略",
     ip: "IP 策略",
     simulate: "策略模拟",

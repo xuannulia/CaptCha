@@ -22,6 +22,8 @@ var (
 	ErrConsumed = errors.New("consumed")
 )
 
+const maxMemoryRiskFeatureSnapshots = 20000
+
 type MemoryStore struct {
 	mu           sync.Mutex
 	sessions     map[string]types.ChallengeSession
@@ -29,6 +31,7 @@ type MemoryStore struct {
 	clearances   map[string]types.Clearance
 	applications map[string]types.Application
 	routes       map[string]types.RoutePolicy
+	policyRules  map[string]types.PolicyRule
 	ipPolicies   map[string]types.IPPolicy
 	resources    map[string]types.CaptchaResource
 	deletedSeeds map[string]struct{}
@@ -63,6 +66,7 @@ func newMemoryStore(resourcePath string) *MemoryStore {
 		clearances:   make(map[string]types.Clearance),
 		applications: make(map[string]types.Application),
 		routes:       make(map[string]types.RoutePolicy),
+		policyRules:  make(map[string]types.PolicyRule),
 		ipPolicies:   make(map[string]types.IPPolicy),
 		resources:    make(map[string]types.CaptchaResource),
 		deletedSeeds: make(map[string]struct{}),
@@ -287,6 +291,84 @@ func (s *MemoryStore) DeleteRoutePolicies(clientID string, ids []string) int {
 	return deleted
 }
 
+func (s *MemoryStore) ListPolicyRules(clientID string) []types.PolicyRule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]types.PolicyRule, 0, len(s.policyRules))
+	for _, rule := range s.policyRules {
+		if clientID == "" || rule.ClientID == clientID {
+			out = append(out, rule)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Priority == out[j].Priority {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].Priority > out[j].Priority
+	})
+	return out
+}
+
+func (s *MemoryStore) UpsertPolicyRule(rule types.PolicyRule) types.PolicyRule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.policyRules[rule.ID]; ok && rule.CreatedAt.IsZero() {
+		rule.CreatedAt = existing.CreatedAt
+	}
+	rule = normalizePolicyRule(rule, time.Now().UTC())
+	s.policyRules[rule.ID] = rule
+	return rule
+}
+
+func (s *MemoryStore) DeletePolicyRules(clientID string, ids []string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	deleted := 0
+	for _, id := range ids {
+		rule, ok := s.policyRules[id]
+		if !ok {
+			continue
+		}
+		if clientID != "" && rule.ClientID != clientID {
+			continue
+		}
+		delete(s.policyRules, id)
+		deleted++
+	}
+	return deleted
+}
+
+func normalizePolicyRule(rule types.PolicyRule, now time.Time) types.PolicyRule {
+	if rule.ID == "" {
+		rule.ID = newID("rule")
+	}
+	if rule.ClientID == "" {
+		rule.ClientID = "demo"
+	}
+	if rule.Scope.ClientID == "" {
+		rule.Scope.ClientID = rule.ClientID
+	}
+	if rule.Name == "" {
+		rule.Name = rule.ID
+	}
+	if rule.Status == "" {
+		rule.Status = "active"
+	}
+	if rule.Action.Type == "" {
+		rule.Action.Type = types.DecisionObserve
+	}
+	rule.Action.ChallengeEscalation = challengepkg.NormalizeConfiguredEscalation(rule.Action.ChallengeEscalation)
+	rule.RolloutPercent = routepolicy.NormalizeRolloutPercent(rule.RolloutPercent)
+	if rule.Scope.RolloutPercent != 0 {
+		rule.Scope.RolloutPercent = routepolicy.NormalizeRolloutPercent(rule.Scope.RolloutPercent)
+	}
+	if rule.CreatedAt.IsZero() {
+		rule.CreatedAt = now
+	}
+	rule.UpdatedAt = now
+	return rule
+}
+
 func (s *MemoryStore) ListIPPolicies(clientID string) []types.IPPolicy {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -396,7 +478,7 @@ func isSeedResourceID(id string) bool {
 		"res_font":
 		return true
 	default:
-		return false
+		return strings.HasPrefix(id, "res_demo_")
 	}
 }
 
@@ -508,8 +590,8 @@ func (s *MemoryStore) AddRiskFeatureSnapshot(snapshot types.RiskFeatureSnapshot)
 	defer s.mu.Unlock()
 	snapshot = prepareRiskFeatureSnapshot(snapshot)
 	s.features = append([]types.RiskFeatureSnapshot{snapshot}, s.features...)
-	if len(s.features) > 1000 {
-		s.features = s.features[:1000]
+	if len(s.features) > maxMemoryRiskFeatureSnapshots {
+		s.features = s.features[:maxMemoryRiskFeatureSnapshots]
 	}
 	return snapshot
 }
@@ -960,6 +1042,9 @@ func (s *MemoryStore) seed(now time.Time) {
 		Status:       "active",
 		CreatedAt:    now,
 		UpdatedAt:    now,
+	}
+	for _, resource := range demoClasspathImageResources(now) {
+		s.resources[resource.ID] = resource
 	}
 	s.auditEvents = append(s.auditEvents,
 		types.AuditEvent{ID: "audit_seed_1", ClientID: "demo", Scene: "login", Route: "/api/login", Action: types.DecisionChallenge, DecisionReason: "RISK_BASED", ChallengeType: types.CaptchaSlider, Result: "pass", CreatedAt: now},

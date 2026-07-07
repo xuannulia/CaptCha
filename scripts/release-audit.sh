@@ -23,8 +23,36 @@ pass() {
 
 if find . -maxdepth 1 -type f \( -iname 'LICENSE' -o -iname 'LICENSE.*' \) | grep -q .; then
 	pass "project license file exists"
+	if grep -q "GNU AFFERO GENERAL PUBLIC LICENSE" LICENSE && grep -q "Version 3, 19 November 2007" LICENSE; then
+		pass "project license is AGPL-3.0"
+	else
+		fail "project license must be AGPL-3.0-only"
+	fi
 else
 	fail "project license file is missing"
+fi
+
+if node - <<'NODE'
+const fs = require("fs");
+const files = [
+	"package.json",
+	"web/runtime/package.json",
+	"web/collector/package.json",
+	"web/admin/package.json",
+	"integrations/express-middleware/package.json"
+];
+for (const file of files) {
+	const data = JSON.parse(fs.readFileSync(file, "utf8"));
+	if (data.license !== "AGPL-3.0-only") {
+		console.error(`${file} license must be AGPL-3.0-only`);
+		process.exit(1);
+	}
+}
+NODE
+then
+	pass "workspace package licenses are AGPL-3.0-only"
+else
+	fail "workspace package licenses are not AGPL-3.0-only"
 fi
 
 if [[ -f SECURITY.md ]]; then
@@ -38,7 +66,7 @@ else
 	fail "SECURITY.md is missing"
 fi
 
-for required in README.md CONTRIBUTING.md docs/release-checklist.md docs/implementation-audit.md Makefile scripts/verify.sh scripts/smoke.sh scripts/browser-smoke.sh scripts/clean.sh scripts/check-runtime-budget.sh scripts/check-go-version.sh scripts/check-ci-contract.sh scripts/check-frontend-contract.sh scripts/check-docker-contract.sh scripts/check-http-contract.sh scripts/check-grpc-contract.sh scripts/check-captcha-types-contract.sh scripts/check-browser-smoke-contract.sh scripts/check-doc-commands.sh; do
+for required in README.md CONTRIBUTING.md docs/integration-guide.md docs/assets/demo-page.png docs/release-checklist.md docs/open-source-release.md docs/implementation-audit.md Makefile scripts/verify.sh scripts/smoke.sh scripts/browser-smoke.sh scripts/clean.sh scripts/check-runtime-budget.sh scripts/check-go-version.sh scripts/check-ci-contract.sh scripts/check-frontend-contract.sh scripts/check-docker-contract.sh scripts/check-http-contract.sh scripts/check-grpc-contract.sh scripts/check-captcha-types-contract.sh scripts/check-browser-smoke-contract.sh scripts/check-doc-commands.sh; do
 	if [[ -e "$required" ]]; then
 		pass "$required exists"
 	else
@@ -118,13 +146,13 @@ else
 	fail "documentation command contract is not aligned"
 fi
 
-if find web integrations \( -name '*.tsbuildinfo' -o -path '*/dist' \) -print | grep -q .; then
+if find web integrations \( -name '*.tsbuildinfo' -o -path '*/dist' -o -path '*/dist-captcha' -o -path '*/dist-local-captcha' \) -print | grep -q .; then
 	fail "generated frontend or middleware build outputs are present; run make clean"
 else
 	pass "no generated frontend or middleware build outputs"
 fi
 
-if [[ -d .playwright-cli || -d output ]]; then
+if [[ -d .playwright-cli || -d output || -d scripts/__pycache__ ]]; then
 	fail "local Playwright/output artifacts are present; run make clean"
 else
 	pass "no local Playwright/output artifacts"
@@ -150,6 +178,13 @@ if rg -n "BEGIN (RSA|DSA|EC|OPENSSH|PRIVATE) KEY|AKIA[0-9A-Z]{16}|xox[baprs]-|gh
 	fail "potential secret material matched release audit patterns"
 else
 	pass "no obvious private keys or common access tokens matched"
+fi
+
+if rg -n "track-risk-mouse|97\\.5%" README.md docs models >/tmp/captcha-stale-model-docs.txt; then
+	cat /tmp/captcha-stale-model-docs.txt >&2
+	fail "stale risk-model documentation references are present"
+else
+	pass "risk-model documentation avoids stale closed/internal baseline references"
 fi
 
 echo "release audit: $failures failure(s), $warnings warning(s)"

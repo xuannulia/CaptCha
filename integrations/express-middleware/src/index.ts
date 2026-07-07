@@ -1,4 +1,16 @@
-export type DecisionAction = "allow" | "challenge" | "pass" | "retry" | "challenge_harder" | "block" | "observe";
+export type DecisionAction =
+  | "allow"
+  | "challenge"
+  | "pass"
+  | "retry"
+  | "challenge_harder"
+  | "block"
+  | "observe"
+  | "skip_challenge"
+  | "step_up_challenge"
+  | "rate_limit"
+  | "cooldown"
+  | "require_business_verify";
 
 export type PolicyDecision = {
   action: DecisionAction;
@@ -8,6 +20,8 @@ export type PolicyDecision = {
   scene?: string;
   challenge_type?: string;
   ttl_seconds?: number;
+  cooldown_seconds?: number;
+  business_verify_type?: string;
   clearance_token?: string;
   clearance_ttl_seconds?: number;
 };
@@ -207,12 +221,12 @@ export function createCaptchaMiddleware(options: CaptchaMiddlewareOptions) {
         policyBreaker.recordFailure();
         throw error;
       }
-      if (decision.action === "allow" || decision.action === "observe" || decision.action === "pass") {
+      if (decision.action === "allow" || decision.action === "observe" || decision.action === "pass" || decision.action === "skip_challenge") {
         setClearance(response, normalized, decision.clearance_token, decision.clearance_ttl_seconds);
         next();
         return;
       }
-      if (decision.action === "challenge" || decision.action === "challenge_harder") {
+      if (decision.action === "challenge" || decision.action === "challenge_harder" || decision.action === "step_up_challenge" || decision.action === "rate_limit") {
         response.status(403).json({
           action: decision.action,
           reason: decision.reason,
@@ -224,8 +238,13 @@ export function createCaptchaMiddleware(options: CaptchaMiddlewareOptions) {
         });
         return;
       }
-      if (decision.action === "block") {
-        response.status(403).json({ action: "block", reason: decision.reason });
+      if (decision.action === "block" || decision.action === "cooldown" || decision.action === "require_business_verify") {
+        response.status(403).json({
+          action: decision.action,
+          reason: decision.reason,
+          cooldown_seconds: decision.cooldown_seconds,
+          business_verify_type: decision.business_verify_type
+        });
         return;
       }
       next();

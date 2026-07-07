@@ -400,7 +400,6 @@ var randomCaptchaTypePreference = []types.CaptchaType{
 	types.CaptchaSlider2,
 	types.CaptchaRotate,
 	types.CaptchaConcat,
-	types.CaptchaRotateDegree,
 	types.CaptchaWordImageClick,
 	types.CaptchaImageClick,
 	types.CaptchaJigsaw,

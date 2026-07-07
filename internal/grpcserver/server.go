@@ -129,19 +129,6 @@ func (s *Server) evaluatePolicy(ctx context.Context, req *types.PolicyEvaluateRe
 		s.auditPolicyDecision(*req, *decision)
 		return decision, nil
 	}
-	if req.Clearance != "" {
-		if clearance, err := s.deps.Store.VerifyClearance(req.Clearance, req.ClientID, req.Scene, hashValue(req.IP), hashValue(req.UserAgent), req.AccountIDHash, req.DeviceIDHash); err == nil {
-			decision := &types.PolicyDecision{
-				Action:              types.DecisionAllow,
-				Reason:              "CLEARANCE_VALID",
-				Scene:               clearance.Scene,
-				ClearanceToken:      clearance.Value,
-				ClearanceTTLSeconds: ttlSeconds(clearance.ExpiresAt, clearance.CreatedAt),
-			}
-			s.auditPolicyDecision(*req, *decision)
-			return decision, nil
-		}
-	}
 	if req.Ticket != "" {
 		if _, err := s.deps.Store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Path, req.RequestNonce, hashValue(req.IP), hashValue(req.UserAgent), true); err == nil {
 			return s.withClearance(types.PolicyDecision{Action: types.DecisionAllow, Reason: "TICKET_CONSUMED", Scene: req.Scene}, *req), nil
@@ -160,43 +147,81 @@ func (s *Server) evaluatePolicy(ctx context.Context, req *types.PolicyEvaluateRe
 			return &types.PolicyDecision{Action: types.DecisionBlock, Reason: reason, Scene: req.Scene}, nil
 		}
 	}
+	if req.Clearance != "" {
+		if evaluation, ok := s.deps.Policy.EvaluateClearanceOverride(*req); ok {
+			decision, err := s.policyDecisionWithChallengeSession(*req, evaluation)
+			if err != nil {
+				return nil, err
+			}
+			s.auditPolicyEvaluation(*req, *decision, evaluation)
+			return decision, nil
+		}
+		if clearance, err := s.deps.Store.VerifyClearance(req.Clearance, req.ClientID, req.Scene, hashValue(req.IP), hashValue(req.UserAgent), req.AccountIDHash, req.DeviceIDHash); err == nil {
+			decision := &types.PolicyDecision{
+				Action:              types.DecisionAllow,
+				Reason:              "CLEARANCE_VALID",
+				Scene:               clearance.Scene,
+				ClearanceToken:      clearance.Value,
+				ClearanceTTLSeconds: ttlSeconds(clearance.ExpiresAt, clearance.CreatedAt),
+			}
+			s.auditPolicyDecision(*req, *decision)
+			return decision, nil
+		}
+	}
 
 	if err := risk.EnrichPolicyRequest(ctx, s.deps.RiskInferencer, s.deps.Store, req); err != nil && s.deps.Logger != nil {
 		s.deps.Logger.Warn("risk inference failed", "client_id", req.ClientID, "error", err)
 	}
 	evaluation := s.deps.Policy.Evaluate(*req)
+	decision, err := s.policyDecisionWithChallengeSession(*req, evaluation)
+	if err != nil {
+		return nil, err
+	}
+	s.auditPolicyEvaluation(*req, *decision, evaluation)
+	return decision, nil
+}
+
+func (s *Server) policyDecisionWithChallengeSession(req types.PolicyEvaluateRequest, evaluation policy.Evaluation) (*types.PolicyDecision, error) {
 	decision := &types.PolicyDecision{
-		Action:        evaluation.Action,
-		Reason:        evaluation.Reason,
-		ChallengeType: evaluation.ChallengeType,
-		TTLSeconds:    evaluation.TTLSeconds,
+		Action:             evaluation.Action,
+		Reason:             evaluation.Reason,
+		Scene:              req.Scene,
+		ChallengeType:      evaluation.ChallengeType,
+		TTLSeconds:         evaluation.TTLSeconds,
+		CooldownSeconds:    evaluation.CooldownSeconds,
+		BusinessVerifyType: evaluation.BusinessVerifyType,
 	}
 	if evaluation.Route != nil {
 		decision.Scene = evaluation.Route.Scene
 	}
-	if evaluation.Action == types.DecisionChallenge {
-		scene := req.Scene
-		if evaluation.Route != nil && evaluation.Route.Scene != "" {
-			scene = evaluation.Route.Scene
-		}
-		session, err := s.deps.Engine.NewSession(req.ClientID, scene, evaluation.ChallengeType)
-		if err != nil {
-			return nil, err
-		}
-		session.ChallengeEscalation = evaluation.ChallengeEscalation
-		session.RenderPayload = resource.ApplyVisualsAndAttachForStore(s.deps.Store, session.RenderPayload, session.Answer, session.ClientID, session.Scene, session.Type, req.ResourceTag)
-		session.Route = req.Path
-		session.RequestNonce = req.RequestNonce
-		session.ResourceTag = req.ResourceTag
-		session.IPHash = hashValue(req.IP)
-		session.UserAgentHash = hashValue(req.UserAgent)
-		session.AccountIDHash = req.AccountIDHash
-		session.DeviceIDHash = req.DeviceIDHash
-		s.deps.Store.PutSession(session)
-		decision.SessionID = session.ID
-		decision.ChallengeURL = challengeURL(s.deps.RuntimeBaseURL, session.ID, req.Path, req.RequestNonce, req.ResourceTag)
-		decision.TTLSeconds = int(session.ExpiresAt.Sub(session.CreatedAt).Seconds())
+	if !types.IsChallengeLikeDecision(evaluation.Action) {
+		return decision, nil
 	}
+	scene := req.Scene
+	if evaluation.Route != nil && evaluation.Route.Scene != "" {
+		scene = evaluation.Route.Scene
+	}
+	session, err := s.deps.Engine.NewSession(req.ClientID, scene, evaluation.ChallengeType)
+	if err != nil {
+		return nil, err
+	}
+	session.ChallengeEscalation = evaluation.ChallengeEscalation
+	session.RenderPayload = resource.ApplyVisualsAndAttachForStore(s.deps.Store, session.RenderPayload, session.Answer, session.ClientID, session.Scene, session.Type, req.ResourceTag)
+	session.Route = req.Path
+	session.RequestNonce = req.RequestNonce
+	session.ResourceTag = req.ResourceTag
+	session.IPHash = hashValue(req.IP)
+	session.UserAgentHash = hashValue(req.UserAgent)
+	session.AccountIDHash = req.AccountIDHash
+	session.DeviceIDHash = req.DeviceIDHash
+	s.deps.Store.PutSession(session)
+	decision.SessionID = session.ID
+	decision.ChallengeURL = challengeURL(s.deps.RuntimeBaseURL, session.ID, req.Path, req.RequestNonce, req.ResourceTag)
+	decision.TTLSeconds = int(session.ExpiresAt.Sub(session.CreatedAt).Seconds())
+	return decision, nil
+}
+
+func (s *Server) auditPolicyEvaluation(req types.PolicyEvaluateRequest, decision types.PolicyDecision, evaluation policy.Evaluation) {
 	s.deps.Store.AddAuditEvent(types.AuditEvent{
 		ClientID:       req.ClientID,
 		Scene:          decision.Scene,
@@ -208,7 +233,6 @@ func (s *Server) evaluatePolicy(ctx context.Context, req *types.PolicyEvaluateRe
 		ChallengeType:  evaluation.ChallengeType,
 		Result:         string(evaluation.Action),
 	})
-	return decision, nil
 }
 
 func (s *Server) VerifyTicket(ctx context.Context, req *captchav1.VerifyTicketRequest) (*captchav1.VerifyTicketResponse, error) {
@@ -292,7 +316,7 @@ func (s *Server) withClearance(decision types.PolicyDecision, req types.PolicyEv
 	if ipHash == "" || userAgentHash == "" {
 		return &decision
 	}
-	clearance, err := s.deps.Tokens.IssueClearance(req.ClientID, scene, ipHash, userAgentHash, req.AccountIDHash, req.DeviceIDHash)
+	clearance, err := s.deps.Tokens.IssueClearanceWithTTL(req.ClientID, scene, ipHash, userAgentHash, req.AccountIDHash, req.DeviceIDHash, s.clearanceTTLForPolicyRequest(req))
 	if err != nil {
 		if s.deps.Logger != nil {
 			s.deps.Logger.Warn("issue grpc clearance", "client_id", req.ClientID, "scene", scene, "error", err)
@@ -314,7 +338,7 @@ func (s *Server) addClearanceToTicketResponse(response *types.TicketVerifyRespon
 	if req.IPHash == "" || req.UserAgentHash == "" {
 		return
 	}
-	clearance, err := s.deps.Tokens.IssueClearance(req.ClientID, req.Scene, req.IPHash, req.UserAgentHash, req.AccountIDHash, req.DeviceIDHash)
+	clearance, err := s.deps.Tokens.IssueClearanceWithTTL(req.ClientID, req.Scene, req.IPHash, req.UserAgentHash, req.AccountIDHash, req.DeviceIDHash, s.clearanceTTLForTicketRequest(req))
 	if err != nil {
 		if s.deps.Logger != nil {
 			s.deps.Logger.Warn("issue grpc clearance", "client_id", req.ClientID, "scene", req.Scene, "error", err)
@@ -324,6 +348,30 @@ func (s *Server) addClearanceToTicketResponse(response *types.TicketVerifyRespon
 	response.ClearanceToken = clearance.Value
 	response.ClearanceExpireAt = clearance.ExpiresAt
 	response.ClearanceTTLSeconds = ttlSeconds(clearance.ExpiresAt, clearance.CreatedAt)
+}
+
+func (s *Server) clearanceTTLForPolicyRequest(req types.PolicyEvaluateRequest) time.Duration {
+	if s.deps.Policy == nil {
+		return 0
+	}
+	route := s.deps.Policy.MatchRoute(req)
+	if route == nil || route.TokenTTLSeconds <= 0 {
+		return 0
+	}
+	return time.Duration(route.TokenTTLSeconds) * time.Second
+}
+
+func (s *Server) clearanceTTLForTicketRequest(req *types.TicketVerifyRequest) time.Duration {
+	if req == nil {
+		return 0
+	}
+	return s.clearanceTTLForPolicyRequest(types.PolicyEvaluateRequest{
+		ClientID:      req.ClientID,
+		Scene:         req.Scene,
+		Path:          req.Route,
+		AccountIDHash: req.AccountIDHash,
+		DeviceIDHash:  req.DeviceIDHash,
+	})
 }
 
 func (s *Server) GetConfig(ctx context.Context, req *captchav1.ConfigRequest) (*captchav1.ConfigSnapshot, error) {
@@ -347,6 +395,7 @@ func (s *Server) getConfig(ctx context.Context, req *types.ConfigRequest) (*type
 		ClientID:          clientID,
 		ApplicationStatus: application.Status,
 		Routes:            s.deps.Store.ListRoutePolicies(clientID),
+		PolicyRules:       s.deps.Store.ListPolicyRules(clientID),
 		IPPolicies:        s.deps.Store.ListIPPolicies(clientID),
 		Resources:         s.deps.Store.ListResources(clientID),
 		Version:           s.configVersion(),

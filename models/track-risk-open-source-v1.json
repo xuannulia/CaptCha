@@ -1,0 +1,401 @@
+{
+  "schema_version": "track-risk-model-v1",
+  "model_type": "logistic_regression",
+  "name": "track-risk-open-source",
+  "version": "v1",
+  "feature_version": "track-v1",
+  "trained_at": "2026-07-05T06:36:24.549425+00:00",
+  "label": {
+    "0": "likely_human",
+    "1": "confirmed_bot"
+  },
+  "score": {
+    "meaning": "bot probability",
+    "threshold": 0.9,
+    "threshold_policy": "conservative_open_source_default"
+  },
+  "features": [
+    {
+      "kind": "numeric",
+      "name": "track_score"
+    },
+    {
+      "kind": "numeric",
+      "name": "track_submit_points"
+    },
+    {
+      "kind": "numeric",
+      "name": "point_count"
+    },
+    {
+      "kind": "numeric",
+      "name": "original_point_count"
+    },
+    {
+      "kind": "numeric",
+      "name": "distance_x"
+    },
+    {
+      "kind": "numeric",
+      "name": "distance_y"
+    },
+    {
+      "kind": "numeric",
+      "name": "direct_distance"
+    },
+    {
+      "kind": "numeric",
+      "name": "path_length"
+    },
+    {
+      "kind": "numeric",
+      "name": "straightness"
+    },
+    {
+      "kind": "numeric",
+      "name": "max_velocity"
+    },
+    {
+      "kind": "numeric",
+      "name": "velocity_variance"
+    },
+    {
+      "kind": "numeric",
+      "name": "acceleration_variance"
+    },
+    {
+      "kind": "numeric",
+      "name": "jerk_variance"
+    },
+    {
+      "kind": "numeric",
+      "name": "y_jitter"
+    },
+    {
+      "kind": "numeric",
+      "name": "direction_changes"
+    },
+    {
+      "kind": "numeric",
+      "name": "pause_count"
+    },
+    {
+      "kind": "numeric",
+      "name": "overshoot_count"
+    },
+    {
+      "kind": "numeric",
+      "name": "micro_corrections"
+    },
+    {
+      "kind": "numeric",
+      "name": "end_stability"
+    },
+    {
+      "kind": "numeric",
+      "name": "track_reason_count"
+    },
+    {
+      "kind": "boolean",
+      "name": "too_fast"
+    },
+    {
+      "kind": "boolean",
+      "name": "too_few_points"
+    },
+    {
+      "kind": "boolean",
+      "name": "perfect_line"
+    },
+    {
+      "kind": "boolean",
+      "name": "constant_velocity"
+    },
+    {
+      "kind": "boolean",
+      "name": "synthetic_curve"
+    },
+    {
+      "kind": "boolean",
+      "name": "teleport"
+    },
+    {
+      "kind": "boolean",
+      "name": "timestamp_anomaly"
+    },
+    {
+      "kind": "boolean",
+      "name": "track_truncated"
+    }
+  ],
+  "standardizer": {
+    "mean": [
+      89.05545603821466,
+      43.78638602776534,
+      42.22212270488133,
+      43.78638602776534,
+      185.84460889685027,
+      1.18,
+      186.3948365427676,
+      202.2995633676668,
+      0.9380212942230184,
+      1924.742857889237,
+      2407881.7418084787,
+      62059365696.213,
+      2.8531396960630188e+16,
+      9.537460068666965,
+      0.22376474100612032,
+      0.3566950291088222,
+      1.299970144797731,
+      2.076503955814301,
+      29.360134348410213,
+      0.4979847738468428,
+      0.09173010897148828,
+      0.01858486341244962,
+      0.14226003881176294,
+      0.07210031347962383,
+      0.035900880728466936,
+      0.03254217047320496,
+      0.06799522316763697,
+      0.03716972682489924
+    ],
+    "scale": [
+      18.672786917716248,
+      62.99727582779774,
+      56.82583531210461,
+      62.99727582779774,
+      69.23377651038777,
+      10.127083371627004,
+      68.50107630745985,
+      76.63990810611742,
+      0.1472688235881644,
+      3589.3561750554068,
+      38491918.835582,
+      1000621430371.7318,
+      7.774486661585897e+17,
+      17.556313027596318,
+      0.5336447219765205,
+      0.797863949449358,
+      5.950477495799022,
+      3.6778396781890343,
+      49.60267174488347,
+      0.8424189849055354,
+      0.2886553568897278,
+      0.13505860847570325,
+      0.3493296843048862,
+      0.2586635886045195,
+      0.18604996924329462,
+      0.1774416175283796,
+      0.25174710146748797,
+      0.18918459130518692
+    ]
+  },
+  "weights": [
+    -0.5204008898335055,
+    -1.9100862803570342,
+    -2.6764052450800704,
+    -1.9100862803570342,
+    -0.23615604030874174,
+    -0.6294185250976587,
+    -0.39568715852565267,
+    1.7719037600094207,
+    -0.05410904193234089,
+    -1.7890274635443948,
+    0.18230626791067725,
+    0.14251214145271843,
+    0.27330350230748485,
+    -2.9872190841595905,
+    -0.02113606044060464,
+    -0.6064860512526006,
+    -0.09771724790736941,
+    -0.09285022487283184,
+    0.7067816775829311,
+    1.2470031732651263,
+    -0.38983209348566344,
+    -0.7172042754126339,
+    -0.7334042076542433,
+    2.412432002373728,
+    -0.00043213953273570007,
+    0.7816603774169484,
+    0.5139209311398354,
+    3.2988166336209916
+  ],
+  "bias": -0.4267238321199917,
+  "metrics": {
+    "train": {
+      "threshold": 0.9,
+      "accuracy": 0.7048066875653083,
+      "balanced_accuracy": 0.7515772971470915,
+      "precision": 0.9900654228252969,
+      "recall": 0.51075,
+      "specificity": 0.992404594294183,
+      "f1": 0.6738682279211677,
+      "tp": 4086,
+      "fp": 41,
+      "tn": 5357,
+      "fn": 3914,
+      "false_positive_rate": 0.0075954057058169695,
+      "false_negative_rate": 0.48925
+    },
+    "test": {
+      "threshold": 0.9,
+      "accuracy": 0.6903553299492385,
+      "balanced_accuracy": 0.7397848406226835,
+      "precision": 0.9918283963227783,
+      "recall": 0.4855,
+      "specificity": 0.994069681245367,
+      "f1": 0.6518966096005371,
+      "tp": 971,
+      "fp": 8,
+      "tn": 1341,
+      "fn": 1029,
+      "false_positive_rate": 0.005930318754633061,
+      "false_negative_rate": 0.5145
+    },
+    "threshold": 0.9,
+    "sample_counts": {
+      "total": 16747,
+      "human": 6747,
+      "bot": 10000,
+      "sources": {
+        "collector_human": 6747,
+        "synthetic_bot": 10000
+      },
+      "devices": {
+        "mouse": 7664,
+        "trackpad": 4829,
+        "touch": 2588,
+        "unknown": 1666
+      }
+    },
+    "balanced_threshold": 0.47,
+    "operating_points": {
+      "0.47": {
+        "threshold": 0.47,
+        "accuracy": 0.8928038220364288,
+        "balanced_accuracy": 0.8882926241660489,
+        "precision": 0.9092269326683292,
+        "recall": 0.9115,
+        "specificity": 0.8650852483320979,
+        "f1": 0.9103620474406992,
+        "tp": 1823,
+        "fp": 182,
+        "tn": 1167,
+        "fn": 177,
+        "false_positive_rate": 0.13491475166790215,
+        "false_negative_rate": 0.0885
+      },
+      "0.55": {
+        "threshold": 0.55,
+        "accuracy": 0.8859361003284563,
+        "balanced_accuracy": 0.8886955151964419,
+        "precision": 0.9303191489361702,
+        "recall": 0.8745,
+        "specificity": 0.9028910303928837,
+        "f1": 0.9015463917525773,
+        "tp": 1749,
+        "fp": 131,
+        "tn": 1218,
+        "fn": 251,
+        "false_positive_rate": 0.09710896960711639,
+        "false_negative_rate": 0.1255
+      },
+      "0.7": {
+        "threshold": 0.7,
+        "accuracy": 0.8232308151687071,
+        "balanced_accuracy": 0.8429516308376576,
+        "precision": 0.9518613607188704,
+        "recall": 0.7415,
+        "specificity": 0.9444032616753151,
+        "f1": 0.8336143901068016,
+        "tp": 1483,
+        "fp": 75,
+        "tn": 1274,
+        "fn": 517,
+        "false_positive_rate": 0.05559673832468495,
+        "false_negative_rate": 0.2585
+      },
+      "0.8": {
+        "threshold": 0.8,
+        "accuracy": 0.7676918483129292,
+        "balanced_accuracy": 0.7999503335804299,
+        "precision": 0.9649923896499238,
+        "recall": 0.634,
+        "specificity": 0.9659006671608599,
+        "f1": 0.7652383826191913,
+        "tp": 1268,
+        "fp": 46,
+        "tn": 1303,
+        "fn": 732,
+        "false_positive_rate": 0.0340993328391401,
+        "false_negative_rate": 0.366
+      },
+      "0.85": {
+        "threshold": 0.85,
+        "accuracy": 0.7363392057330547,
+        "balanced_accuracy": 0.7765958117123796,
+        "precision": 0.9810508182601206,
+        "recall": 0.5695,
+        "specificity": 0.9836916234247591,
+        "f1": 0.7206580196140463,
+        "tp": 1139,
+        "fp": 22,
+        "tn": 1327,
+        "fn": 861,
+        "false_positive_rate": 0.01630837657524092,
+        "false_negative_rate": 0.4305
+      },
+      "0.9": {
+        "threshold": 0.9,
+        "accuracy": 0.6903553299492385,
+        "balanced_accuracy": 0.7397848406226835,
+        "precision": 0.9918283963227783,
+        "recall": 0.4855,
+        "specificity": 0.994069681245367,
+        "f1": 0.6518966096005371,
+        "tp": 971,
+        "fp": 8,
+        "tn": 1341,
+        "fn": 1029,
+        "false_positive_rate": 0.005930318754633061,
+        "false_negative_rate": 0.5145
+      },
+      "0.92": {
+        "threshold": 0.92,
+        "accuracy": 0.6694535682293222,
+        "balanced_accuracy": 0.7224054855448481,
+        "precision": 0.9922822491730982,
+        "recall": 0.45,
+        "specificity": 0.9948109710896961,
+        "f1": 0.6191950464396285,
+        "tp": 900,
+        "fp": 7,
+        "tn": 1342,
+        "fn": 1100,
+        "false_positive_rate": 0.005189028910303929,
+        "false_negative_rate": 0.55
+      },
+      "0.95": {
+        "threshold": 0.95,
+        "accuracy": 0.6351149596894595,
+        "balanced_accuracy": 0.6942587101556709,
+        "precision": 0.9974424552429667,
+        "recall": 0.39,
+        "specificity": 0.9985174203113417,
+        "f1": 0.5607476635514019,
+        "tp": 780,
+        "fp": 2,
+        "tn": 1347,
+        "fn": 1220,
+        "false_positive_rate": 0.0014825796886582653,
+        "false_negative_rate": 0.61
+      }
+    }
+  },
+  "notes": [
+    "Open-source first baseline trained from deduped local human trajectory-feature snapshots and synthetic bot tracks.",
+    "The default high-risk threshold is conservative for open-source use; run in shadow/observe before enforcement.",
+    "This artifact uses lightweight track-v1 scalar features only and intentionally excludes source, label, bot_family, generator_version, and reason_code as model features.",
+    "Training data file: output/training/human-open-source-v1.jsonl; manifest: output/training/human-open-source-v1-manifest.json."
+  ]
+}

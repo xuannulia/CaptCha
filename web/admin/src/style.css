@@ -12,6 +12,10 @@ body {
   min-height: 100vh;
 }
 
+.app .ant-layout {
+  min-width: 0;
+}
+
 .sider {
   border-right: 1px solid #e5e7eb;
 }
@@ -30,22 +34,40 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 0 20px;
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
 }
 
+.header > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .content {
+  min-width: 0;
+  overflow-x: hidden;
   padding: 20px;
 }
 
 .header-actions {
+  min-width: 0;
   display: flex;
   align-items: center;
 }
 
 .application-scope-select {
+  flex: 0 1 220px;
   width: 220px;
+}
+
+.ant-card,
+.ant-table-wrapper {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .application-option {
@@ -460,6 +482,29 @@ body {
 @media (max-width: 700px) {
   .sider {
     display: none;
+  }
+
+  .header {
+    height: auto;
+    min-height: 56px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 10px 20px;
+  }
+
+  .header > strong {
+    width: 100%;
+    line-height: 24px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .application-scope-select {
+    flex: 1 1 auto;
+    width: auto;
   }
 
   .metric-grid,

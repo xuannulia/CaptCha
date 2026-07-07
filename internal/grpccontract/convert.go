@@ -183,6 +183,10 @@ func ConfigSnapshotFromProto(snapshot *captchav1.ConfigSnapshot) types.ConfigSna
 	for _, policy := range snapshot.GetIpPolicies() {
 		ipPolicies = append(ipPolicies, ipPolicyFromProto(policy))
 	}
+	policyRules := make([]types.PolicyRule, 0, len(snapshot.GetPolicyRules()))
+	for _, rule := range snapshot.GetPolicyRules() {
+		policyRules = append(policyRules, policyRuleFromProto(rule))
+	}
 	resources := make([]types.CaptchaResource, 0, len(snapshot.GetResources()))
 	for _, resource := range snapshot.GetResources() {
 		resources = append(resources, captchaResourceFromProto(resource))
@@ -191,6 +195,7 @@ func ConfigSnapshotFromProto(snapshot *captchav1.ConfigSnapshot) types.ConfigSna
 		ClientID:          snapshot.GetClientId(),
 		ApplicationStatus: snapshot.GetApplicationStatus(),
 		Routes:            routes,
+		PolicyRules:       policyRules,
 		IPPolicies:        ipPolicies,
 		Resources:         resources,
 		Version:           snapshot.GetVersion(),
@@ -206,6 +211,10 @@ func ConfigSnapshotToProto(snapshot types.ConfigSnapshot) *captchav1.ConfigSnaps
 	for _, policy := range snapshot.IPPolicies {
 		ipPolicies = append(ipPolicies, ipPolicyToProto(policy))
 	}
+	policyRules := make([]*captchav1.PolicyRule, 0, len(snapshot.PolicyRules))
+	for _, rule := range snapshot.PolicyRules {
+		policyRules = append(policyRules, policyRuleToProto(rule))
+	}
 	resources := make([]*captchav1.CaptchaResource, 0, len(snapshot.Resources))
 	for _, resource := range snapshot.Resources {
 		resources = append(resources, captchaResourceToProto(resource))
@@ -215,6 +224,7 @@ func ConfigSnapshotToProto(snapshot types.ConfigSnapshot) *captchav1.ConfigSnaps
 		ApplicationStatus: snapshot.ApplicationStatus,
 		Routes:            routes,
 		IpPolicies:        ipPolicies,
+		PolicyRules:       policyRules,
 		Resources:         resources,
 		Version:           snapshot.Version,
 	}
@@ -325,6 +335,54 @@ func routePolicyToProto(route types.RoutePolicy) *captchav1.RoutePolicy {
 	}
 }
 
+func policyRuleFromProto(rule *captchav1.PolicyRule) types.PolicyRule {
+	if rule == nil {
+		return types.PolicyRule{}
+	}
+	out := types.PolicyRule{
+		ID:             rule.GetId(),
+		ClientID:       rule.GetClientId(),
+		Name:           rule.GetName(),
+		Description:    rule.GetDescription(),
+		Priority:       int(rule.GetPriority()),
+		Enabled:        rule.GetEnabled(),
+		Status:         rule.GetStatus(),
+		Version:        rule.GetVersion(),
+		RolloutPercent: int(rule.GetRolloutPercent()),
+	}
+	_ = json.Unmarshal([]byte(rule.GetScopeJson()), &out.Scope)
+	_ = json.Unmarshal([]byte(rule.GetConditionsJson()), &out.Conditions)
+	_ = json.Unmarshal([]byte(rule.GetAggregationJson()), &out.Aggregation)
+	_ = json.Unmarshal([]byte(rule.GetActionJson()), &out.Action)
+	return out
+}
+
+func policyRuleToProto(rule types.PolicyRule) *captchav1.PolicyRule {
+	return &captchav1.PolicyRule{
+		Id:              rule.ID,
+		ClientId:        rule.ClientID,
+		Name:            rule.Name,
+		Description:     rule.Description,
+		Priority:        int32(rule.Priority),
+		Enabled:         rule.Enabled,
+		Status:          rule.Status,
+		Version:         rule.Version,
+		ScopeJson:       jsonString(rule.Scope),
+		ConditionsJson:  jsonString(rule.Conditions),
+		AggregationJson: jsonString(rule.Aggregation),
+		ActionJson:      jsonString(rule.Action),
+		RolloutPercent:  int32(rule.RolloutPercent),
+	}
+}
+
+func jsonString(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil || string(data) == "null" {
+		return "{}"
+	}
+	return string(data)
+}
+
 func ipPolicyFromProto(policy *captchav1.IpPolicy) types.IPPolicy {
 	if policy == nil {
 		return types.IPPolicy{}
@@ -422,11 +480,11 @@ func auditEventToProto(event types.AuditEvent) *captchav1.AuditEvent {
 
 func decisionToProto(decision types.Decision) captchav1.DecisionAction {
 	switch decision {
-	case types.DecisionAllow, types.DecisionPass:
+	case types.DecisionAllow, types.DecisionPass, types.DecisionSkipChallenge:
 		return captchav1.DecisionAction_ALLOW
-	case types.DecisionChallenge, types.DecisionChallengeHarder:
+	case types.DecisionChallenge, types.DecisionChallengeHarder, types.DecisionStepUpChallenge, types.DecisionRateLimit:
 		return captchav1.DecisionAction_CHALLENGE
-	case types.DecisionBlock:
+	case types.DecisionBlock, types.DecisionCooldown, types.DecisionBusinessVerify:
 		return captchav1.DecisionAction_BLOCK
 	case types.DecisionObserve:
 		return captchav1.DecisionAction_OBSERVE

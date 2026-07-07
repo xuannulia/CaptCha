@@ -1,0 +1,580 @@
+{
+  "model": {
+    "name": "track-risk-open-source",
+    "version": "v1",
+    "feature_version": "track-v1"
+  },
+  "threshold": 0.9,
+  "train": {
+    "threshold": 0.9,
+    "accuracy": 0.7048066875653083,
+    "balanced_accuracy": 0.7515772971470915,
+    "precision": 0.9900654228252969,
+    "recall": 0.51075,
+    "specificity": 0.992404594294183,
+    "f1": 0.6738682279211677,
+    "tp": 4086,
+    "fp": 41,
+    "tn": 5357,
+    "fn": 3914,
+    "false_positive_rate": 0.0075954057058169695,
+    "false_negative_rate": 0.48925
+  },
+  "test": {
+    "threshold": 0.9,
+    "accuracy": 0.6903553299492385,
+    "balanced_accuracy": 0.7397848406226835,
+    "precision": 0.9918283963227783,
+    "recall": 0.4855,
+    "specificity": 0.994069681245367,
+    "f1": 0.6518966096005371,
+    "tp": 971,
+    "fp": 8,
+    "tn": 1341,
+    "fn": 1029,
+    "false_positive_rate": 0.005930318754633061,
+    "false_negative_rate": 0.5145
+  },
+  "sample_counts": {
+    "total": 16747,
+    "human": 6747,
+    "bot": 10000,
+    "sources": {
+      "collector_human": 6747,
+      "synthetic_bot": 10000
+    },
+    "devices": {
+      "mouse": 7664,
+      "trackpad": 4829,
+      "touch": 2588,
+      "unknown": 1666
+    }
+  },
+  "feature_count": 28,
+  "top_weights": [
+    {
+      "feature": "track_truncated",
+      "weight": 3.2988166336209916
+    },
+    {
+      "feature": "y_jitter",
+      "weight": -2.9872190841595905
+    },
+    {
+      "feature": "point_count",
+      "weight": -2.6764052450800704
+    },
+    {
+      "feature": "constant_velocity",
+      "weight": 2.412432002373728
+    },
+    {
+      "feature": "track_submit_points",
+      "weight": -1.9100862803570342
+    },
+    {
+      "feature": "original_point_count",
+      "weight": -1.9100862803570342
+    },
+    {
+      "feature": "max_velocity",
+      "weight": -1.7890274635443948
+    },
+    {
+      "feature": "path_length",
+      "weight": 1.7719037600094207
+    },
+    {
+      "feature": "track_reason_count",
+      "weight": 1.2470031732651263
+    },
+    {
+      "feature": "teleport",
+      "weight": 0.7816603774169484
+    },
+    {
+      "feature": "perfect_line",
+      "weight": -0.7334042076542433
+    },
+    {
+      "feature": "too_few_points",
+      "weight": -0.7172042754126339
+    },
+    {
+      "feature": "end_stability",
+      "weight": 0.7067816775829311
+    },
+    {
+      "feature": "distance_y",
+      "weight": -0.6294185250976587
+    },
+    {
+      "feature": "pause_count",
+      "weight": -0.6064860512526006
+    },
+    {
+      "feature": "track_score",
+      "weight": -0.5204008898335055
+    },
+    {
+      "feature": "timestamp_anomaly",
+      "weight": 0.5139209311398354
+    },
+    {
+      "feature": "direct_distance",
+      "weight": -0.39568715852565267
+    },
+    {
+      "feature": "too_fast",
+      "weight": -0.38983209348566344
+    },
+    {
+      "feature": "jerk_variance",
+      "weight": 0.27330350230748485
+    },
+    {
+      "feature": "distance_x",
+      "weight": -0.23615604030874174
+    },
+    {
+      "feature": "velocity_variance",
+      "weight": 0.18230626791067725
+    },
+    {
+      "feature": "acceleration_variance",
+      "weight": 0.14251214145271843
+    },
+    {
+      "feature": "overshoot_count",
+      "weight": -0.09771724790736941
+    }
+  ],
+  "threshold_policy": "conservative_open_source_default",
+  "balanced_threshold": 0.47,
+  "operating_points": {
+    "0.47": {
+      "threshold": 0.47,
+      "accuracy": 0.8928038220364288,
+      "balanced_accuracy": 0.8882926241660489,
+      "precision": 0.9092269326683292,
+      "recall": 0.9115,
+      "specificity": 0.8650852483320979,
+      "f1": 0.9103620474406992,
+      "tp": 1823,
+      "fp": 182,
+      "tn": 1167,
+      "fn": 177,
+      "false_positive_rate": 0.13491475166790215,
+      "false_negative_rate": 0.0885
+    },
+    "0.55": {
+      "threshold": 0.55,
+      "accuracy": 0.8859361003284563,
+      "balanced_accuracy": 0.8886955151964419,
+      "precision": 0.9303191489361702,
+      "recall": 0.8745,
+      "specificity": 0.9028910303928837,
+      "f1": 0.9015463917525773,
+      "tp": 1749,
+      "fp": 131,
+      "tn": 1218,
+      "fn": 251,
+      "false_positive_rate": 0.09710896960711639,
+      "false_negative_rate": 0.1255
+    },
+    "0.7": {
+      "threshold": 0.7,
+      "accuracy": 0.8232308151687071,
+      "balanced_accuracy": 0.8429516308376576,
+      "precision": 0.9518613607188704,
+      "recall": 0.7415,
+      "specificity": 0.9444032616753151,
+      "f1": 0.8336143901068016,
+      "tp": 1483,
+      "fp": 75,
+      "tn": 1274,
+      "fn": 517,
+      "false_positive_rate": 0.05559673832468495,
+      "false_negative_rate": 0.2585
+    },
+    "0.8": {
+      "threshold": 0.8,
+      "accuracy": 0.7676918483129292,
+      "balanced_accuracy": 0.7999503335804299,
+      "precision": 0.9649923896499238,
+      "recall": 0.634,
+      "specificity": 0.9659006671608599,
+      "f1": 0.7652383826191913,
+      "tp": 1268,
+      "fp": 46,
+      "tn": 1303,
+      "fn": 732,
+      "false_positive_rate": 0.0340993328391401,
+      "false_negative_rate": 0.366
+    },
+    "0.85": {
+      "threshold": 0.85,
+      "accuracy": 0.7363392057330547,
+      "balanced_accuracy": 0.7765958117123796,
+      "precision": 0.9810508182601206,
+      "recall": 0.5695,
+      "specificity": 0.9836916234247591,
+      "f1": 0.7206580196140463,
+      "tp": 1139,
+      "fp": 22,
+      "tn": 1327,
+      "fn": 861,
+      "false_positive_rate": 0.01630837657524092,
+      "false_negative_rate": 0.4305
+    },
+    "0.9": {
+      "threshold": 0.9,
+      "accuracy": 0.6903553299492385,
+      "balanced_accuracy": 0.7397848406226835,
+      "precision": 0.9918283963227783,
+      "recall": 0.4855,
+      "specificity": 0.994069681245367,
+      "f1": 0.6518966096005371,
+      "tp": 971,
+      "fp": 8,
+      "tn": 1341,
+      "fn": 1029,
+      "false_positive_rate": 0.005930318754633061,
+      "false_negative_rate": 0.5145
+    },
+    "0.92": {
+      "threshold": 0.92,
+      "accuracy": 0.6694535682293222,
+      "balanced_accuracy": 0.7224054855448481,
+      "precision": 0.9922822491730982,
+      "recall": 0.45,
+      "specificity": 0.9948109710896961,
+      "f1": 0.6191950464396285,
+      "tp": 900,
+      "fp": 7,
+      "tn": 1342,
+      "fn": 1100,
+      "false_positive_rate": 0.005189028910303929,
+      "false_negative_rate": 0.55
+    },
+    "0.95": {
+      "threshold": 0.95,
+      "accuracy": 0.6351149596894595,
+      "balanced_accuracy": 0.6942587101556709,
+      "precision": 0.9974424552429667,
+      "recall": 0.39,
+      "specificity": 0.9985174203113417,
+      "f1": 0.5607476635514019,
+      "tp": 780,
+      "fp": 2,
+      "tn": 1347,
+      "fn": 1220,
+      "false_positive_rate": 0.0014825796886582653,
+      "false_negative_rate": 0.61
+    }
+  },
+  "test_by_human_device": {
+    "mouse": {
+      "threshold": 0.9,
+      "accuracy": 0.9977037887485649,
+      "balanced_accuracy": 0.49885189437428246,
+      "precision": 0.0,
+      "recall": 0,
+      "specificity": 0.9977037887485649,
+      "f1": 0,
+      "tp": 0,
+      "fp": 2,
+      "tn": 869,
+      "fn": 0,
+      "false_positive_rate": 0.002296211251435132,
+      "false_negative_rate": 0
+    },
+    "touch": {
+      "threshold": 0.9,
+      "accuracy": 0.9723756906077348,
+      "balanced_accuracy": 0.4861878453038674,
+      "precision": 0.0,
+      "recall": 0,
+      "specificity": 0.9723756906077348,
+      "f1": 0,
+      "tp": 0,
+      "fp": 5,
+      "tn": 176,
+      "fn": 0,
+      "false_positive_rate": 0.027624309392265192,
+      "false_negative_rate": 0
+    },
+    "trackpad": {
+      "threshold": 0.9,
+      "accuracy": 0.9966329966329966,
+      "balanced_accuracy": 0.4983164983164983,
+      "precision": 0.0,
+      "recall": 0,
+      "specificity": 0.9966329966329966,
+      "f1": 0,
+      "tp": 0,
+      "fp": 1,
+      "tn": 296,
+      "fn": 0,
+      "false_positive_rate": 0.003367003367003367,
+      "false_negative_rate": 0
+    }
+  },
+  "test_by_bot_family": {
+    "bezier_script": {
+      "threshold": 0.9,
+      "accuracy": 0.02586206896551724,
+      "balanced_accuracy": 0.01293103448275862,
+      "precision": 1.0,
+      "recall": 0.02586206896551724,
+      "specificity": 0,
+      "f1": 0.050420168067226885,
+      "tp": 3,
+      "fp": 0,
+      "tn": 0,
+      "fn": 113,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.9741379310344828
+    },
+    "browser_mouse": {
+      "threshold": 0.9,
+      "accuracy": 0.2916666666666667,
+      "balanced_accuracy": 0.14583333333333334,
+      "precision": 1.0,
+      "recall": 0.2916666666666667,
+      "specificity": 0,
+      "f1": 0.45161290322580644,
+      "tp": 42,
+      "fp": 0,
+      "tn": 0,
+      "fn": 102,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.7083333333333334
+    },
+    "dom_snap": {
+      "threshold": 0.9,
+      "accuracy": 0.9416666666666667,
+      "balanced_accuracy": 0.4708333333333333,
+      "precision": 1.0,
+      "recall": 0.9416666666666667,
+      "specificity": 0,
+      "f1": 0.9699570815450643,
+      "tp": 113,
+      "fp": 0,
+      "tn": 0,
+      "fn": 7,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.058333333333333334
+    },
+    "eased_linear": {
+      "threshold": 0.9,
+      "accuracy": 0.45871559633027525,
+      "balanced_accuracy": 0.22935779816513763,
+      "precision": 1.0,
+      "recall": 0.45871559633027525,
+      "specificity": 0,
+      "f1": 0.628930817610063,
+      "tp": 50,
+      "fp": 0,
+      "tn": 0,
+      "fn": 59,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.5412844036697247
+    },
+    "hyper_dense": {
+      "threshold": 0.9,
+      "accuracy": 0.9541284403669725,
+      "balanced_accuracy": 0.47706422018348627,
+      "precision": 1.0,
+      "recall": 0.9541284403669725,
+      "specificity": 0,
+      "f1": 0.9765258215962441,
+      "tp": 104,
+      "fp": 0,
+      "tn": 0,
+      "fn": 5,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.045871559633027525
+    },
+    "low_point_jump": {
+      "threshold": 0.9,
+      "accuracy": 0.9375,
+      "balanced_accuracy": 0.46875,
+      "precision": 1.0,
+      "recall": 0.9375,
+      "specificity": 0,
+      "f1": 0.967741935483871,
+      "tp": 105,
+      "fp": 0,
+      "tn": 0,
+      "fn": 7,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.0625
+    },
+    "mechanical_pause": {
+      "threshold": 0.9,
+      "accuracy": 0.16417910447761194,
+      "balanced_accuracy": 0.08208955223880597,
+      "precision": 1.0,
+      "recall": 0.16417910447761194,
+      "specificity": 0,
+      "f1": 0.28205128205128205,
+      "tp": 22,
+      "fp": 0,
+      "tn": 0,
+      "fn": 112,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.835820895522388
+    },
+    "noisy_ease": {
+      "threshold": 0.9,
+      "accuracy": 0.0,
+      "balanced_accuracy": 0.0,
+      "precision": 0,
+      "recall": 0.0,
+      "specificity": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "tn": 0,
+      "fn": 120,
+      "false_positive_rate": 0,
+      "false_negative_rate": 1.0
+    },
+    "overshoot_return": {
+      "threshold": 0.9,
+      "accuracy": 0.046875,
+      "balanced_accuracy": 0.0234375,
+      "precision": 1.0,
+      "recall": 0.046875,
+      "specificity": 0,
+      "f1": 0.08955223880597014,
+      "tp": 6,
+      "fp": 0,
+      "tn": 0,
+      "fn": 122,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.953125
+    },
+    "perfect_linear": {
+      "threshold": 0.9,
+      "accuracy": 1.0,
+      "balanced_accuracy": 0.5,
+      "precision": 1.0,
+      "recall": 1.0,
+      "specificity": 0,
+      "f1": 1.0,
+      "tp": 108,
+      "fp": 0,
+      "tn": 0,
+      "fn": 0,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.0
+    },
+    "quantized_grid": {
+      "threshold": 0.9,
+      "accuracy": 0.18333333333333332,
+      "balanced_accuracy": 0.09166666666666666,
+      "precision": 1.0,
+      "recall": 0.18333333333333332,
+      "specificity": 0,
+      "f1": 0.30985915492957744,
+      "tp": 22,
+      "fp": 0,
+      "tn": 0,
+      "fn": 98,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.8166666666666667
+    },
+    "replay_shift": {
+      "threshold": 0.9,
+      "accuracy": 0.6190476190476191,
+      "balanced_accuracy": 0.30952380952380953,
+      "precision": 1.0,
+      "recall": 0.6190476190476191,
+      "specificity": 0,
+      "f1": 0.7647058823529412,
+      "tp": 65,
+      "fp": 0,
+      "tn": 0,
+      "fn": 40,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.38095238095238093
+    },
+    "segmented_linear": {
+      "threshold": 0.9,
+      "accuracy": 0.923728813559322,
+      "balanced_accuracy": 0.461864406779661,
+      "precision": 1.0,
+      "recall": 0.923728813559322,
+      "specificity": 0,
+      "f1": 0.960352422907489,
+      "tp": 109,
+      "fp": 0,
+      "tn": 0,
+      "fn": 9,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.07627118644067797
+    },
+    "snap_end": {
+      "threshold": 0.9,
+      "accuracy": 0.0,
+      "balanced_accuracy": 0.0,
+      "precision": 0,
+      "recall": 0.0,
+      "specificity": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "tn": 0,
+      "fn": 112,
+      "false_positive_rate": 0,
+      "false_negative_rate": 1.0
+    },
+    "teleport": {
+      "threshold": 0.9,
+      "accuracy": 0.8064516129032258,
+      "balanced_accuracy": 0.4032258064516129,
+      "precision": 1.0,
+      "recall": 0.8064516129032258,
+      "specificity": 0,
+      "f1": 0.8928571428571428,
+      "tp": 75,
+      "fp": 0,
+      "tn": 0,
+      "fn": 18,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.1935483870967742
+    },
+    "timestamp_skew": {
+      "threshold": 0.9,
+      "accuracy": 1.0,
+      "balanced_accuracy": 0.5,
+      "precision": 1.0,
+      "recall": 1.0,
+      "specificity": 0,
+      "f1": 1.0,
+      "tp": 122,
+      "fp": 0,
+      "tn": 0,
+      "fn": 0,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.0
+    },
+    "touch_flick": {
+      "threshold": 0.9,
+      "accuracy": 0.19230769230769232,
+      "balanced_accuracy": 0.09615384615384616,
+      "precision": 1.0,
+      "recall": 0.19230769230769232,
+      "specificity": 0,
+      "f1": 0.32258064516129037,
+      "tp": 25,
+      "fp": 0,
+      "tn": 0,
+      "fn": 105,
+      "false_positive_rate": 0,
+      "false_negative_rate": 0.8076923076923077
+    }
+  }
+}

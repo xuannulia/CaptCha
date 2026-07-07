@@ -79,6 +79,12 @@ Challenge payloads must not expose answer or rule fields. Verify requests must r
 
 Middleware and Gateway integrations must forward business headers only through explicit allowlists.
 
+## License And Contributions
+
+CaptCha is licensed as `AGPL-3.0-only`. Contributions to the public repository are accepted under the same license unless a separate written agreement says otherwise.
+
+Do not submit code that cannot be redistributed under AGPL-3.0-only. If the project later accepts contributions for reuse in proprietary editions, that must be handled through a Contributor License Agreement or another explicit inbound licensing process.
+
 ## Frontend Guidelines
 
 The runtime should stay small and focused on rendering challenges, collecting interaction facts, and returning tickets. The admin console should stay operational and dense: configuration, audit, metrics, resources, training features, and model versions.

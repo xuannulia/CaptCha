@@ -1,8 +1,11 @@
-# syntax=docker/dockerfile:1.7
-
 ARG GO_VERSION=1.26
 
 FROM golang:${GO_VERSION}-bookworm AS build
+
+ARG GOPROXY=https://proxy.golang.org,direct
+ARG GOSUMDB=sum.golang.org
+ENV GOPROXY=${GOPROXY}
+ENV GOSUMDB=${GOSUMDB}
 
 WORKDIR /src
 
@@ -17,15 +20,19 @@ RUN CGO_ENABLED=0 \
     GOOS=${TARGETOS:-linux} \
     GOARCH=${TARGETARCH:-amd64} \
     go build -trimpath -ldflags="-s -w" -o /out/captcha-gateway ./cmd/captcha-gateway
+RUN mkdir -p /out/etc /out/tmp \
+    && printf 'captcha:x:10001:10001:Captcha:/nonexistent:/sbin/nologin\n' > /out/etc/passwd \
+    && printf 'captcha:x:10001:\n' > /out/etc/group \
+    && chmod 1777 /out/tmp
 
-FROM alpine:3.22
-
-RUN addgroup -S captcha \
-    && adduser -S -G captcha captcha \
-    && apk add --no-cache ca-certificates
+FROM scratch
 
 WORKDIR /app
 
+COPY --from=build /out/etc/passwd /etc/passwd
+COPY --from=build /out/etc/group /etc/group
+COPY --from=build /out/tmp /tmp
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/captcha-gateway /usr/local/bin/captcha-gateway
 
 USER captcha

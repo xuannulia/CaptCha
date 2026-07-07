@@ -323,6 +323,98 @@ func (s *PostgresControlStore) DeleteRoutePolicies(clientID string, ids []string
 	return s.deleteRowsByIDs("route_policies", clientID, ids)
 }
 
+func (s *PostgresControlStore) ListPolicyRules(clientID string) []types.PolicyRule {
+	ctx, cancel := context.WithTimeout(context.Background(), postgresTimeout)
+	defer cancel()
+
+	query := selectPolicyRulesSQL + `
+ORDER BY client_id ASC, priority DESC, created_at ASC`
+	args := []any(nil)
+	if clientID != "" {
+		query = selectPolicyRulesSQL + `
+WHERE client_id = $1
+ORDER BY priority DESC, created_at ASC`
+		args = append(args, clientID)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		s.logError("list policy rules", err)
+		return nil
+	}
+	defer rows.Close()
+
+	rules := make([]types.PolicyRule, 0)
+	for rows.Next() {
+		rule, err := scanPolicyRule(rows)
+		if err != nil {
+			s.logError("scan policy rule", err)
+			continue
+		}
+		rules = append(rules, rule)
+	}
+	if err := rows.Err(); err != nil {
+		s.logError("iterate policy rules", err)
+	}
+	return rules
+}
+
+func (s *PostgresControlStore) UpsertPolicyRule(rule types.PolicyRule) types.PolicyRule {
+	rule = normalizePolicyRule(rule, time.Now().UTC())
+
+	ctx, cancel := context.WithTimeout(context.Background(), postgresTimeout)
+	defer cancel()
+
+	row := s.db.QueryRowContext(ctx, `
+INSERT INTO policy_rules (
+  id, client_id, name, description, priority, enabled, status, version, scope, conditions, aggregation, action,
+  rollout_percent, created_at, updated_at
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14, $15
+)
+ON CONFLICT (id) DO UPDATE SET
+  client_id = EXCLUDED.client_id,
+  name = EXCLUDED.name,
+  description = EXCLUDED.description,
+  priority = EXCLUDED.priority,
+  enabled = EXCLUDED.enabled,
+  status = EXCLUDED.status,
+  version = EXCLUDED.version,
+  scope = EXCLUDED.scope,
+  conditions = EXCLUDED.conditions,
+  aggregation = EXCLUDED.aggregation,
+  action = EXCLUDED.action,
+  rollout_percent = EXCLUDED.rollout_percent,
+  updated_at = EXCLUDED.updated_at
+RETURNING id, client_id, name, description, priority, enabled, status, version, scope, conditions, aggregation, action,
+  rollout_percent, created_at, updated_at`,
+		rule.ID,
+		rule.ClientID,
+		rule.Name,
+		rule.Description,
+		rule.Priority,
+		rule.Enabled,
+		rule.Status,
+		rule.Version,
+		policyRuleJSON(rule.Scope),
+		policyRuleJSON(rule.Conditions),
+		policyRuleJSON(rule.Aggregation),
+		policyRuleJSON(rule.Action),
+		rule.RolloutPercent,
+		rule.CreatedAt,
+		rule.UpdatedAt,
+	)
+	saved, err := scanPolicyRule(row)
+	if err != nil {
+		s.logError("upsert policy rule", err)
+		return rule
+	}
+	return saved
+}
+
+func (s *PostgresControlStore) DeletePolicyRules(clientID string, ids []string) int {
+	return s.deleteRowsByIDs("policy_rules", clientID, ids)
+}
+
 func (s *PostgresControlStore) ListIPPolicies(clientID string) []types.IPPolicy {
 	ctx, cancel := context.WithTimeout(context.Background(), postgresTimeout)
 	defer cancel()
@@ -1062,16 +1154,25 @@ ON CONFLICT (id) DO NOTHING`,
 		{ID: "res_jigsaw_background", ClientID: "demo", CaptchaType: types.CaptchaJigsaw, ResourceType: "jigsaw_background_library", StorageType: "embedded", URI: "embedded://jigsaw-backgrounds", Tag: "default", Status: "active", CreatedAt: now, UpdatedAt: now},
 		{ID: "res_font", ClientID: "demo", CaptchaType: types.CaptchaWordImageClick, ResourceType: "font", StorageType: "embedded", URI: "embedded://default-font", Tag: "word", Status: "active", CreatedAt: now, UpdatedAt: now},
 	}
+	resources = append(resources, demoClasspathImageResources(now)...)
 	for _, resource := range resources {
+		metadata := resource.Metadata
+		if metadata == nil {
+			metadata = map[string]any{}
+		}
+		metadataJSON, err := json.Marshal(metadata)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO captcha_resources (
   id, client_id, scene, captcha_type, resource_type, storage_type, uri, tag, status, metadata, created_at, updated_at
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, '{}'::jsonb, $10, $11
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12
 )
 ON CONFLICT (id) DO NOTHING`,
 			resource.ID, resource.ClientID, resource.Scene, string(resource.CaptchaType), resource.ResourceType,
-			resource.StorageType, resource.URI, resource.Tag, resource.Status, resource.CreatedAt,
+			resource.StorageType, resource.URI, resource.Tag, resource.Status, metadataJSON, resource.CreatedAt,
 			resource.UpdatedAt,
 		); err != nil {
 			return err
@@ -1133,11 +1234,25 @@ func resourceMetadataJSON(metadata map[string]any) []byte {
 	return data
 }
 
+func policyRuleJSON(value any) []byte {
+	data, err := json.Marshal(value)
+	if err != nil || string(data) == "null" {
+		return []byte("{}")
+	}
+	return data
+}
+
 const selectRoutePoliciesSQL = `
 SELECT id, client_id, name, path_pattern, method, scene, mode, challenge_type, risk_challenge_type, challenge_escalation, fail_policy,
   priority, enabled, rollout_percent, token_ttl_seconds, risk_challenge_score, risk_block_score,
   risk_observe_score, rate_window_seconds, rate_max_requests, rate_strategy, created_at, updated_at
 FROM route_policies
+`
+
+const selectPolicyRulesSQL = `
+SELECT id, client_id, name, description, priority, enabled, status, version, scope, conditions, aggregation, action,
+  rollout_percent, created_at, updated_at
+FROM policy_rules
 `
 
 const selectIPPoliciesSQL = `
@@ -1235,6 +1350,57 @@ func scanRoutePolicy(row scanner) (types.RoutePolicy, error) {
 		route.RateLimit = &types.RateLimit{WindowSeconds: int(rateWindow.Int64), MaxRequests: int(rateMax.Int64), Strategy: normalizeRateStrategy(rateStrategy)}
 	}
 	return route, nil
+}
+
+func scanPolicyRule(row scanner) (types.PolicyRule, error) {
+	var rule types.PolicyRule
+	var scope []byte
+	var conditions []byte
+	var aggregation []byte
+	var action []byte
+	err := row.Scan(
+		&rule.ID,
+		&rule.ClientID,
+		&rule.Name,
+		&rule.Description,
+		&rule.Priority,
+		&rule.Enabled,
+		&rule.Status,
+		&rule.Version,
+		&scope,
+		&conditions,
+		&aggregation,
+		&action,
+		&rule.RolloutPercent,
+		&rule.CreatedAt,
+		&rule.UpdatedAt,
+	)
+	if err != nil {
+		return types.PolicyRule{}, err
+	}
+	if len(scope) > 0 {
+		if err := json.Unmarshal(scope, &rule.Scope); err != nil {
+			return types.PolicyRule{}, err
+		}
+	}
+	if len(conditions) > 0 {
+		if err := json.Unmarshal(conditions, &rule.Conditions); err != nil {
+			return types.PolicyRule{}, err
+		}
+	}
+	if len(aggregation) > 0 {
+		if err := json.Unmarshal(aggregation, &rule.Aggregation); err != nil {
+			return types.PolicyRule{}, err
+		}
+	}
+	if len(action) > 0 {
+		if err := json.Unmarshal(action, &rule.Action); err != nil {
+			return types.PolicyRule{}, err
+		}
+	}
+	rule.RolloutPercent = routepolicy.NormalizeRolloutPercent(rule.RolloutPercent)
+	rule.Action.ChallengeEscalation = challengepkg.NormalizeConfiguredEscalation(rule.Action.ChallengeEscalation)
+	return rule, nil
 }
 
 func normalizeRateStrategy(strategy string) string {

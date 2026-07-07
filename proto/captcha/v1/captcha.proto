@@ -100,6 +100,7 @@ message ConfigSnapshot {
   string application_status = 4;
   repeated CaptchaResource resources = 5;
   int64 version = 6;
+  repeated PolicyRule policy_rules = 7;
 }
 
 message RoutePolicy {
@@ -129,6 +130,22 @@ message RateLimit {
   int32 max_requests = 2;
   // fixed_window, sliding_window, or token_bucket.
   string strategy = 3;
+}
+
+message PolicyRule {
+  string id = 1;
+  string client_id = 2;
+  string name = 3;
+  string description = 4;
+  int32 priority = 5;
+  bool enabled = 6;
+  string status = 7;
+  string version = 8;
+  string scope_json = 9;
+  string conditions_json = 10;
+  string aggregation_json = 11;
+  string action_json = 12;
+  int32 rollout_percent = 13;
 }
 
 message IpPolicy {

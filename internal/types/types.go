@@ -32,7 +32,39 @@ const (
 	DecisionChallengeHarder Decision = "challenge_harder"
 	DecisionBlock           Decision = "block"
 	DecisionObserve         Decision = "observe"
+	DecisionSkipChallenge   Decision = "skip_challenge"
+	DecisionStepUpChallenge Decision = "step_up_challenge"
+	DecisionRateLimit       Decision = "rate_limit"
+	DecisionCooldown        Decision = "cooldown"
+	DecisionBusinessVerify  Decision = "require_business_verify"
 )
+
+func IsAllowLikeDecision(decision Decision) bool {
+	switch decision {
+	case DecisionAllow, DecisionPass, DecisionObserve, DecisionSkipChallenge:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsChallengeLikeDecision(decision Decision) bool {
+	switch decision {
+	case DecisionChallenge, DecisionChallengeHarder, DecisionStepUpChallenge, DecisionRateLimit:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsBlockLikeDecision(decision Decision) bool {
+	switch decision {
+	case DecisionBlock, DecisionCooldown, DecisionBusinessVerify:
+		return true
+	default:
+		return false
+	}
+}
 
 type SessionStatus string
 
@@ -193,6 +225,63 @@ type RateLimit struct {
 	Strategy      string `json:"strategy,omitempty"`
 }
 
+type PolicyRule struct {
+	ID             string                `json:"id"`
+	ClientID       string                `json:"client_id"`
+	Name           string                `json:"name"`
+	Description    string                `json:"description,omitempty"`
+	Priority       int                   `json:"priority"`
+	Enabled        bool                  `json:"enabled"`
+	Status         string                `json:"status,omitempty"`
+	Version        string                `json:"version,omitempty"`
+	Scope          PolicyRuleScope       `json:"scope,omitempty"`
+	Conditions     PolicyCondition       `json:"conditions,omitempty"`
+	Aggregation    PolicyRuleAggregation `json:"aggregation,omitempty"`
+	Action         PolicyRuleAction      `json:"action"`
+	RolloutPercent int                   `json:"rollout_percent,omitempty"`
+	CreatedAt      time.Time             `json:"created_at"`
+	UpdatedAt      time.Time             `json:"updated_at"`
+}
+
+type PolicyRuleScope struct {
+	ClientID       string     `json:"client_id,omitempty"`
+	Scenes         []string   `json:"scenes,omitempty"`
+	PathPatterns   []string   `json:"path_patterns,omitempty"`
+	Methods        []string   `json:"methods,omitempty"`
+	ResourceTags   []string   `json:"resource_tags,omitempty"`
+	ActiveFrom     *time.Time `json:"active_from,omitempty"`
+	ActiveUntil    *time.Time `json:"active_until,omitempty"`
+	RolloutPercent int        `json:"rollout_percent,omitempty"`
+}
+
+type PolicyCondition struct {
+	All    []PolicyCondition `json:"all,omitempty"`
+	Any    []PolicyCondition `json:"any,omitempty"`
+	Not    *PolicyCondition  `json:"not,omitempty"`
+	Field  string            `json:"field,omitempty"`
+	Op     string            `json:"op,omitempty"`
+	Value  any               `json:"value,omitempty"`
+	Values []any             `json:"values,omitempty"`
+}
+
+type PolicyRuleAggregation struct {
+	Dimensions      []string `json:"dimensions,omitempty"`
+	WindowSeconds   int      `json:"window_seconds,omitempty"`
+	MaxRequests     int      `json:"max_requests,omitempty"`
+	Strategy        string   `json:"strategy,omitempty"`
+	CooldownSeconds int      `json:"cooldown_seconds,omitempty"`
+}
+
+type PolicyRuleAction struct {
+	Type                Decision      `json:"type"`
+	Reason              string        `json:"reason,omitempty"`
+	ChallengeType       CaptchaType   `json:"challenge_type,omitempty"`
+	ChallengeEscalation []CaptchaType `json:"challenge_escalation,omitempty"`
+	TTLSeconds          int           `json:"ttl_seconds,omitempty"`
+	CooldownSeconds     int           `json:"cooldown_seconds,omitempty"`
+	BusinessVerifyType  string        `json:"business_verify_type,omitempty"`
+}
+
 type IPPolicy struct {
 	ID        string    `json:"id"`
 	ClientID  string    `json:"client_id"`
@@ -276,6 +365,8 @@ type PolicyDecision struct {
 	Scene               string      `json:"scene,omitempty"`
 	ChallengeType       CaptchaType `json:"challenge_type,omitempty"`
 	TTLSeconds          int         `json:"ttl_seconds,omitempty"`
+	CooldownSeconds     int         `json:"cooldown_seconds,omitempty"`
+	BusinessVerifyType  string      `json:"business_verify_type,omitempty"`
 	ClearanceToken      string      `json:"clearance_token,omitempty"`
 	ClearanceTTLSeconds int         `json:"clearance_ttl_seconds,omitempty"`
 }
@@ -315,6 +406,7 @@ type ConfigSnapshot struct {
 	ClientID          string            `json:"client_id"`
 	ApplicationStatus string            `json:"application_status,omitempty"`
 	Routes            []RoutePolicy     `json:"routes"`
+	PolicyRules       []PolicyRule      `json:"policy_rules,omitempty"`
 	IPPolicies        []IPPolicy        `json:"ip_policies"`
 	Resources         []CaptchaResource `json:"resources,omitempty"`
 	Version           int64             `json:"version"`

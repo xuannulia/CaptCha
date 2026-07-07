@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
 	"io"
 	"math"
@@ -49,9 +51,47 @@ func TestApplyVisualsUsesLocalFileBackground(t *testing.T) {
 	image := decodePNGDataURL(t, composed.Image)
 	assertPixel(t, image, 5, 5, background)
 	piece := decodePNGDataURL(t, composed.Piece)
-	if piece.Bounds().Dx() != 48 || piece.Bounds().Dy() != 48 {
-		t.Fatalf("expected slider piece size 48x48, got %s", piece.Bounds())
+	if piece.Bounds().Dx() != 48*sliderRenderScale || piece.Bounds().Dy() != 48*sliderRenderScale {
+		t.Fatalf("expected slider piece render size %dx%d, got %s", 48*sliderRenderScale, 48*sliderRenderScale, piece.Bounds())
 	}
+}
+
+func TestApplyVisualsPrefersUploadedBackgroundLibraryOverEmbeddedFallback(t *testing.T) {
+	t.Parallel()
+
+	background := color.RGBA{R: 201, G: 48, B: 66, A: 255}
+	path, checksum := writeTestPNG(t, 40, 30, background)
+	payload := types.RenderPayload{
+		Type:       types.CaptchaSlider,
+		View:       types.View{Width: 120, Height: 80},
+		Image:      "fallback-image",
+		Piece:      "fallback-piece",
+		Parameters: map[string]any{"piece_size": 36},
+	}
+
+	composed := ApplyVisuals(payload, types.Answer{X: 70, Y: 36}, []types.CaptchaResource{
+		{
+			ID:           "res_embedded_default",
+			ResourceType: "background_image",
+			StorageType:  "embedded",
+			URI:          "embedded://default-backgrounds",
+			Status:       "active",
+		},
+		{
+			ID:           "res_uploaded_gallery",
+			ResourceType: "background_library",
+			StorageType:  "file",
+			URI:          path,
+			Checksum:     checksum,
+			Status:       "active",
+		},
+	})
+
+	if composed.Image == payload.Image || composed.Piece == payload.Piece {
+		t.Fatalf("expected uploaded gallery background to replace generated image and piece")
+	}
+	image := decodePNGDataURL(t, composed.Image)
+	assertPixel(t, image, 5, 5, background)
 }
 
 func TestApplyVisualsUsesRemoteURLBackground(t *testing.T) {
@@ -328,13 +368,13 @@ func TestApplyVisualsUsesSliderTemplateMask(t *testing.T) {
 	})
 
 	piece := decodePNGDataURL(t, composed.Piece)
-	if piece.Bounds().Dx() != 48 || piece.Bounds().Dy() != 48 {
-		t.Fatalf("expected slider resource piece to honor piece_size, got %s", piece.Bounds())
+	if piece.Bounds().Dx() != 48*sliderRenderScale || piece.Bounds().Dy() != 48*sliderRenderScale {
+		t.Fatalf("expected slider resource piece to honor render-scaled piece_size, got %s", piece.Bounds())
 	}
 	if alphaAt(t, piece, 0, 0) != 0 {
 		t.Fatalf("expected transparent corner from slider template mask")
 	}
-	if alphaAt(t, piece, 24, 24) == 0 {
+	if alphaAt(t, piece, 24*sliderRenderScale, 24*sliderRenderScale) == 0 {
 		t.Fatalf("expected opaque center from slider template mask")
 	}
 }
@@ -365,7 +405,7 @@ func TestApplyVisualsUsesDefaultSliderMaskWhenTemplateMissing(t *testing.T) {
 	if alphaAt(t, piece, 0, 0) != 0 {
 		t.Fatalf("expected default slider fallback to keep transparent corners")
 	}
-	if alphaAt(t, piece, 24, 24) == 0 {
+	if alphaAt(t, piece, 24*sliderRenderScale, 24*sliderRenderScale) == 0 {
 		t.Fatalf("expected default slider fallback to draw an opaque body")
 	}
 }
@@ -403,8 +443,9 @@ func TestApplyVisualsKeepsSliderFallbackSizeAlignedWithEngine(t *testing.T) {
 
 			composed := ApplyVisuals(payload, types.Answer{X: 140, Y: 60}, resources)
 			piece := decodePNGDataURL(t, composed.Piece)
-			if piece.Bounds().Dx() != tt.wantSize || piece.Bounds().Dy() != tt.wantSize {
-				t.Fatalf("expected %s fallback piece size %dx%d, got %s", tt.captchaType, tt.wantSize, tt.wantSize, piece.Bounds())
+			wantRenderSize := tt.wantSize * sliderRenderScale
+			if piece.Bounds().Dx() != wantRenderSize || piece.Bounds().Dy() != wantRenderSize {
+				t.Fatalf("expected %s fallback piece render size %dx%d, got %s", tt.captchaType, wantRenderSize, wantRenderSize, piece.Bounds())
 			}
 			if got := renderParameterInt(composed.Parameters, "piece_size", 0); got != tt.wantSize {
 				t.Fatalf("expected %s payload piece_size %d, got %d", tt.captchaType, tt.wantSize, got)
@@ -497,6 +538,7 @@ func TestComposedSliderPieceHasNoOutsideShadow(t *testing.T) {
 	_, piece := composeSlider(base, types.Answer{X: target.X, Y: target.Y}, mask, size)
 	actualMask := resizeAlphaMask(mask, size, size)
 
+	assertImageHasAntialiasedEdge(t, piece, "slider piece")
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
 			if colorAlpha(actualMask.At(x, y)) > 4 {
@@ -508,7 +550,7 @@ func TestComposedSliderPieceHasNoOutsideShadow(t *testing.T) {
 		}
 	}
 
-	assertSliderPieceHasInnerBorder(t, piece, base, target, size, func(x, y int) uint8 {
+	assertSliderPieceHasSolidInnerBorder(t, piece, base, target, size, func(x, y int) uint8 {
 		if x < 0 || y < 0 || x >= size || y >= size {
 			return 0
 		}
@@ -881,6 +923,7 @@ func TestApplyVisualsUsesFontMetadata(t *testing.T) {
 			Metadata: map[string]any{
 				"glyph_scale": 4,
 				"palette":     []any{"#ff0000"},
+				"distort":     false,
 				"glyphs": map[string]any{
 					"A": []any{"1"},
 				},
@@ -890,7 +933,7 @@ func TestApplyVisualsUsesFontMetadata(t *testing.T) {
 	})
 
 	image := decodePNGDataURL(t, composed.Image)
-	assertPixel(t, image, 28, 28, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+	assertPixel(t, image, 58, 58, color.RGBA{R: 255, G: 0, B: 0, A: 255})
 }
 
 func TestApplyVisualsDrawsChineseWordGlyphs(t *testing.T) {
@@ -921,10 +964,62 @@ func TestApplyVisualsDrawsChineseWordGlyphs(t *testing.T) {
 	})
 
 	image := decodePNGDataURL(t, composed.Image)
-	assertRegionChanged(t, image, 8, 8, 32, 32, background)
-	assertRegionChanged(t, image, 58, 8, 32, 32, background)
-	assertRegionChanged(t, image, 8, 42, 32, 32, background)
-	assertRegionChanged(t, image, 58, 42, 32, 32, background)
+	assertRegionChanged(t, image, 24, 24, 48, 48, background)
+	assertRegionChanged(t, image, 124, 24, 48, 48, background)
+	assertRegionChanged(t, image, 24, 92, 48, 48, background)
+	assertRegionChanged(t, image, 124, 92, 48, 48, background)
+}
+
+func TestBlockGlyphDistortionIsClampedForReadability(t *testing.T) {
+	t.Parallel()
+
+	if got := blockGlyphDistortionStrength(1.5); got != wordBlockGlyphMaxDistort {
+		t.Fatalf("block glyph distortion should be clamped to %.2f, got %.2f", wordBlockGlyphMaxDistort, got)
+	}
+	if got := blockGlyphDistortionStrength(-1); got != 0 {
+		t.Fatalf("negative block glyph distortion should disable distortion, got %.2f", got)
+	}
+}
+
+func TestDrawBlockGlyphKeepsNearEdgeGlyphInsideCanvas(t *testing.T) {
+	t.Parallel()
+
+	background := color.RGBA{R: 245, G: 245, B: 245, A: 255}
+	img := image.NewRGBA(image.Rect(0, 0, 80, 60))
+	draw.Draw(img, img.Bounds(), &image.Uniform{C: background}, image.Point{}, draw.Src)
+
+	drawBlockGlyph(img, "目", 6, 6, 5, color.RGBA{R: 37, G: 99, B: 235, A: 255}, nil, wordGlyphDefaultDistort)
+
+	if borderHasChangedPixel(img, background) {
+		t.Fatal("near-edge word glyph should be moved inside the image instead of being clipped at the border")
+	}
+	assertRegionChanged(t, img, 6, 6, 44, 44, background)
+}
+
+func TestDistortWordGlyphLayerKeepsDrawablePixels(t *testing.T) {
+	t.Parallel()
+
+	layer := image.NewRGBA(image.Rect(0, 0, 40, 40))
+	fillRect(layer, 12, 8, 12, 24, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+	fillRect(layer, 8, 18, 24, 8, color.RGBA{R: 37, G: 99, B: 235, A: 255})
+
+	distorted := distortWordGlyphLayer(layer, wordGlyphDistortionStyle{
+		Strength:   1,
+		Angle:      0.24,
+		ShearX:     0.16,
+		ShearY:     -0.08,
+		ScaleX:     1.08,
+		ScaleY:     0.94,
+		WaveX:      1.2,
+		WaveY:      -0.8,
+		WaveLength: 18,
+		PhaseX:     0.7,
+		PhaseY:     1.3,
+	})
+	if distorted.Bounds().Dx() <= layer.Bounds().Dx() || distorted.Bounds().Dy() <= layer.Bounds().Dy() {
+		t.Fatalf("distorted glyph should keep transform padding, got %s from %s", distorted.Bounds(), layer.Bounds())
+	}
+	assertRegionChanged(t, distorted, 8, 8, 36, 36, color.RGBA{})
 }
 
 func TestApplyVisualsComposesGestureOnBackground(t *testing.T) {
@@ -1479,6 +1574,63 @@ func TestApplyVisualsUsesGridCategoryLibrary(t *testing.T) {
 	assertPixel(t, img, 250, 50, decoyColor)
 }
 
+func TestApplyVisualsAvoidsDuplicateGridImagesWhenLibraryIsLargeEnough(t *testing.T) {
+	t.Parallel()
+
+	resources := make([]types.CaptchaResource, 0, 12)
+	for categoryIndex, category := range []string{"car", "bus"} {
+		for index := 0; index < 6; index++ {
+			c := color.RGBA{
+				R: uint8(30 + categoryIndex*100 + index*8),
+				G: uint8(40 + categoryIndex*40 + index*11),
+				B: uint8(80 + categoryIndex*30 + index*9),
+				A: 255,
+			}
+			path := filepath.Join(t.TempDir(), category, fmt.Sprintf("%02d.png", index))
+			_ = writeTestPNGAt(t, path, 100, 100, c)
+			resources = append(resources, types.CaptchaResource{
+				ID:           fmt.Sprintf("res_grid_%s_%02d", category, index),
+				ResourceType: "grid_category_library",
+				StorageType:  "file",
+				URI:          path,
+				Metadata:     map[string]any{"category": category, "label": category},
+				Status:       "active",
+			})
+		}
+	}
+
+	payload := types.RenderPayload{
+		Type:   types.CaptchaGridImageClick,
+		Prompt: "选择所有包含蓝色圆形的图片",
+		View:   types.View{Width: 300, Height: 300},
+		Image:  "fallback-image",
+		Parameters: map[string]any{
+			"tile_cols":   3,
+			"tile_rows":   3,
+			"tile_width":  100,
+			"tile_height": 100,
+		},
+	}
+	answer := types.Answer{Points: []types.Point{
+		{X: 50, Y: 50},
+		{X: 150, Y: 150},
+		{X: 250, Y: 250},
+	}}
+
+	composed := ApplyVisuals(payload, answer, resources)
+	img := decodePNGDataURL(t, composed.Image)
+	seen := make(map[color.RGBA]struct{})
+	for row := 0; row < 3; row++ {
+		for col := 0; col < 3; col++ {
+			rgba := color.RGBAModel.Convert(img.At(col*100+50, row*100+50)).(color.RGBA)
+			seen[rgba] = struct{}{}
+		}
+	}
+	if len(seen) != 9 {
+		t.Fatalf("expected 9 unique grid tile images, got %d unique colors: %+v", len(seen), seen)
+	}
+}
+
 func writeTestPNG(t *testing.T, width, height int, c color.RGBA) (string, string) {
 	t.Helper()
 	path := t.TempDir() + "/background.png"
@@ -1621,28 +1773,45 @@ func rgbaDelta(a, b color.RGBA) int {
 	return absInt(int(a.R)-int(b.R)) + absInt(int(a.G)-int(b.G)) + absInt(int(a.B)-int(b.B)) + absInt(int(a.A)-int(b.A))
 }
 
-func assertSliderPieceHasInnerBorder(t *testing.T, piece, source image.Image, sourceOrigin image.Point, size int, maskAlphaAt func(int, int) uint8, edgeAt func(int, int) float64) {
+func assertSliderPieceHasSolidInnerBorder(t *testing.T, piece, source image.Image, sourceOrigin image.Point, size int, maskAlphaAt func(int, int) uint8, edgeAt func(int, int) float64) {
 	t.Helper()
 	borderPixels := 0
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			if maskAlphaAt(x, y) < 140 || edgeAt(x, y) < 0.15 {
+			if maskAlphaAt(x, y) <= 4 || edgeAt(x, y) < 0.15 {
 				continue
 			}
 			sourcePixel := rgbaAt(source, sourceOrigin.X+x, sourceOrigin.Y+y)
 			piecePixel := rgbaAt(piece, x, y)
-			if luminance(sourcePixel)-luminance(piecePixel) > 8 {
+			if piecePixel.A > 4 && luminance(sourcePixel)-luminance(piecePixel) >= 8 {
 				borderPixels++
 			}
 		}
 	}
 	if borderPixels < size/2 {
-		t.Fatalf("slider piece should have a semi-transparent inner border, darkened edge pixels=%d", borderPixels)
+		t.Fatalf("slider piece should have a 0.75 black inner border, matching border pixels=%d", borderPixels)
 	}
 }
 
 func luminance(c color.RGBA) float64 {
 	return 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+}
+
+func assertImageHasAntialiasedEdge(t *testing.T, img image.Image, label string) {
+	t.Helper()
+	bounds := img.Bounds()
+	partialPixels := 0
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			alpha := alphaAt(t, img, x, y)
+			if alpha != 0 && alpha != 255 {
+				partialPixels++
+			}
+		}
+	}
+	if partialPixels < bounds.Dx()/2 {
+		t.Fatalf("%s should retain antialiased edge pixels, partial alpha pixels=%d", label, partialPixels)
+	}
 }
 
 func testAlphaBounds(t *testing.T, img image.Image, threshold uint8) (image.Rectangle, bool) {
@@ -1747,6 +1916,26 @@ func assertRegionChanged(t *testing.T, img image.Image, x, y, width, height int,
 		}
 	}
 	t.Fatalf("expected region %d,%d %dx%d to differ from background %+v", x, y, width, height, background)
+}
+
+func borderHasChangedPixel(img image.Image, background color.RGBA) bool {
+	bounds := img.Bounds()
+	for x := bounds.Min.X; x < bounds.Max.X; x++ {
+		if pixelRGBA(img, x, bounds.Min.Y) != background || pixelRGBA(img, x, bounds.Max.Y-1) != background {
+			return true
+		}
+	}
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		if pixelRGBA(img, bounds.Min.X, y) != background || pixelRGBA(img, bounds.Max.X-1, y) != background {
+			return true
+		}
+	}
+	return false
+}
+
+func pixelRGBA(img image.Image, x, y int) color.RGBA {
+	r, g, b, a := img.At(x, y).RGBA()
+	return color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

@@ -93,6 +93,18 @@ func (s *HybridStore) DeleteRoutePolicies(clientID string, ids []string) int {
 	return s.control.DeleteRoutePolicies(clientID, ids)
 }
 
+func (s *HybridStore) ListPolicyRules(clientID string) []types.PolicyRule {
+	return s.control.ListPolicyRules(clientID)
+}
+
+func (s *HybridStore) UpsertPolicyRule(rule types.PolicyRule) types.PolicyRule {
+	return s.control.UpsertPolicyRule(rule)
+}
+
+func (s *HybridStore) DeletePolicyRules(clientID string, ids []string) int {
+	return s.control.DeletePolicyRules(clientID, ids)
+}
+
 func (s *HybridStore) ListIPPolicies(clientID string) []types.IPPolicy {
 	return s.control.ListIPPolicies(clientID)
 }

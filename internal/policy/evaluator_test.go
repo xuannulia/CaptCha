@@ -72,6 +72,98 @@ func TestIPPolicySingleAddressBlocklist(t *testing.T) {
 	}
 }
 
+func TestPolicyRuleSkipChallengePrecedesRoutePolicy(t *testing.T) {
+	t.Parallel()
+
+	memoryStore := store.NewMemoryStore()
+	memoryStore.UpsertRoutePolicy(types.RoutePolicy{
+		ID:              "route_rule_precedence",
+		ClientID:        "demo",
+		Name:            "register fallback",
+		PathPattern:     "/api/register",
+		Method:          "POST",
+		Scene:           "register",
+		Mode:            "always",
+		ChallengeType:   types.CaptchaSlider,
+		Priority:        100,
+		Enabled:         true,
+		TokenTTLSeconds: 120,
+	})
+	memoryStore.UpsertPolicyRule(types.PolicyRule{
+		ID:       "rule_trusted_subject_low_risk",
+		ClientID: "demo",
+		Name:     "trusted subject low risk",
+		Priority: 200,
+		Enabled:  true,
+		Scope: types.PolicyRuleScope{
+			PathPatterns: []string{"/api/register"},
+			Methods:      []string{"POST"},
+		},
+		Conditions: types.PolicyCondition{All: []types.PolicyCondition{
+			{Field: "account_id_hash", Op: "exists"},
+			{Field: "device_id_hash", Op: "exists"},
+			{Field: "risk_score", Op: "lt", Value: 30},
+		}},
+		Action: types.PolicyRuleAction{
+			Type:   types.DecisionSkipChallenge,
+			Reason: "TRUSTED_SUBJECT_LOW_RISK",
+		},
+	})
+
+	evaluation := NewEvaluator(memoryStore).Evaluate(types.PolicyEvaluateRequest{
+		ClientID:      "demo",
+		Path:          "/api/register",
+		Method:        "POST",
+		AccountIDHash: "acct_trusted",
+		DeviceIDHash:  "device_trusted",
+		RiskScore:     12,
+	})
+	if evaluation.Action != types.DecisionSkipChallenge || evaluation.Reason != "TRUSTED_SUBJECT_LOW_RISK" || evaluation.PolicyRule == nil {
+		t.Fatalf("expected policy rule skip challenge, got %+v", evaluation)
+	}
+}
+
+func TestPolicyRuleAggregationChallengesAfterLimit(t *testing.T) {
+	t.Parallel()
+
+	memoryStore := store.NewMemoryStore()
+	memoryStore.UpsertPolicyRule(types.PolicyRule{
+		ID:       "rule_account_rate",
+		ClientID: "demo",
+		Name:     "account rate",
+		Priority: 100,
+		Enabled:  true,
+		Scope: types.PolicyRuleScope{
+			PathPatterns: []string{"/api/comment"},
+			Methods:      []string{"POST"},
+		},
+		Conditions:  types.PolicyCondition{Field: "account_id_hash", Op: "exists"},
+		Aggregation: types.PolicyRuleAggregation{Dimensions: []string{"account_id_hash"}, WindowSeconds: 60, MaxRequests: 1},
+		Action: types.PolicyRuleAction{
+			Type:          types.DecisionRateLimit,
+			Reason:        "ACCOUNT_RATE_LIMIT",
+			ChallengeType: types.CaptchaRotate,
+		},
+	})
+	evaluator := NewEvaluator(memoryStore)
+	req := types.PolicyEvaluateRequest{
+		ClientID:      "demo",
+		Path:          "/api/comment",
+		Method:        "POST",
+		Scene:         "comment",
+		AccountIDHash: "acct_rate",
+	}
+
+	first := evaluator.Evaluate(req)
+	if first.Action != types.DecisionAllow || first.Reason != "POLICY_RULE_AGGREGATION_UNDER_LIMIT" {
+		t.Fatalf("expected first request under policy rule aggregation, got %+v", first)
+	}
+	second := evaluator.Evaluate(req)
+	if second.Action != types.DecisionRateLimit || second.Reason != "ACCOUNT_RATE_LIMIT" || second.ChallengeType != types.CaptchaRotate {
+		t.Fatalf("expected second request to trigger policy rule rate limit, got %+v", second)
+	}
+}
+
 func TestRateLimitUsesAccountAndDeviceDimensions(t *testing.T) {
 	t.Parallel()
 
@@ -196,6 +288,73 @@ func TestRoutePolicyRolloutSkipsToLowerPriorityRoute(t *testing.T) {
 	}
 	if evaluation.Action != types.DecisionAllow || evaluation.Reason != "MANUAL_BYPASS" {
 		t.Fatalf("expected fallback manual bypass, got %+v", evaluation)
+	}
+}
+
+func TestAppWideRoutePolicyMatchesAnyPathAndMethod(t *testing.T) {
+	t.Parallel()
+
+	memoryStore := store.NewMemoryStore()
+	memoryStore.UpsertRoutePolicy(types.RoutePolicy{
+		ID:              "route_app_wide",
+		ClientID:        "demo",
+		Name:            "app wide",
+		PathPattern:     "",
+		Method:          "",
+		Scene:           "app",
+		Mode:            "manual_bypass",
+		Priority:        100,
+		Enabled:         true,
+		RolloutPercent:  100,
+		TokenTTLSeconds: 120,
+	})
+
+	evaluation := NewEvaluator(memoryStore).Evaluate(types.PolicyEvaluateRequest{
+		ClientID: "demo",
+		Path:     "/any/path",
+		Method:   "PATCH",
+		IP:       "198.51.100.8",
+	})
+	if evaluation.Route == nil || evaluation.Route.ID != "route_app_wide" {
+		t.Fatalf("expected app-wide route to match, got %+v", evaluation.Route)
+	}
+	if evaluation.Action != types.DecisionAllow || evaluation.Reason != "MANUAL_BYPASS" {
+		t.Fatalf("expected app-wide manual bypass, got %+v", evaluation)
+	}
+}
+
+func TestForceChallengeRouteOverridesClearance(t *testing.T) {
+	t.Parallel()
+
+	memoryStore := store.NewMemoryStore()
+	memoryStore.UpsertRoutePolicy(types.RoutePolicy{
+		ID:              "route_sms_force",
+		ClientID:        "demo",
+		Name:            "sms force",
+		PathPattern:     "/api/sms/send",
+		Method:          "POST",
+		Scene:           "sms",
+		Mode:            "force_challenge",
+		ChallengeType:   types.CaptchaSlider,
+		Priority:        100,
+		Enabled:         true,
+		RolloutPercent:  100,
+		TokenTTLSeconds: 120,
+	})
+	evaluator := NewEvaluator(memoryStore)
+	req := types.PolicyEvaluateRequest{
+		ClientID:  "demo",
+		Path:      "/api/sms/send",
+		Method:    "POST",
+		Clearance: "cap_clearance_existing",
+	}
+
+	evaluation, ok := evaluator.EvaluateClearanceOverride(req)
+	if !ok {
+		t.Fatal("expected force challenge route to override clearance")
+	}
+	if evaluation.Action != types.DecisionChallenge || evaluation.Reason != "FORCE_CHALLENGE" || evaluation.Route == nil || evaluation.Route.ID != "route_sms_force" {
+		t.Fatalf("expected force challenge evaluation, got %+v", evaluation)
 	}
 }
 

@@ -20,9 +20,13 @@ type Evaluation struct {
 	Action              types.Decision
 	Reason              string
 	Route               *types.RoutePolicy
+	PolicyRule          *types.PolicyRule
+	RuleExplanation     []string
 	ChallengeType       types.CaptchaType
 	ChallengeEscalation []types.CaptchaType
 	TTLSeconds          int
+	CooldownSeconds     int
+	BusinessVerifyType  string
 }
 
 func NewEvaluator(store store.Store) *Evaluator {
@@ -41,6 +45,24 @@ func (e *Evaluator) EvaluateIP(req types.PolicyEvaluateRequest) (types.Decision,
 	return e.evaluateIP(req)
 }
 
+func (e *Evaluator) EvaluateClearanceOverride(req types.PolicyEvaluateRequest) (Evaluation, bool) {
+	if req.ClientID == "" {
+		req.ClientID = "demo"
+	}
+	route := e.matchRoute(req)
+	if route == nil || !routeForcesChallenge(route) {
+		return Evaluation{}, false
+	}
+	return e.evaluateRoute(req, route, false), true
+}
+
+func (e *Evaluator) MatchRoute(req types.PolicyEvaluateRequest) *types.RoutePolicy {
+	if req.ClientID == "" {
+		req.ClientID = "demo"
+	}
+	return e.matchRoute(req)
+}
+
 func (e *Evaluator) evaluate(req types.PolicyEvaluateRequest, dryRun bool) Evaluation {
 	if req.ClientID == "" {
 		req.ClientID = "demo"
@@ -50,13 +72,31 @@ func (e *Evaluator) evaluate(req types.PolicyEvaluateRequest, dryRun bool) Evalu
 		return Evaluation{Action: action, Reason: reason}
 	}
 
+	if evaluation, ok := e.evaluatePolicyRules(req, dryRun); ok {
+		return evaluation
+	}
+
 	route := e.matchRoute(req)
 	if route == nil {
 		return Evaluation{Action: types.DecisionAllow, Reason: "NO_ROUTE_POLICY"}
 	}
 
+	return e.evaluateRoute(req, route, dryRun)
+}
+
+func (e *Evaluator) evaluateRoute(req types.PolicyEvaluateRequest, route *types.RoutePolicy, dryRun bool) Evaluation {
 	mode := strings.ToLower(strings.TrimSpace(route.Mode))
 	switch mode {
+	case "force_challenge", "always_challenge":
+		challengeType := e.chooseChallengeType(req, route, "FORCE_CHALLENGE")
+		return Evaluation{
+			Action:              types.DecisionChallenge,
+			Reason:              "FORCE_CHALLENGE",
+			Route:               route,
+			ChallengeType:       challengeType,
+			ChallengeEscalation: route.ChallengeEscalation,
+			TTLSeconds:          ttl(route),
+		}
 	case "always":
 		challengeType := e.chooseChallengeType(req, route, "ALWAYS")
 		return Evaluation{
@@ -82,6 +122,156 @@ func (e *Evaluator) evaluate(req types.PolicyEvaluateRequest, dryRun bool) Evalu
 		return Evaluation{Action: types.DecisionAllow, Reason: "MANUAL_BYPASS", Route: route}
 	default:
 		return Evaluation{Action: types.DecisionAllow, Reason: "UNKNOWN_MODE", Route: route}
+	}
+}
+
+func routeForcesChallenge(route *types.RoutePolicy) bool {
+	if route == nil {
+		return false
+	}
+	mode := strings.ToLower(strings.TrimSpace(route.Mode))
+	return mode == "force_challenge" || mode == "always_challenge"
+}
+
+func (e *Evaluator) evaluatePolicyRules(req types.PolicyEvaluateRequest, dryRun bool) (Evaluation, bool) {
+	evaluation := EvaluatePolicyRules(e.store.ListPolicyRules(req.ClientID), req, time.Now().UTC())
+	if !evaluation.Matched {
+		return Evaluation{}, false
+	}
+	if ruleAggregationConfigured(evaluation.Rule.Aggregation) {
+		return e.evaluatePolicyRuleAggregation(req, evaluation, dryRun), true
+	}
+	return e.evaluationFromPolicyRule(req, evaluation), true
+}
+
+func (e *Evaluator) evaluatePolicyRuleAggregation(req types.PolicyEvaluateRequest, ruleEvaluation RuleEvaluation, dryRun bool) Evaluation {
+	aggregation := ruleEvaluation.Rule.Aggregation
+	base := e.evaluationFromPolicyRule(req, ruleEvaluation)
+	base.RuleExplanation = append(base.RuleExplanation, "aggregation configured")
+	keys := policyRuleAggregationKeys(req, *ruleEvaluation.Rule, aggregation)
+	if len(keys) == 0 {
+		base.Action = types.DecisionAllow
+		base.Reason = "POLICY_RULE_AGGREGATION_NO_KEY"
+		base.ChallengeType = ""
+		base.ChallengeEscalation = nil
+		base.TTLSeconds = 0
+		base.RuleExplanation = append(base.RuleExplanation, "aggregation skipped because no dimension value was present")
+		return base
+	}
+	if dryRun {
+		base.Action = types.DecisionObserve
+		base.Reason = "POLICY_RULE_AGGREGATION_DRY_RUN"
+		base.RuleExplanation = append(base.RuleExplanation, "aggregation counter not read or incremented")
+		return base
+	}
+	window := time.Duration(aggregation.WindowSeconds) * time.Second
+	for _, key := range keys {
+		if e.store.IncrementRate(key, window, aggregation.MaxRequests, aggregation.Strategy) > aggregation.MaxRequests {
+			base.RuleExplanation = append(base.RuleExplanation, "aggregation threshold exceeded")
+			return base
+		}
+	}
+	base.Action = types.DecisionAllow
+	base.Reason = "POLICY_RULE_AGGREGATION_UNDER_LIMIT"
+	base.ChallengeType = ""
+	base.ChallengeEscalation = nil
+	base.TTLSeconds = 0
+	base.RuleExplanation = append(base.RuleExplanation, "aggregation threshold not exceeded")
+	return base
+}
+
+func (e *Evaluator) evaluationFromPolicyRule(req types.PolicyEvaluateRequest, ruleEvaluation RuleEvaluation) Evaluation {
+	action := ruleEvaluation.Action
+	if action.Type == "" {
+		action.Type = types.DecisionObserve
+	}
+	evaluation := Evaluation{
+		Action:              action.Type,
+		Reason:              ruleEvaluation.Reason,
+		PolicyRule:          ruleEvaluation.Rule,
+		RuleExplanation:     append([]string(nil), ruleEvaluation.Explanation...),
+		ChallengeEscalation: action.ChallengeEscalation,
+		TTLSeconds:          policyRuleTTL(action),
+		CooldownSeconds:     action.CooldownSeconds,
+		BusinessVerifyType:  action.BusinessVerifyType,
+	}
+	if types.IsChallengeLikeDecision(action.Type) {
+		evaluation.ChallengeType = e.choosePolicyRuleChallengeType(req, action, ruleEvaluation.Reason)
+	}
+	if action.Type == types.DecisionCooldown && evaluation.CooldownSeconds <= 0 && ruleEvaluation.Rule != nil {
+		evaluation.CooldownSeconds = ruleEvaluation.Rule.Aggregation.CooldownSeconds
+	}
+	return evaluation
+}
+
+func (e *Evaluator) choosePolicyRuleChallengeType(req types.PolicyEvaluateRequest, action types.PolicyRuleAction, reason string) types.CaptchaType {
+	return resource.ChooseCaptchaType(
+		e.store.ListResources(req.ClientID),
+		action.ChallengeType,
+		req.Scene,
+		req.ResourceTag,
+		autoChallengePreferences(req.Scene, "policy_rule", reason),
+	)
+}
+
+func policyRuleTTL(action types.PolicyRuleAction) int {
+	if action.TTLSeconds > 0 {
+		return action.TTLSeconds
+	}
+	return 120
+}
+
+func ruleAggregationConfigured(aggregation types.PolicyRuleAggregation) bool {
+	return aggregation.WindowSeconds > 0 && aggregation.MaxRequests > 0 && len(aggregation.Dimensions) > 0
+}
+
+func policyRuleAggregationKeys(req types.PolicyEvaluateRequest, rule types.PolicyRule, aggregation types.PolicyRuleAggregation) []string {
+	keys := make([]string, 0, len(aggregation.Dimensions))
+	for _, dimension := range aggregation.Dimensions {
+		name := normalizeAggregationDimension(dimension)
+		value := policyRuleAggregationDimensionValue(req, name)
+		if value == "" {
+			continue
+		}
+		keys = append(keys, strings.Join([]string{"policy_rule_rate", req.ClientID, rule.ID, name, value}, ":"))
+	}
+	return keys
+}
+
+func normalizeAggregationDimension(dimension string) string {
+	dimension = strings.ToLower(strings.TrimSpace(dimension))
+	switch dimension {
+	case "account", "account_id":
+		return "account_id_hash"
+	case "device", "device_id":
+		return "device_id_hash"
+	case "ua":
+		return "user_agent"
+	default:
+		return dimension
+	}
+}
+
+func policyRuleAggregationDimensionValue(req types.PolicyEvaluateRequest, dimension string) string {
+	switch dimension {
+	case "ip":
+		return strings.TrimSpace(req.IP)
+	case "account_id_hash":
+		return strings.TrimSpace(req.AccountIDHash)
+	case "device_id_hash":
+		return strings.TrimSpace(req.DeviceIDHash)
+	case "user_agent":
+		return strings.TrimSpace(req.UserAgent)
+	case "scene":
+		return strings.TrimSpace(req.Scene)
+	case "path":
+		return strings.TrimSpace(req.Path)
+	case "method":
+		return strings.ToUpper(strings.TrimSpace(req.Method))
+	case "resource_tag":
+		return strings.TrimSpace(req.ResourceTag)
+	default:
+		return ""
 	}
 }
 
@@ -365,6 +555,11 @@ func rolloutContext(req types.PolicyEvaluateRequest) routepolicy.RolloutContext 
 }
 
 func matchPath(pattern, path string) bool {
+	pattern = strings.TrimSpace(pattern)
+	path = strings.TrimSpace(path)
+	if pattern == "" || pattern == "*" {
+		return true
+	}
 	if pattern == path {
 		return true
 	}

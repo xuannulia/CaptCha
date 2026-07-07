@@ -1,25 +1,62 @@
 # CaptCha
 
-CaptCha is an open-source human verification platform. It is designed as a hosted verification runtime plus policy, ticket, and gateway/middleware integration layer rather than as a traditional CAPTCHA SDK.
+CaptCha is a human verification platform for teams that want the challenge, policy, ticket, gateway, resource gallery, audit, and risk feedback loop to live on the server side.
 
-See [docs/architecture-design.md](docs/architecture-design.md) for the current design.
+It is not a tiny browser widget. The browser renders the challenge and sends interaction facts back; the platform keeps answers, scoring rules, short-lived tickets, clearance, rate limits, and policy decisions out of the page.
 
-Project guides:
+![CaptCha demo page](docs/assets/demo-page.png)
 
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-- [Release checklist](docs/release-checklist.md)
-- [Implementation audit](docs/implementation-audit.md)
+License: [AGPL-3.0-only](LICENSE).
 
-License: not selected yet. Choose and add a license before publishing the repository as open source.
+## Start Here
 
-## Development
+If you are opening the project for the first time, start with the demo page. It lets you try every bundled challenge type before you wire CaptCha into an application.
 
 Run the Go API server:
 
 ```bash
 go run ./cmd/captcha-server
 ```
+
+Start the iframe runtime in another terminal:
+
+```bash
+npm run dev:runtime
+```
+
+Then open:
+
+```text
+http://localhost:5173/demo
+```
+
+The local demo uses the seeded `demo` application and packaged materials under `resources/captcha-demo`. It covers `RANDOM`, gesture, curve, slider, rotation, concat, word click, icon click, jigsaw, and image-grid challenges.
+
+## Choose An Integration Path
+
+Read the docs in this order. The list starts with the smallest useful integration and ends with the paths that need more platform ownership.
+
+| Step | Path | When It Fits |
+|---|---|---|
+| 0 | Demo only | You want to inspect challenge behavior and material quality before touching an app. |
+| 1 | Runtime iframe + ticket verify | You can add a verification iframe and one backend ticket check. This is the smallest production-shaped path. |
+| 2 | Express middleware | Your service is Node/Express and you want CaptCha to sit in normal request middleware. |
+| 3 | Gateway reverse proxy | You want to protect an existing HTTP service without editing every route. |
+| 4 | Direct HTTP/gRPC APIs | You are integrating CaptCha into a gateway, service mesh, or custom platform layer. |
+| 5 | Admin and operations | You are ready to tune policies, materials, audit, samples, model versions, and release gates. |
+
+The practical walkthrough is in [docs/integration-guide.md](docs/integration-guide.md). The system design and security boundaries live in [docs/architecture-design.md](docs/architecture-design.md).
+
+Other useful docs:
+
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Release checklist](docs/release-checklist.md)
+- [Open-source release notes](docs/open-source-release.md)
+- [USA deployment baseline](docs/usa-deployment.md)
+- [Implementation audit](docs/implementation-audit.md)
+
+## Local Development
 
 Default listeners:
 
@@ -119,7 +156,7 @@ Serve classpath captcha resources from packaged local directories:
 CAPTCHA_RESOURCE_CLASSPATH_DIRS='./resources:./configs/resources' go run ./cmd/captcha-server
 ```
 
-When unset, classpath lookup uses `./resources` and `./configs/resources`. A resource URI such as `classpath://backgrounds/login.png` resolves inside one of those roots and cannot escape with `..`.
+When unset, classpath lookup uses `./resources` and `./configs/resources`. A resource URI such as `classpath://backgrounds/login.png` resolves inside one of those roots and cannot escape with `..`. The demo seed includes lightweight packaged images under `resources/captcha-demo` for generic backgrounds, concat/jigsaw dedicated backgrounds, rotate challenges, and image-grid category tiles.
 
 Run the platform with PostgreSQL and Redis through Docker Compose:
 
@@ -185,6 +222,14 @@ npm run dev:runtime
 
 Open `http://localhost:5173/demo` for a local captcha demo with `RANDOM` plus `GESTURE`, `CURVE`, `CURVE_V2`, `CURVE_V3`, `SLIDER`, `SLIDER_V2`, `ROTATE`, `CONCAT`, `ROTATE_DEGREE`, `WORD_IMAGE_CLICK`, `IMAGE_CLICK`, `JIGSAW`, and `GRID_IMAGE_CLICK`.
 
+Open `http://localhost:5173/collect?input_device=mouse` for lightweight slider-track collection without loading full captcha challenges. The collector shows a real slider bar with randomized short, medium, long, slow, fast, and adjustment tasks, then submits automatically on release. Use `input_device=mouse`, `input_device=trackpad`, or `input_device=touch` to explicitly label the collection device; browsers usually report both mouse and trackpad as `mouse`. Set `CAPTCHA_COLLECTOR_TOKEN` on the API server and pass `collector_token` in the collection URL to protect the ingestion endpoint:
+
+```bash
+CAPTCHA_COLLECTOR_TOKEN='change-me-collector' go run ./cmd/captcha-server
+```
+
+Collector samples are stored as `likely_human` / `collector` with `model_trainable=false` so public collection traffic cannot directly poison the training set.
+
 The runtime accepts `session_id`, `client_id`, `scene`, `captcha_type`, `route`, `return_url`, `request_nonce`, and `resource_tag` query parameters. When `route`, `request_nonce`, IP hash, or user-agent hash is present on the server-side session, the issued ticket is bound to that context and the success `postMessage` includes the same route and nonce. A runtime opened with only `session_id` recovers route, nonce, resource tag, and return URL from the server-side session before verify. In top-level redirect mode, a successful verification redirects to an allowlisted absolute `http` or `https` `return_url` with `captcha_ticket`, `captcha_session_id`, and bound context query parameters. Ticket verification or consumption must pass the same bound context.
 
 Tickets remain one-time credentials. A successful consume can mint a short-lived clearance token for normal follow-up requests in the same `client_id` and `scene`; integrations must send the request IP and User-Agent hashes during consume to receive clearance. Clearance is stored server-side and bound to IP hash, User-Agent hash, and any supplied `account_id_hash` or `device_id_hash`; anonymous flows should use the browser clearance cookie and, when available, a device or anonymous visitor hash instead of treating IP as a blanket allowlist.
@@ -199,13 +244,20 @@ Run the admin console:
 npm run dev:admin
 ```
 
-The admin console can create applications, route policies, IP policies, captcha gallery materials, risk model version records, and sample-review feedback through the platform admin API. It also provides policy dry-run simulation for checking the matched route and decision without consuming tickets, creating challenge sessions, incrementing rate counters, or writing audit events. Route policies support `rollout_percent` for stable percentage rollout and `challenge_escalation` for route-specific upgraded challenges; route policies, IP policies, and gallery materials can be deleted with config audit events. The overview page uses `/api/v1/admin/metrics` to show operational totals, recent audit distribution, material health, material hit/failure analysis, trainable sample counts, and enabled model counts. Audit events and sample snapshots support server-side filters for operational review. Application client secrets are generated by the backend, returned once on rotation, stored only as hashes, and exposed to the admin console only as a `has_secret` status.
+The admin console can create applications, route policies, IP policies, captcha gallery materials, risk model version records, and sample-review feedback through the platform admin API. It also provides policy dry-run simulation for checking the matched route and decision without consuming tickets, creating challenge sessions, incrementing rate counters, or writing audit events. Route policies support site-wide scope by leaving `path_pattern` and `method` empty, route-level overrides such as `force_challenge` for endpoints that must verify every request, `token_ttl_seconds` for minted clearance lifetime, `rollout_percent` for stable percentage rollout, and `challenge_escalation` for route-specific upgraded challenges; route policies, IP policies, and gallery materials can be deleted with config audit events. The overview page uses `/api/v1/admin/metrics` to show operational totals, recent audit distribution, material health, material hit/failure analysis, trainable sample counts, and enabled model counts. Audit events and sample snapshots support server-side filters for operational review. Application client secrets are generated by the backend, returned once on rotation, stored only as hashes, and exposed to the admin console only as a `has_secret` status.
 
 Successful admin configuration changes are written to audit events with `CONFIG_*` reasons and hashed admin IP context.
 
-Active captcha resources are validated on upsert, including resource type, storage type, URI scheme, safe remote host checks, optional dimensions, MIME type, size, checksum, and metadata. They are selected when a challenge is created or refreshed and are returned as `challenge.parameters.resources` with runtime metadata sanitized to remove answer, target, tolerance, rule, secret, and token fields. Selection uses `client_id`, `scene`, `captcha_type`, and optional `resource_tag`; exact captcha-type and scene resources are preferred over fallback resources. When a route or iframe session asks for `AUTO`, the platform chooses a concrete captcha type from scene/risk preferences and resource availability. `classpath`, local `file`, remote `url`, `object_storage`, and `database` base64/data URL background resources can be server-composed into PNG challenge images with size, response MIME, decoded MIME, declared dimensions, checksum, unsafe-host, and classpath traversal checks, while the embedded PNG generator remains the fallback so server answers are not exposed as inspectable SVG attributes. Object storage resources can use metadata direct URLs such as `public_url` or `presigned_url`, or construct a fetch URL from `endpoint` / `base_url` plus an `s3`/`oss`/`cos`/`obs`/`minio` bucket/key URI. Server-side composition also consumes `slider_template` masks, `rotate_template` overlays, `concat_template` JSON/metadata moving/static split settings, and `font` metadata for word-click glyph scale, palette, and custom block glyphs. The resource model also accepts `background_library`, `concat_background_library`, `jigsaw_background_library`, `rotate_library`, `grid_category_library`, and `icon_library`: CONCAT and JIGSAW use their dedicated background galleries instead of generic backgrounds, because these challenge types need images chosen for alignment continuity, tile distinctiveness, and human pass difficulty rather than appearance alone. ROTATE uses the dedicated rotate library and server-crops a circular rotating image, image-grid challenges use category galleries, icon-click can use built-in/provided SVG icon libraries, and other visual captchas should draw from captcha-specific background libraries instead of a single fixed image. `CONCAT` uses a static lower half plus one transparent moving upper half; the background no longer exposes a target gap, answer-equivalent `initial_offset`, or legacy `split_x` fields. `CURVE` / `CURVE_V2` / `CURVE_V3` render target curves into server PNG images and do not expose target curve points in `curve_profile`.
+Active captcha resources are validated on upsert, including resource type, storage type, URI scheme, safe remote host checks, optional dimensions, MIME type, size, checksum, and metadata. They are selected when a challenge is created or refreshed and are returned as `challenge.parameters.resources` with runtime metadata sanitized to remove answer, target, tolerance, rule, secret, and token fields. Selection uses `client_id`, `scene`, `captcha_type`, and optional `resource_tag`; exact captcha-type and scene resources are preferred over fallback resources. When a route or iframe session asks for `AUTO`, the platform chooses a concrete captcha type from scene/risk preferences and resource availability. `classpath`, local `file`, remote `url`, `object_storage`, and `database` base64/data URL background resources can be server-composed into PNG challenge images with size, response MIME, decoded MIME, declared dimensions, checksum, unsafe-host, and classpath traversal checks, while the embedded PNG generator remains the fallback so server answers are not exposed as inspectable SVG attributes. Object storage resources can use metadata direct URLs such as `public_url` or `presigned_url`, or construct a fetch URL from `endpoint` / `base_url` plus an `s3`/`oss`/`cos`/`obs`/`minio` bucket/key URI. Server-side composition also consumes `slider_template` masks, `rotate_template` overlays, `concat_template` JSON/metadata moving/static split settings, and `font` metadata for word-click `font_path`, `font_size`, glyph scale, palette, custom block glyphs, and per-glyph distortion controls such as `distortion_strength` or `distort=false`. The resource model also accepts `background_library`, `concat_background_library`, `jigsaw_background_library`, `rotate_library`, `grid_category_library`, and `icon_library`: CONCAT and JIGSAW use their dedicated background galleries instead of generic backgrounds, because these challenge types need images chosen for alignment continuity, tile distinctiveness, and human pass difficulty rather than appearance alone. ROTATE uses the dedicated rotate library and server-crops a circular rotating image, image-grid challenges use category galleries, icon-click can use built-in/provided SVG icon libraries, and other visual captchas should draw from captcha-specific background libraries instead of a single fixed image. `CONCAT` uses a static lower half plus one transparent moving upper half; the background no longer exposes a target gap, answer-equivalent `initial_offset`, or legacy `split_x` fields. `CURVE` / `CURVE_V2` / `CURVE_V3` render target curves into server PNG images and do not expose target curve points in `curve_profile`.
 
-Risk feature snapshots are collected asynchronously after verification. They include track statistics and a sanitized list of matched resource IDs/types for material hit analysis, without resource URI, metadata, checksum, or answer data. Admin users can update snapshot labels from manual review or business feedback and only explicit human/bot labels can be marked trainable. Risk model versions can be registered, enabled, and restored from the admin API/console with `shadow`, `observe`, or `enforce` mode metadata. When an enabled model version matches the feature version, the platform adds a server-side shadow score to the stored feature snapshot. Online training is not in the request path. For backend/Gateway integrations, `risk_based` route policies can optionally use server-side `risk_score`, `risk_level`, and `model_score` context with route thresholds; `shadow` model mode is ignored for decisions, while `observe` and `enforce` model modes participate only as risk-score inputs. The platform can also enrich policy evaluation from an optional external inference service before applying route thresholds; the call sends hashed IP/User-Agent context and enabled model metadata, and failures are logged then degraded to the existing request context.
+Risk feature snapshots are collected asynchronously after verification. They include track statistics, coarse runtime input metadata, and a sanitized list of matched resource IDs/types for material hit analysis, without resource URI, metadata, checksum, or answer data. Runtime input metadata records browser pointer type and collection hints such as `input_device=mouse`, `input_device=trackpad`, or `input_device=touch`; browsers usually report both mouse and trackpad as `mouse`, so trackpad datasets should use the explicit collection hint. Admin users can update snapshot labels from manual review or business feedback and only explicit human/bot labels can be marked trainable. Risk model versions can be registered, enabled, and restored from the admin API/console with `shadow`, `observe`, or `enforce` mode metadata. When an enabled model version matches the feature version, the platform adds a server-side shadow score to the stored feature snapshot. Online training is not in the request path. For backend/Gateway integrations, `risk_based` route policies can optionally use server-side `risk_score`, `risk_level`, and `model_score` context with route thresholds; `shadow` model mode is ignored for decisions, while `observe` and `enforce` model modes participate only as risk-score inputs. The platform can also enrich policy evaluation from an optional external inference service before applying route thresholds; the call sends hashed IP/User-Agent context and enabled model metadata, and failures are logged then degraded to the existing request context.
+
+Synthetic bot track samples can be generated locally as JSONL negative samples for offline model experiments. The generator writes confirmed bot labels and trainable feature records, but it does not train or enable a model:
+
+```bash
+make synthetic-bot-tracks
+# writes output/synthetic-bot-tracks.jsonl
+```
 
 ```bash
 CAPTCHA_RISK_INFERENCE_URL=http://localhost:9000/infer \
@@ -232,7 +284,7 @@ The gateway consumes `X-Captcha-Ticket` first when present. It sends the protect
 
 For `risk_based` route thresholds, the gateway also forwards `X-Captcha-Risk-Score`, `X-Captcha-Risk-Level`, `X-Captcha-Model-Score`, and `X-Captcha-Model-Mode`. Override these names with `CAPTCHA_RISK_SCORE_HEADER`, `CAPTCHA_RISK_LEVEL_HEADER`, `CAPTCHA_MODEL_SCORE_HEADER`, and `CAPTCHA_MODEL_MODE_HEADER` when needed.
 
-When a ticket is sent to the HTTP or gRPC policy evaluation API, the platform treats it as authoritative: valid tickets are consumed, allowed, and can return `clearance_token`; invalid, expired, consumed, or context-mismatched tickets return a block decision instead of falling back to normal no-ticket policy evaluation. When `clearance` is sent instead, the platform allows only if the server-side clearance token and its bound IP, User-Agent, account, and device context still match; otherwise it falls back to normal policy evaluation.
+When a ticket is sent to the HTTP or gRPC policy evaluation API, the platform treats it as authoritative: valid tickets are consumed, allowed, and can return `clearance_token`; invalid, expired, consumed, or context-mismatched tickets return a block decision instead of falling back to normal no-ticket policy evaluation. When `clearance` is sent instead, the platform first checks whether the matched route is a `force_challenge` override; those routes ignore existing clearance and return a new challenge. Other routes allow only if the server-side clearance token and its bound IP, User-Agent, account, and device context still match; otherwise they fall back to normal policy evaluation.
 
 Use gRPC for the gateway policy path:
 
@@ -256,7 +308,7 @@ CAPTCHA_GATEWAY_CONFIG_CACHE=true \
   go run ./cmd/captcha-gateway
 ```
 
-The cache subscribes to `ConfigService.WatchConfig` and handles deterministic local decisions such as static IP allow/block, no matched route, `manual_bypass`, `silent`, and `observe`. Ticket consumption, challenge creation, rate limits, and risk decisions still go through the platform.
+The cache subscribes to `ConfigService.WatchConfig` and handles deterministic local decisions such as static IP allow/block, no matched route, app-wide `manual_bypass`, `silent`, and `observe`. Ticket consumption, challenge creation, rate limits, and risk decisions still go through the platform.
 
 The gateway asynchronously reports local cache decisions, ticket consume results, and fail-open/fail-close outcomes through the platform event API. Remote policy decisions are already audited by the platform policy service. Set `CAPTCHA_GATEWAY_EVENT_BATCH_SIZE`, `CAPTCHA_GATEWAY_EVENT_FLUSH_INTERVAL`, and optionally `CAPTCHA_GATEWAY_EVENT_QUEUE_SIZE` to enable bounded queue batching for these gateway event reports.
 
@@ -291,7 +343,7 @@ CAPTCHA_TRUSTED_PROXY_CIDRS=10.0.0.0/8,192.168.0.0/16 \
 
 IP policies accept CIDR ranges or a single IP address. The platform and gateway local cache apply IP policy precedence as allowlist, then blocklist, then other IP policies.
 
-Route `rate_limit` policies count IP, `account_id_hash`, and `device_id_hash` dimensions independently. Any dimension crossing the route threshold triggers a challenge. Rate limits default to `fixed_window`; set `rate_limit.strategy` to `sliding_window` for rolling-window counting or `token_bucket` for burst-tolerant refill behavior in memory or Redis. `risk_based` policies can set `risk_observe_score`, `risk_challenge_score`, and `risk_block_score`; when a backend, Gateway, or middleware supplies `risk_score`, `risk_level`, or an `observe`/`enforce` `model_score`, the platform applies those thresholds. `risk_challenge_type` can upgrade the captcha type only for risk-score challenges, while `challenge_type` remains the default. `challenge_escalation` overrides the platform escalation sequence for sessions created by that route. `rollout_percent` uses stable hashing over account, device, IP, User-Agent, or path context, and rollout misses continue matching lower-priority policies.
+Route policies match exact paths, trailing `*` prefixes, or the whole app when `path_pattern` is empty or `*`; an empty `method` matches every HTTP method. Use app-wide `always` for site-wide protection that challenges only when no valid clearance exists, and use high-priority `force_challenge` for endpoints such as SMS send that must verify every request even when a site-wide clearance is present. Route `token_ttl_seconds` controls the clearance lifetime minted after a ticket is consumed for that route. Route `rate_limit` policies count IP, `account_id_hash`, and `device_id_hash` dimensions independently. Any dimension crossing the route threshold triggers a challenge. Rate limits default to `fixed_window`; set `rate_limit.strategy` to `sliding_window` for rolling-window counting or `token_bucket` for burst-tolerant refill behavior in memory or Redis. `risk_based` policies can set `risk_observe_score`, `risk_challenge_score`, and `risk_block_score`; when a backend, Gateway, or middleware supplies `risk_score`, `risk_level`, or an `observe`/`enforce` `model_score`, the platform applies those thresholds. `risk_challenge_type` can upgrade the captcha type only for risk-score challenges, while `challenge_type` remains the default. `challenge_escalation` overrides the platform escalation sequence for sessions created by that route. `rollout_percent` uses stable hashing over account, device, IP, User-Agent, or path context, and rollout misses continue matching lower-priority policies.
 
 Use the Express reference middleware:
 
@@ -354,7 +406,7 @@ Run the optional real-browser smoke test:
 make browser-smoke
 ```
 
-This starts the platform, runtime, and admin console on temporary local ports, then uses Playwright CLI to verify that the runtime renders all four captcha types, failed verification shows a retry state, and the admin console can load overview, application data, and every primary admin route.
+This starts the platform, runtime, and admin console on temporary local ports, then uses Playwright CLI to verify the runtime captcha matrix, representative success/failure interactions, and every primary admin route.
 
 Run the release audit before publishing:
 
@@ -362,7 +414,15 @@ Run the release audit before publishing:
 make release-audit
 ```
 
-This intentionally fails until release blockers such as the project license, private security reporting channel, and Docker image build environment are ready.
+This should report `0 failure(s), 0 warning(s)` before a public tag. It checks the license, security contact, CI and Docker contracts, API docs, browser-smoke route coverage, generated outputs, local browser artifacts, Docker daemon access, and common secret patterns.
+
+Build the release Docker images:
+
+```bash
+make docker-build
+```
+
+`make docker-build` passes `DOCKER_GOPROXY` and `DOCKER_GOSUMDB` into the Docker builds. Override them when CI or local network policy requires different Go module services.
 
 Remove generated build outputs and local browser artifacts after ad hoc build runs:
 

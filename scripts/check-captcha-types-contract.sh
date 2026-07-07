@@ -11,6 +11,8 @@ fail() {
 
 concrete_types=(GESTURE CURVE CURVE_V2 CURVE_V3 SLIDER SLIDER_V2 ROTATE CONCAT ROTATE_DEGREE WORD_IMAGE_CLICK IMAGE_CLICK JIGSAW GRID_IMAGE_CLICK)
 go_constants=(CaptchaGesture CaptchaCurve CaptchaCurve2 CaptchaCurve3 CaptchaSlider CaptchaSlider2 CaptchaRotate CaptchaConcat CaptchaRotateDegree CaptchaWordImageClick CaptchaImageClick CaptchaJigsaw CaptchaGridImageClick)
+public_admin_types=(GESTURE CURVE CURVE_V2 CURVE_V3 SLIDER SLIDER_V2 ROTATE CONCAT WORD_IMAGE_CLICK IMAGE_CLICK JIGSAW GRID_IMAGE_CLICK)
+hidden_compatible_types=(ROTATE_DEGREE)
 
 grep -Eq 'CaptchaAuto[[:space:]]+CaptchaType[[:space:]]*=[[:space:]]*"AUTO"' internal/types/types.go ||
 	fail "Go captcha type constants must include AUTO"
@@ -27,8 +29,23 @@ for i in "${!concrete_types[@]}"; do
 		fail "internal/engine/engine.go must reference types.$go_constant"
 	grep -Fq "\"${captcha_type}\"" web/runtime/src/main.tsx ||
 		fail "web/runtime/src/main.tsx must support rendered type $captcha_type"
-	grep -Fq "\"${captcha_type}\"" web/admin/src/main.tsx ||
-		fail "web/admin/src/main.tsx must expose admin option $captcha_type"
+done
+
+admin_types_block="$(awk '
+	/const captchaTypes = \[/ { in_block = 1 }
+	in_block { print }
+	in_block && /^\];/ { exit }
+' web/admin/src/main.tsx)"
+
+for captcha_type in "${public_admin_types[@]}"; do
+	grep -Fq "\"${captcha_type}\"" <<<"$admin_types_block" ||
+		fail "web/admin/src/main.tsx must expose public admin option $captcha_type"
+done
+
+for captcha_type in "${hidden_compatible_types[@]}"; do
+	if grep -Fq "\"${captcha_type}\"" <<<"$admin_types_block"; then
+		fail "web/admin/src/main.tsx must hide compatible-only type $captcha_type from public admin options"
+	fi
 done
 
 supported_block="$(awk '

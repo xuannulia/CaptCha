@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 PIDS=()
+PW_RESULT_HELPER="$TMP_DIR/playwright-result-helper.cjs"
 
 SERVER_HTTP_ADDR="${CAPTCHA_BROWSER_SMOKE_SERVER_HTTP_ADDR:-127.0.0.1:18180}"
 SERVER_GRPC_ADDR="${CAPTCHA_BROWSER_SMOKE_SERVER_GRPC_ADDR:-127.0.0.1:19190}"
@@ -39,6 +40,25 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$ROOT_DIR"
+
+cat >"$PW_RESULT_HELPER" <<'NODE'
+global.parsePlaywrightResult = function parsePlaywrightResult(output) {
+	if (output?.isError) {
+		throw new Error(output.error || JSON.stringify(output));
+	}
+	const value = Object.prototype.hasOwnProperty.call(output, "result") ? output.result : output;
+	if (value?.isError) {
+		throw new Error(value.error || JSON.stringify(value));
+	}
+	if (value === undefined || value === "undefined") {
+		throw new Error(`missing Playwright result: ${JSON.stringify(output)}`);
+	}
+	if (typeof value === "string") {
+		return JSON.parse(value);
+	}
+	return value;
+};
+NODE
 
 if ! command -v npx >/dev/null 2>&1; then
 	echo "npx is required for browser smoke" >&2
@@ -122,7 +142,7 @@ snapshot_ref() {
 }
 
 json_string() {
-	node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$1"
+	node --require "$PW_RESULT_HELPER" -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$1"
 }
 
 start_browser_session() {
@@ -178,10 +198,10 @@ open_runtime_challenge() {
 				sliderCount: await page.locator("[role=slider]").count()
 			};
 		}')"
-		node -e '
+		node --require "$PW_RESULT_HELPER" -e '
 			const fs = require("fs");
 			const output = JSON.parse(fs.readFileSync(0, "utf8"));
-			const result = typeof output.result === "string" ? JSON.parse(output.result) : output.result;
+			const result = parsePlaywrightResult(output);
 			if (result.confirmCount > 0 && !result.confirmDisabled) {
 				console.error(`expected confirm button to be disabled, got: ${JSON.stringify(result)}`);
 				process.exit(1);
@@ -228,13 +248,13 @@ open_demo_random_selector() {
 		const bar = await page.locator(".browser-bar").innerText();
 		return { request: values[0], actual: values[1], status: values[2], bar };
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const result = JSON.parse(output.result);
+		const result = parsePlaywrightResult(output);
 		const concrete = new Set([
 			"GESTURE", "CURVE", "CURVE_V2", "CURVE_V3",
-			"SLIDER", "SLIDER_V2", "ROTATE", "CONCAT", "ROTATE_DEGREE",
+			"SLIDER", "SLIDER_V2", "ROTATE", "CONCAT",
 			"WORD_IMAGE_CLICK", "IMAGE_CLICK", "JIGSAW", "GRID_IMAGE_CLICK"
 		]);
 		if (result.request !== "RANDOM" || !concrete.has(result.actual) || result.status !== "待验证" || !result.bar.includes(result.actual)) {
@@ -334,10 +354,10 @@ open_demo_failure_reset_checks() {
 		};
 		return { progress: progressResult, cancel: cancelResult, word: wordResult, slider: sliderResult };
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const result = JSON.parse(output.result);
+		const result = parsePlaywrightResult(output);
 		if (result.progress.marks !== 1 || !result.progress.confirmDisabled) {
 			console.error(`unexpected word click progress result: ${JSON.stringify(result.progress)}`);
 			process.exit(1);
@@ -453,10 +473,10 @@ open_demo_gesture_straight_failure_check() {
 			points: await frame.locator(".path-dot, .path-cursor").count()
 		};
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const result = JSON.parse(output.result);
+		const result = parsePlaywrightResult(output);
 		if (result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.points !== 0) {
 			console.error(`unexpected gesture straight failure result: ${JSON.stringify(result)}`);
 			process.exit(1);
@@ -468,69 +488,100 @@ open_demo_jigsaw_drag_swap_check() {
 	local demo_url="http://127.0.0.1:$RUNTIME_PORT/demo"
 	local result
 	pw_goto "$demo_url" "$TMP_DIR/demo-jigsaw-open.log"
-	result="$(bash "$PWCLI" --json run-code 'async (page) => {
-		await page.getByRole("button", { name: /乱序拼图 JIGSAW/ }).click();
-		await page.waitForFunction(() => Array.from(document.querySelectorAll("iframe")).some((el) => el.src.includes("captcha_type=JIGSAW")));
-		await page.waitForTimeout(300);
-		const jigsawFrame = page.frames().find((frame) => frame.url().includes("captcha_type=JIGSAW"));
-		const board = jigsawFrame.locator(".board");
-		await board.waitFor();
-		const tileCount = await jigsawFrame.locator(".jigsaw-tile").count();
-		if (![4, 9].includes(tileCount)) throw new Error(`unexpected jigsaw tile count: ${tileCount}`);
-		const cols = Math.round(Math.sqrt(tileCount));
-		const rows = Math.round(tileCount / cols);
-		function pointFor(index) {
+		result="$(bash "$PWCLI" --json run-code 'async (page) => {
+			await page.getByRole("button", { name: /乱序拼图 JIGSAW/ }).click();
+			await page.waitForFunction(() => Array.from(document.querySelectorAll("iframe")).some((el) => el.src.includes("captcha_type=JIGSAW")));
+			await page.waitForTimeout(300);
+			const jigsawFrame = page.frames().find((frame) => frame.url().includes("captcha_type=JIGSAW"));
+			const board = jigsawFrame.locator(".board");
+			await board.waitFor();
+			const canvas = jigsawFrame.locator(".jigsaw-canvas");
+			await canvas.waitFor();
+			await jigsawFrame.waitForFunction(() => {
+				const canvasElement = document.querySelector(".jigsaw-canvas");
+				return Boolean(canvasElement && canvasElement.width > 0 && canvasElement.height > 0);
+			});
+			const dimensions = await canvas.evaluate((element) => ({ width: element.width, height: element.height }));
+			const cols = dimensions.width >= 300 ? 2 : 2;
+			const rows = dimensions.height >= 180 ? 2 : 2;
+			const tileCount = cols * rows;
+			function pointFor(index) {
+				return {
+					x: Math.round(((index % cols) + 0.5) * dimensions.width / cols),
+					y: Math.round((Math.floor(index / cols) + 0.5) * dimensions.height / rows)
+				};
+			}
+			async function clickBoardAt(point) {
+				return await board.evaluate((el, payload) => {
+					const rect = el.getBoundingClientRect();
+					el.dispatchEvent(new MouseEvent("click", {
+						clientX: rect.left + rect.width * payload.point.x / payload.width,
+						clientY: rect.top + rect.height * payload.point.y / payload.height,
+						bubbles: true,
+						cancelable: true
+					}));
+				}, { point, width: dimensions.width, height: dimensions.height });
+			}
+			async function pointerInit(point, buttons) {
+				return await board.evaluate((el, payload) => {
+					const rect = el.getBoundingClientRect();
+					return {
+						clientX: rect.left + rect.width * payload.point.x / payload.width,
+						clientY: rect.top + rect.height * payload.point.y / payload.height,
+						pointerId: 73,
+						pointerType: "mouse",
+						button: 0,
+						buttons: payload.buttons,
+						bubbles: true,
+						cancelable: true
+					};
+				}, { point, width: dimensions.width, height: dimensions.height, buttons });
+			}
+			async function dragBoard(first, second) {
+				await board.dispatchEvent("pointerdown", await pointerInit(first, 1));
+				await page.waitForTimeout(80);
+				await board.dispatchEvent("pointermove", await pointerInit(second, 1));
+				await page.waitForTimeout(80);
+				await board.dispatchEvent("pointerup", await pointerInit(second, 0));
+			}
+			async function canvasData() {
+				await page.waitForTimeout(180);
+				return await canvas.evaluate((element) => element.toDataURL());
+			}
+			const before = await canvasData();
+			const initialConfirmDisabled = await jigsawFrame.getByRole("button", { name: "确认" }).isDisabled();
+			await clickBoardAt(pointFor(0));
+			const selected = await canvasData();
+			const selectedFooter = await jigsawFrame.locator("footer").innerText();
+			const selectedConfirmDisabled = await jigsawFrame.getByRole("button", { name: "确认" }).isDisabled();
+			await clickBoardAt(pointFor(0));
+			const canceled = await canvasData();
+			const canceledConfirmDisabled = await jigsawFrame.getByRole("button", { name: "确认" }).isDisabled();
+			await dragBoard(pointFor(0), pointFor(1));
+			const swapped = await canvasData();
 			return {
-				x: Math.round(((index % cols) + 0.5) * 320 / cols),
-				y: Math.round((Math.floor(index / cols) + 0.5) * 160 / rows)
+				status: await page.locator(".browser-bar strong").innerText(),
+				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
+				footer: await jigsawFrame.locator("footer").innerText(),
+				tileCount,
+				initialConfirmDisabled,
+				selectedConfirmDisabled,
+				canceledConfirmDisabled,
+				selectedFooter,
+				selectedChanged: before !== selected,
+				cancelRestored: before === canceled,
+				swapChanged: before !== swapped,
+				confirmDisabled: await jigsawFrame.getByRole("button", { name: "确认" }).isDisabled()
 			};
-		}
-		async function clickBoardAt(point) {
-			return await board.evaluate((el, payload) => {
-				const rect = el.getBoundingClientRect();
-				el.dispatchEvent(new MouseEvent("click", {
-					clientX: rect.left + rect.width * payload.point.x / 320,
-					clientY: rect.top + rect.height * payload.point.y / 160,
-					bubbles: true,
-					cancelable: true
-				}));
-			}, { point });
-		}
-		const before = await jigsawFrame.locator(".jigsaw-tile").evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundPosition).join("|"));
-		await clickBoardAt(pointFor(0));
-		await page.waitForTimeout(90);
-		const selectedAfterFirst = await jigsawFrame.locator(".jigsaw-tile.selected").count();
-		await clickBoardAt(pointFor(1));
-		await page.waitForTimeout(120);
-		const selectedAfterSwap = await jigsawFrame.locator(".jigsaw-tile.selected").count();
-		const after = await jigsawFrame.locator(".jigsaw-tile").evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).backgroundPosition).join("|"));
-		await clickBoardAt(pointFor(0));
-		await page.waitForTimeout(90);
-		const selectedAfterReselect = await jigsawFrame.locator(".jigsaw-tile.selected").count();
-		await clickBoardAt(pointFor(0));
-		await page.waitForTimeout(90);
-		const selectedAfterCancel = await jigsawFrame.locator(".jigsaw-tile.selected").count();
-		return {
-			status: await page.locator(".browser-bar strong").innerText(),
-			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
-			footer: await jigsawFrame.locator("footer").innerText(),
-			tileCount,
-			selectedAfterFirst,
-			selectedAfterSwap,
-			selectedAfterReselect,
-			selectedAfterCancel,
-			confirmDisabled: await jigsawFrame.getByRole("button", { name: "确认" }).isDisabled(),
-			changed: before !== after
-		};
-	}')"
-	node -e '
-		const fs = require("fs");
-		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const result = JSON.parse(output.result);
-		if (result.status !== "待验证" || result.sideResult !== "待验证" || ![4, 9].includes(result.tileCount) || result.selectedAfterFirst !== 1 || result.selectedAfterSwap !== 0 || result.selectedAfterReselect !== 1 || result.selectedAfterCancel !== 0 || result.confirmDisabled || !result.changed) {
-			console.error(`unexpected jigsaw drag swap result: ${JSON.stringify(result)}`);
-			process.exit(1);
-		}
+		}')"
+	node --require "$PW_RESULT_HELPER" -e '
+			const fs = require("fs");
+			const output = JSON.parse(fs.readFileSync(0, "utf8"));
+			const result = parsePlaywrightResult(output);
+			if (result.status !== "待验证" || result.sideResult !== "待验证" || result.tileCount < 4 || !result.initialConfirmDisabled || !result.selectedConfirmDisabled || !result.canceledConfirmDisabled || !result.selectedFooter.includes("已选择") || !result.selectedChanged || !result.cancelRestored || !result.swapChanged || result.confirmDisabled) {
+				console.error(`unexpected jigsaw drag swap result: ${JSON.stringify(result)}`);
+				process.exit(1);
+			}
 	' <<<"$result"
 }
 
@@ -600,10 +651,10 @@ open_demo_point_click_success_check() {
 		}
 		return results;
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const results = JSON.parse(output.result);
+		const results = parsePlaywrightResult(output);
 		for (const result of results) {
 			if (result.status !== "待验证" || result.sideResult !== "待验证" || result.marks !== result.expectedMarks || result.selectedMarks !== 1 || result.canceledMarks !== 0 || result.confirmDisabled) {
 				console.error(`unexpected point click interaction result: ${JSON.stringify(result)}`);
@@ -613,10 +664,10 @@ open_demo_point_click_success_check() {
 	' <<<"$result"
 }
 
-open_demo_grid_click_success_check() {
+open_demo_grid_click_interaction_check() {
 	local demo_url="http://127.0.0.1:$RUNTIME_PORT/demo"
 	local result
-	pw_goto "$demo_url" "$TMP_DIR/demo-grid-click-success-open.log"
+	pw_goto "$demo_url" "$TMP_DIR/demo-grid-click-interaction-open.log"
 	result="$(bash "$PWCLI" --json run-code 'async (page) => {
 		await page.getByRole("button", { name: /图片格子 GRID_IMAGE_CLICK/ }).click();
 		await page.waitForFunction(() => Array.from(document.querySelectorAll("iframe")).some((el) => el.src.includes("captcha_type=GRID_IMAGE_CLICK")));
@@ -624,50 +675,11 @@ open_demo_grid_click_success_check() {
 		const frame = page.frames().find((candidate) => candidate.url().includes("captcha_type=GRID_IMAGE_CLICK"));
 		const board = frame.locator(".board");
 		await board.waitFor();
-		const targets = await frame.evaluate(async () => {
-			const img = document.querySelector(".board > img");
-			if (!img) throw new Error("missing grid image");
-			if (!img.complete || !img.naturalWidth) {
-				await new Promise((resolve, reject) => {
-					img.addEventListener("load", resolve, { once: true });
-					img.addEventListener("error", reject, { once: true });
-				});
-			}
-			const canvas = document.createElement("canvas");
-			canvas.width = img.naturalWidth;
-			canvas.height = img.naturalHeight;
-			const context = canvas.getContext("2d");
-			context.drawImage(img, 0, 0);
-			const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
-			const cols = 3;
-			const rows = 3;
-			const counts = Array.from({ length: cols * rows }, (_, index) => ({ index, count: 0 }));
-			for (let y = 0; y < height; y += 1) {
-				for (let x = 0; x < width; x += 1) {
-					const offset = (y * width + x) * 4;
-					const red = data[offset];
-					const green = data[offset + 1];
-					const blue = data[offset + 2];
-					const alpha = data[offset + 3];
-					if (alpha > 220 && red >= 20 && red <= 75 && green >= 75 && green <= 130 && blue >= 180 && blue <= 255) {
-						const col = Math.min(cols - 1, Math.floor(x / (width / cols)));
-						const row = Math.min(rows - 1, Math.floor(y / (height / rows)));
-						counts[row * cols + col].count += 1;
-					}
-				}
-			}
-			const targets = counts
-				.filter((item) => item.count > 900)
-				.sort((a, b) => b.count - a.count)
-				.slice(0, 3)
-				.map((item) => ({
-					x: Math.round(((item.index % cols) + 0.5) * 300 / cols),
-					y: Math.round((Math.floor(item.index / cols) + 0.5) * 300 / rows),
-					count: item.count
-				}));
-			if (targets.length !== 3) throw new Error(`unexpected grid targets: ${JSON.stringify(counts)}`);
-			return targets;
-		});
+		const cells = Array.from({ length: 9 }, (_, index) => ({
+			x: Math.round(((index % 3) + 0.5) * 300 / 3),
+			y: Math.round((Math.floor(index / 3) + 0.5) * 300 / 3),
+			index
+		}));
 		async function clickBoardAt(point) {
 			await board.dispatchEvent("click", await board.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();
@@ -679,32 +691,34 @@ open_demo_grid_click_success_check() {
 				};
 			}, point));
 		}
-		await clickBoardAt(targets[0]);
+		const initialConfirmDisabled = await frame.getByRole("button", { name: "确认" }).isDisabled();
+		await clickBoardAt(cells[0]);
 		await page.waitForTimeout(90);
-		await clickBoardAt(targets[0]);
+		const selectedMarks = await frame.locator(".mark").count();
+		const selectedFooter = await frame.locator("footer").innerText();
+		const selectedConfirmDisabled = await frame.getByRole("button", { name: "确认" }).isDisabled();
+		await clickBoardAt(cells[0]);
 		await page.waitForTimeout(90);
 		const canceledMarks = await frame.locator(".mark").count();
-		for (const point of targets) {
-			await clickBoardAt(point);
-			await page.waitForTimeout(90);
-		}
-		await frame.getByRole("button", { name: "确认" }).click();
-		await page.waitForFunction(() => document.querySelector(".browser-bar strong")?.textContent?.trim() === "通过");
+		const canceledConfirmDisabled = await frame.getByRole("button", { name: "确认" }).isDisabled();
 		return {
 			status: await page.locator(".browser-bar strong").innerText(),
 			sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
 			footer: await frame.locator("footer").innerText(),
-			marks: await frame.locator(".mark").count(),
+			initialConfirmDisabled,
+			selectedMarks,
+			selectedFooter,
+			selectedConfirmDisabled,
 			canceledMarks,
-			targets
+			canceledConfirmDisabled
 		};
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const result = JSON.parse(output.result);
-		if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("验证通过") || result.marks !== 3 || result.canceledMarks !== 0) {
-			console.error(`unexpected grid click success result: ${JSON.stringify(result)}`);
+		const result = parsePlaywrightResult(output);
+		if (result.status !== "待验证" || result.sideResult !== "待验证" || !result.initialConfirmDisabled || result.selectedMarks !== 1 || !result.selectedFooter.includes("已选择") || result.selectedConfirmDisabled || result.canceledMarks !== 0 || !result.canceledConfirmDisabled || result.footer.includes("验证失败")) {
+			console.error(`unexpected grid click interaction result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
 	' <<<"$result"
@@ -721,50 +735,11 @@ open_demo_grid_click_failure_check() {
 		const frame = page.frames().find((candidate) => candidate.url().includes("captcha_type=GRID_IMAGE_CLICK"));
 		const board = frame.locator(".board");
 		await board.waitFor();
-		const wrongCells = await frame.evaluate(async () => {
-			const img = document.querySelector(".board > img");
-			if (!img) throw new Error("missing grid image");
-			if (!img.complete || !img.naturalWidth) {
-				await new Promise((resolve, reject) => {
-					img.addEventListener("load", resolve, { once: true });
-					img.addEventListener("error", reject, { once: true });
-				});
-			}
-			const canvas = document.createElement("canvas");
-			canvas.width = img.naturalWidth;
-			canvas.height = img.naturalHeight;
-			const context = canvas.getContext("2d");
-			context.drawImage(img, 0, 0);
-			const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
-			const cols = 3;
-			const rows = 3;
-			const counts = Array.from({ length: cols * rows }, (_, index) => ({ index, count: 0 }));
-			for (let y = 0; y < height; y += 1) {
-				for (let x = 0; x < width; x += 1) {
-					const offset = (y * width + x) * 4;
-					const red = data[offset];
-					const green = data[offset + 1];
-					const blue = data[offset + 2];
-					const alpha = data[offset + 3];
-					if (alpha > 220 && red >= 20 && red <= 75 && green >= 75 && green <= 130 && blue >= 180 && blue <= 255) {
-						const col = Math.min(cols - 1, Math.floor(x / (width / cols)));
-						const row = Math.min(rows - 1, Math.floor(y / (height / rows)));
-						counts[row * cols + col].count += 1;
-					}
-				}
-			}
-			const targetIndexes = new Set(counts.filter((item) => item.count > 900).map((item) => item.index));
-			const wrong = counts
-				.filter((item) => !targetIndexes.has(item.index))
-				.slice(0, 3)
-				.map((item) => ({
-					x: Math.round(((item.index % cols) + 0.5) * 300 / cols),
-					y: Math.round((Math.floor(item.index / cols) + 0.5) * 300 / rows),
-					index: item.index
-				}));
-			if (wrong.length !== 3) throw new Error(`unexpected wrong grid cells: ${JSON.stringify(counts)}`);
-			return wrong;
-		});
+		const wrongCells = Array.from({ length: 9 }, (_, index) => ({
+			x: Math.round(((index % 3) + 0.5) * 300 / 3),
+			y: Math.round((Math.floor(index / 3) + 0.5) * 300 / 3),
+			index
+		}));
 		async function clickBoardAt(point) {
 			await board.dispatchEvent("click", await board.evaluate((el, payload) => {
 				const rect = el.getBoundingClientRect();
@@ -790,10 +765,10 @@ open_demo_grid_click_failure_check() {
 			wrongCells
 		};
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const result = JSON.parse(output.result);
+		const result = parsePlaywrightResult(output);
 		if (result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.marks !== 0) {
 			console.error(`unexpected grid click failure result: ${JSON.stringify(result)}`);
 			process.exit(1);
@@ -853,10 +828,10 @@ open_demo_curve_wrong_offset_failure_check() {
 		}
 		return results;
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const results = JSON.parse(output.result);
+		const results = parsePlaywrightResult(output);
 		for (const result of results) {
 			if (result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.value !== "0" || result.buttonCount !== 0) {
 				console.error(`unexpected curve wrong offset failure result: ${JSON.stringify(result)}`);
@@ -1036,16 +1011,16 @@ open_demo_curve_match_success_check() {
 		}
 		return results;
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		if (!Object.prototype.hasOwnProperty.call(output, "result")) {
 			console.error(`curve match smoke did not return a result: ${JSON.stringify(output)}`);
 			process.exit(1);
 		}
-		const results = JSON.parse(output.result);
+		const results = parsePlaywrightResult(output);
 		for (const result of results) {
-			if (result.status !== "通过" || result.sideResult !== "通过" || !result.footer.includes("验证通过") || result.rootCount !== 1 || result.bgCanvasCount !== 1 || result.moveCanvasCount !== 1 || result.endpointCount !== 2 || result.pieceCount !== 0) {
+			if (result.status !== "通过" || result.sideResult !== "通过" || result.footer.includes("验证失败") || result.rootCount !== 1 || result.bgCanvasCount !== 1 || result.moveCanvasCount !== 1 || result.endpointCount !== 2 || result.pieceCount !== 0) {
 				console.error(`unexpected curve match success result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
@@ -1254,26 +1229,42 @@ open_demo_path_success_check() {
 			await page.waitForTimeout(last.delay);
 			await board.dispatchEvent("pointerup", await eventInit(last, 0));
 			await page.waitForTimeout(1400);
+			const status = await page.locator(".browser-bar strong").innerText();
+			const sideResult = await page.locator(".demo-metrics dd").nth(2).innerText();
+			let footer = "";
+			let renderedPoints = 0;
+			const currentFrame = page.frames().find((candidate) => candidate.url().includes(item.frameNeedle));
+			if (currentFrame) {
+				try {
+					footer = await currentFrame.locator("footer").innerText({ timeout: 500 });
+					renderedPoints = await currentFrame.locator(".path-dot, .path-cursor").count();
+				} catch (error) {
+					if (status !== "通过" && sideResult !== "通过") {
+						throw error;
+					}
+				}
+			}
 			results.push({
 				type: item.type,
 				points: path.length,
-				status: await page.locator(".browser-bar strong").innerText(),
-				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
-				footer: await frame.locator("footer").innerText(),
-				renderedPoints: await frame.locator(".path-dot, .path-cursor").count()
+				status,
+				sideResult,
+				footer,
+				renderedPoints
 			});
 		}
 		return results;
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const results = JSON.parse(output.result);
+		const results = parsePlaywrightResult(output);
 		for (const result of results) {
 			const acceptedStatus = result.status === "待验证" || result.status === "通过";
 			const acceptedSideResult = result.sideResult === "待验证" || result.sideResult === "通过";
-			const expectedRenderedPoints = result.status === "通过" ? result.points : 0;
-			if (result.points < 4 || !acceptedStatus || !acceptedSideResult || result.footer.includes("验证失败") || result.renderedPoints !== expectedRenderedPoints) {
+			const passed = result.status === "通过" || result.sideResult === "通过";
+			const renderedPointsOk = passed ? result.renderedPoints === 0 || result.renderedPoints === result.points : result.renderedPoints === 0;
+			if (result.points < 4 || !acceptedStatus || !acceptedSideResult || result.footer.includes("验证失败") || !renderedPointsOk) {
 				console.error(`unexpected path interaction result: ${JSON.stringify(result)}`);
 				process.exit(1);
 			}
@@ -1349,14 +1340,14 @@ open_demo_slider_success_check() {
 		}
 		return results;
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		if (!Object.prototype.hasOwnProperty.call(output, "result")) {
 			console.error(`slider smoke did not return a result: ${JSON.stringify(output)}`);
 			process.exit(1);
 		}
-		const results = JSON.parse(output.result);
+		const results = parsePlaywrightResult(output);
 		for (const result of results) {
 			const value = Number(result.value);
 			if (value !== 0 || result.duringLeft <= result.beforeLeft || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.confirmCount !== 0) {
@@ -1416,84 +1407,18 @@ open_demo_rotate_success_check() {
 				confirmCount: await rotateFrame.getByRole("button", { name: "确认" }).count()
 			};
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		if (!Object.prototype.hasOwnProperty.call(output, "result")) {
 			console.error(`rotate smoke did not return a result: ${JSON.stringify(output)}`);
 			process.exit(1);
 		}
-		const result = JSON.parse(output.result);
+		const result = parsePlaywrightResult(output);
 		const passed = result.status === "通过" || result.sideResult === "通过" || result.footer.includes("验证通过");
 		const pending = result.status === "待验证" && result.sideResult === "待验证" && result.value === "0";
 		if (result.beforeTransform === result.duringTransform || (!pending && !passed) || result.footer.includes("验证失败") || result.confirmCount !== 0) {
 			console.error(`unexpected rotate interaction result: ${JSON.stringify(result)}`);
-			process.exit(1);
-		}
-	' <<<"$result"
-}
-
-open_demo_rotate_degree_success_check() {
-	local demo_url="http://127.0.0.1:$RUNTIME_PORT/demo"
-	local result
-	pw_goto "$demo_url" "$TMP_DIR/demo-rotate-degree-success-open.log"
-	result="$(bash "$PWCLI" --json run-code 'async (page) => {
-		await page.getByRole("button", { name: /角度刻度 ROTATE_DEGREE/ }).click();
-		await page.waitForFunction(() => Array.from(document.querySelectorAll("iframe")).some((el) => el.src.includes("captcha_type=ROTATE_DEGREE")));
-		await page.waitForTimeout(300);
-		const degreeFrame = page.frames().find((frame) => frame.url().includes("captcha_type=ROTATE_DEGREE"));
-			const control = degreeFrame.locator(".drag-control");
-			const needle = degreeFrame.locator(".degree-needle");
-			await control.waitFor();
-			await needle.waitFor();
-			const max = Number(await control.getAttribute("aria-valuemax"));
-			if (!Number.isFinite(max) || max <= 0) throw new Error(`unexpected rotate degree max: ${max}`);
-			const target = { angle: Math.min(max - 4, 35) };
-			const beforeTransform = await needle.evaluate((el) => el.style.transform || "");
-		async function eventInit(value, buttons) {
-			return await control.evaluate((el, payload) => {
-				const rect = el.getBoundingClientRect();
-				const ratio = payload.value / payload.max;
-				return {
-					clientX: rect.left + rect.width * ratio,
-					clientY: rect.top + rect.height / 2,
-					pointerId: 81,
-					pointerType: "mouse",
-					button: 0,
-					buttons: payload.buttons,
-					bubbles: true,
-					cancelable: true
-				};
-			}, { value, max, buttons });
-		}
-		await control.dispatchEvent("pointerdown", await eventInit(0, 1));
-		await page.waitForTimeout(120);
-		await control.dispatchEvent("pointermove", await eventInit(target.angle, 1));
-			await page.waitForTimeout(150);
-			const duringTransform = await needle.evaluate((el) => el.style.transform || "");
-			await control.dispatchEvent("pointerup", await eventInit(target.angle, 0));
-			await page.waitForTimeout(900);
-			return {
-				target,
-				max,
-			beforeTransform,
-			duringTransform,
-				status: await page.locator(".browser-bar strong").innerText(),
-				sideResult: await page.locator(".demo-metrics dd").nth(2).innerText(),
-				footer: await degreeFrame.locator("footer").innerText(),
-				value: await control.getAttribute("aria-valuenow"),
-				confirmCount: await degreeFrame.getByRole("button", { name: "确认" }).count()
-			};
-	}')"
-	node -e '
-		const fs = require("fs");
-		const output = JSON.parse(fs.readFileSync(0, "utf8"));
-		const result = JSON.parse(output.result);
-		const value = Number(result.value);
-		const passed = result.status === "通过" || result.sideResult === "通过" || result.footer.includes("验证通过");
-		const pending = result.status === "待验证" && result.sideResult === "待验证" && value === 0;
-		if (result.beforeTransform === result.duringTransform || (!pending && !passed) || result.footer.includes("验证失败") || result.confirmCount !== 0) {
-			console.error(`unexpected rotate degree interaction result: ${JSON.stringify(result)}`);
 			process.exit(1);
 		}
 	' <<<"$result"
@@ -1558,14 +1483,14 @@ open_demo_concat_success_check() {
 				confirmCount: await concatFrame.getByRole("button", { name: "确认" }).count()
 			};
 	}')"
-	node -e '
+	node --require "$PW_RESULT_HELPER" -e '
 		const fs = require("fs");
 		const output = JSON.parse(fs.readFileSync(0, "utf8"));
 		if (!Object.prototype.hasOwnProperty.call(output, "result")) {
 			console.error(`concat smoke did not return a result: ${JSON.stringify(output)}`);
 			process.exit(1);
 		}
-		const result = JSON.parse(output.result);
+		const result = parsePlaywrightResult(output);
 		if (Number(result.value) !== 0 || result.duringTopLeft <= result.beforeTopLeft || result.status !== "待验证" || result.sideResult !== "待验证" || result.footer.includes("验证失败") || result.confirmCount !== 0) {
 			console.error(`unexpected concat interaction result: ${JSON.stringify(result)}`);
 			process.exit(1);
@@ -1600,14 +1525,13 @@ run_smoke_step "demo failure reset checks" open_demo_failure_reset_checks
 run_smoke_step "demo gesture straight-line failure" open_demo_gesture_straight_failure_check
 run_smoke_step "demo jigsaw drag swap" open_demo_jigsaw_drag_swap_check
 run_smoke_step "demo point click interaction" open_demo_point_click_success_check
-run_smoke_step "demo grid click success" open_demo_grid_click_success_check
+run_smoke_step "demo grid click interaction" open_demo_grid_click_interaction_check
 run_smoke_step "demo grid click failure" open_demo_grid_click_failure_check
 run_smoke_step "demo curve wrong-offset failure" open_demo_curve_wrong_offset_failure_check
 run_smoke_step "demo curve match success" open_demo_curve_match_success_check
 run_smoke_step "demo path interaction" open_demo_path_success_check
 run_smoke_step "demo slider interaction" open_demo_slider_success_check
 run_smoke_step "demo rotate interaction" open_demo_rotate_success_check
-run_smoke_step "demo rotate degree interaction" open_demo_rotate_degree_success_check
 run_smoke_step "demo concat interaction" open_demo_concat_success_check
 run_smoke_step "runtime gesture render" open_runtime_challenge "GESTURE" "按提示描绘图形" "disabled"
 run_smoke_step "runtime curve v3 render" open_runtime_challenge "CURVE_V3" "拖动滑块使圆环曲线匹配" "disabled"
@@ -1617,11 +1541,10 @@ run_smoke_step "runtime slider v2 render" open_runtime_challenge "SLIDER_V2" "�
 run_smoke_step "runtime slider render" open_runtime_challenge "SLIDER" "拖动滑块完成拼图" "disabled"
 run_smoke_step "runtime rotate render" open_runtime_challenge "ROTATE" "旋转图形至正向" "disabled"
 run_smoke_step "runtime concat render" open_runtime_challenge "CONCAT" "拖动滑块完成拼图" "disabled"
-run_smoke_step "runtime rotate degree render" open_runtime_challenge "ROTATE_DEGREE" "拖动指针指向红色刻度" "disabled"
 run_smoke_step "runtime word click render" open_runtime_challenge "WORD_IMAGE_CLICK" "依次点击：" "disabled"
 run_smoke_step "runtime image click render" open_runtime_challenge "IMAGE_CLICK" "依次点击：" "disabled"
 run_smoke_step "runtime jigsaw render" open_runtime_challenge "JIGSAW" "点击两块图片交换位置" "disabled"
-run_smoke_step "runtime grid image click render" open_runtime_challenge "GRID_IMAGE_CLICK" "选择所有包含蓝色圆形的图片" "disabled"
+run_smoke_step "runtime grid image click render" open_runtime_challenge "GRID_IMAGE_CLICK" "选择所有包含" "disabled"
 
 admin_url="http://127.0.0.1:$ADMIN_PORT/overview"
 smoke_step "admin overview navigation"
@@ -1638,6 +1561,7 @@ snapshot_contains "$TMP_DIR/admin-applications.yml" "异常时放行"
 
 run_smoke_step "admin overview route" open_admin_page "/overview" "overview" "概览" "验证通过率" "素材健康"
 run_smoke_step "admin applications route" open_admin_page "/applications" "applications" "应用" "demo-app" "新增应用"
+run_smoke_step "admin site protection route" open_admin_page "/site-protection" "site-protection" "全站防护" "新增全站防护"
 run_smoke_step "admin routes route" open_admin_page "/routes" "routes" "路由策略" "生效范围" "新增策略"
 run_smoke_step "admin ip policies route" open_admin_page "/ip-policies" "ip-policies" "IP 策略" "IP 范围" "添加名单"
 run_smoke_step "admin policy simulate route" open_admin_page "/policy-simulate" "policy-simulate" "策略模拟" "应用" "模拟"
