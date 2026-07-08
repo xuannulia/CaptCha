@@ -198,6 +198,40 @@ func TestGRPCPolicyAndTicketServices(t *testing.T) {
 	if missingContextPolicy.Action != types.DecisionBlock || missingContextPolicy.Reason != "NOT_FOUND" || missingContextPolicy.SessionID != "" {
 		t.Fatalf("expected ip/ua-bound ticket without request context to block grpc policy evaluation, got %+v", missingContextPolicy)
 	}
+	subjectPolicyTicket, err := tokenService.Issue("demo", "login", "/api/login", "", "", "", "acct_grpc_ticket", "device_grpc_ticket")
+	if err != nil {
+		t.Fatalf("issue subject-bound policy ticket: %v", err)
+	}
+	subjectMismatchPolicy, err := grpcEvaluate(policyClient, ctx, types.PolicyEvaluateRequest{
+		ClientID:      "demo",
+		Scene:         "login",
+		Path:          "/api/login",
+		Method:        "POST",
+		AccountIDHash: "acct_other",
+		DeviceIDHash:  "device_grpc_ticket",
+		Ticket:        subjectPolicyTicket.Value,
+	})
+	if err != nil {
+		t.Fatalf("evaluate subject mismatch ticket policy: %v", err)
+	}
+	if subjectMismatchPolicy.Action != types.DecisionBlock || subjectMismatchPolicy.Reason != "NOT_FOUND" || subjectMismatchPolicy.SessionID != "" {
+		t.Fatalf("expected subject-bound ticket mismatch to block grpc policy evaluation, got %+v", subjectMismatchPolicy)
+	}
+	subjectMatchPolicy, err := grpcEvaluate(policyClient, ctx, types.PolicyEvaluateRequest{
+		ClientID:      "demo",
+		Scene:         "login",
+		Path:          "/api/login",
+		Method:        "POST",
+		AccountIDHash: "acct_grpc_ticket",
+		DeviceIDHash:  "device_grpc_ticket",
+		Ticket:        subjectPolicyTicket.Value,
+	})
+	if err != nil {
+		t.Fatalf("evaluate subject match ticket policy: %v", err)
+	}
+	if subjectMatchPolicy.Action != types.DecisionAllow || subjectMatchPolicy.Reason != "TICKET_CONSUMED" {
+		t.Fatalf("expected subject-bound ticket to allow when account and device match, got %+v", subjectMatchPolicy)
+	}
 
 	nonceTicket, err := tokenService.Issue("demo", "login", "/api/login", "nonce-grpc-ticket", "", "")
 	if err != nil {
@@ -227,6 +261,38 @@ func TestGRPCPolicyAndTicketServices(t *testing.T) {
 	}
 	if !nonceVerified.Valid || nonceVerified.RequestNonce != "nonce-grpc-ticket" {
 		t.Fatalf("expected nonce-bound ticket to verify, got %+v", nonceVerified)
+	}
+	subjectTicket, err := tokenService.Issue("demo", "login", "/api/login", "", "", "", "acct_grpc_verify", "device_grpc_verify")
+	if err != nil {
+		t.Fatalf("issue subject verify ticket: %v", err)
+	}
+	subjectMismatch, err := grpcVerifyTicket(ticketClient, ctx, types.TicketVerifyRequest{
+		Ticket:        subjectTicket.Value,
+		ClientID:      "demo",
+		Scene:         "login",
+		Route:         "/api/login",
+		AccountIDHash: "acct_other",
+		DeviceIDHash:  "device_grpc_verify",
+	})
+	if err != nil {
+		t.Fatalf("verify subject mismatch ticket: %v", err)
+	}
+	if subjectMismatch.Valid || subjectMismatch.Reason != "NOT_FOUND" {
+		t.Fatalf("expected subject mismatch rejection, got %+v", subjectMismatch)
+	}
+	subjectVerified, err := grpcVerifyTicket(ticketClient, ctx, types.TicketVerifyRequest{
+		Ticket:        subjectTicket.Value,
+		ClientID:      "demo",
+		Scene:         "login",
+		Route:         "/api/login",
+		AccountIDHash: "acct_grpc_verify",
+		DeviceIDHash:  "device_grpc_verify",
+	})
+	if err != nil {
+		t.Fatalf("verify subject ticket: %v", err)
+	}
+	if !subjectVerified.Valid {
+		t.Fatalf("expected subject-bound ticket to verify, got %+v", subjectVerified)
 	}
 
 	missingRouteTicket, err := tokenService.Issue("demo", "login", "/api/login", "", "", "")

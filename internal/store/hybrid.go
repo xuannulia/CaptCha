@@ -53,8 +53,8 @@ func (s *HybridStore) PutTicket(ticket types.Ticket) {
 	s.tickets.PutTicket(ticket)
 }
 
-func (s *HybridStore) VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash string, consume bool) (types.Ticket, error) {
-	return s.tickets.VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash, consume)
+func (s *HybridStore) VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash string, consume bool, subjectHashes ...string) (types.Ticket, error) {
+	return s.tickets.VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash, consume, subjectHashes...)
 }
 
 func (s *HybridStore) PutClearance(clearance types.Clearance) {

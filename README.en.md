@@ -106,6 +106,18 @@ HTTP / gRPC APIs are low-level interfaces, not another turnkey option beside mid
 
 - API Reference: [HTTP / gRPC API](docs/en/api-reference.md)
 
+## Marker And Identity Dimensions
+
+CaptCha increases marker strength with integration depth:
+
+| Integration layer | Marker dimensions | Notes |
+|---|---|---|
+| Runtime iframe | `ticket`, optional `route` / `request_nonce` | Minimal integration. The browser receives a one-time ticket after verification, and the business backend consumes it. |
+| Middleware / Gateway | `ticket`, `clearance`, IP hash, User-Agent hash, optional `account_id_hash` / `device_id_hash` | Recommended for business traffic. Ticket consumption validates the bound context and then writes short-lived clearance. |
+| Custom HTTP / gRPC | Same dimensions as middleware, supplied explicitly by the integrator | For custom gateways, service meshes, or platform control planes. The integrator owns ticket consumption, clearance transport, and failure handling. |
+
+`account_id_hash` and `device_id_hash` are optional. Lightweight integrations without a uid can use ticket, short-lived clearance, route, request nonce, IP hash, and User-Agent hash. When an account or anonymous visitor identifier exists, hash it on the business backend, preferably with HMAC, and never expose raw user IDs. Challenges created through middleware, Gateway, or custom APIs bind these dimensions into the session; the issued ticket validates the bound account/device dimensions before consumption and then mints clearance bound to the same context.
+
 ## Admin
 
 Admin does not participate in business request handling. It manages applications, route policies, resources, audit, samples, and model versions.

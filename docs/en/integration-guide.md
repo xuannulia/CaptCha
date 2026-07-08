@@ -100,6 +100,8 @@ For follow-up requests, consume the ticket and mint clearance. Clearance is serv
 
 Middleware and Gateway integrations write short-lived clearance to a security cookie such as `captcha_clearance` to reduce repeated challenges and support policy decisions. Do not use this cookie for advertising, analytics, cross-site recognition, or long-term profiling. In the EU and similar ePrivacy regimes, writing or reading cookies, local storage, anonymous visitor IDs, or other terminal storage can trigger cookie / terminal-storage compliance duties. Integrators should document purpose, TTL, and scope in their own cookie policy and decide whether consent or additional notice is required for their region and use case.
 
+Marker strength increases with integration depth. The iframe path only requires the backend to consume a ticket. Middleware, Gateway, and custom APIs should send the server-resolved IP/User-Agent and may send `account_id_hash` / `device_id_hash`. These fields are bound into policy-created sessions, issued tickets, and follow-up clearance; ticket consumption and clearance validation must match the bound values. If there is no uid, do not invent an account marker. Use short-lived clearance, route, one-time nonce, IP/User-Agent hash, and an optional anonymous device hash.
+
 ## Level 2: Multi-Language Middleware
 
 Use this path when the protected service can add CaptCha to its normal request chain.

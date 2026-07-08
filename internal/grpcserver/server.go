@@ -130,7 +130,7 @@ func (s *Server) evaluatePolicy(ctx context.Context, req *types.PolicyEvaluateRe
 		return decision, nil
 	}
 	if req.Ticket != "" {
-		if _, err := s.deps.Store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Path, req.RequestNonce, hashValue(req.IP), hashValue(req.UserAgent), true); err == nil {
+		if _, err := s.deps.Store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Path, req.RequestNonce, hashValue(req.IP), hashValue(req.UserAgent), true, req.AccountIDHash, req.DeviceIDHash); err == nil {
 			return s.withClearance(types.PolicyDecision{Action: types.DecisionAllow, Reason: "TICKET_CONSUMED", Scene: req.Scene}, *req), nil
 		} else {
 			reason := errorCode(err)
@@ -264,7 +264,7 @@ func (s *Server) verifyTicketRPC(ctx context.Context, req *types.TicketVerifyReq
 }
 
 func (s *Server) verifyTicket(req *types.TicketVerifyRequest, consume bool) *types.TicketVerifyResponse {
-	ticket, err := s.deps.Store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Route, req.RequestNonce, req.IPHash, req.UserAgentHash, consume)
+	ticket, err := s.deps.Store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Route, req.RequestNonce, req.IPHash, req.UserAgentHash, consume, req.AccountIDHash, req.DeviceIDHash)
 	if err != nil {
 		return &types.TicketVerifyResponse{Valid: false, Reason: errorCode(err)}
 	}

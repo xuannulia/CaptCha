@@ -1060,6 +1060,37 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 		if decision.Action != types.DecisionBlock || decision.Reason != "NOT_FOUND" || decision.SessionID != "" {
 			t.Fatalf("expected ip/ua-bound ticket without request context to block policy evaluation, got %+v", decision)
 		}
+
+		subjectTicket, err := tokens.Issue("demo", "login", "/api/login", "", "", "", "acct_ticket_bound", "device_ticket_bound")
+		if err != nil {
+			t.Fatalf("issue subject-bound policy ticket: %v", err)
+		}
+		response = requestWithHeaders(t, server, http.MethodPost, "/api/v1/policy/evaluate", types.PolicyEvaluateRequest{
+			ClientID:      "demo",
+			Scene:         "login",
+			Path:          "/api/login",
+			Method:        "POST",
+			AccountIDHash: "acct_other",
+			DeviceIDHash:  "device_ticket_bound",
+			Ticket:        subjectTicket.Value,
+		}, integrationHeaders())
+		decode(t, response, &decision)
+		if decision.Action != types.DecisionBlock || decision.Reason != "NOT_FOUND" || decision.SessionID != "" {
+			t.Fatalf("expected account-bound ticket mismatch to block policy evaluation, got %+v", decision)
+		}
+		response = requestWithHeaders(t, server, http.MethodPost, "/api/v1/policy/evaluate", types.PolicyEvaluateRequest{
+			ClientID:      "demo",
+			Scene:         "login",
+			Path:          "/api/login",
+			Method:        "POST",
+			AccountIDHash: "acct_ticket_bound",
+			DeviceIDHash:  "device_ticket_bound",
+			Ticket:        subjectTicket.Value,
+		}, integrationHeaders())
+		decode(t, response, &decision)
+		if decision.Action != types.DecisionAllow || decision.Reason != "TICKET_CONSUMED" {
+			t.Fatalf("expected subject-bound ticket to allow when account and device match, got %+v", decision)
+		}
 	})
 
 	t.Run("ticket mints clearance for uid and anonymous device contexts", func(t *testing.T) {

@@ -97,6 +97,8 @@ curl -X POST https://captcha.example.com/api/v1/tickets/verify \
 
 默认中间件和 Gateway 会把通行态写入 `captcha_clearance` 这类短期安全 cookie，用于减少重复验证并支撑策略判断。它不应用于广告、分析、跨站识别或长期画像。在欧盟和类似 ePrivacy 规则下，写入或读取 cookie、local storage、匿名访客 ID 等终端存储都可能触发 cookie / terminal storage 合规要求；接入方应在自己的 cookie policy 中说明用途、TTL 和作用域，并按地区判断是否需要同意或额外告知。
 
+标记维度按接入深度增加。iframe 最小接入只要求后端消费 ticket；中间件、Gateway 和自研 API 应传入可信服务端解析出的 IP/User-Agent，可选传入 `account_id_hash` / `device_id_hash`。这些字段会绑定到策略创建的 session、验证成功后的 ticket 和后续 clearance，消费 ticket 或校验 clearance 时必须匹配。没有 uid 时不要伪造账号标识，使用短期 clearance、route、一次性 nonce、IP/User-Agent hash 和可选匿名设备 hash 即可。
+
 ## Level 2：多语言中间件
 
 业务服务可以改请求链路时，优先使用中间件。

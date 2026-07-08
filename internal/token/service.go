@@ -30,10 +30,18 @@ func (s *Service) SetClearanceTTL(ttl time.Duration) {
 	}
 }
 
-func (s *Service) Issue(clientID, scene, route, requestNonce, ipHash, userAgentHash string) (types.Ticket, error) {
+func (s *Service) Issue(clientID, scene, route, requestNonce, ipHash, userAgentHash string, subjectHashes ...string) (types.Ticket, error) {
 	value, err := randomID("cap_ticket_", 32)
 	if err != nil {
 		return types.Ticket{}, err
+	}
+	accountIDHash := ""
+	deviceIDHash := ""
+	if len(subjectHashes) > 0 {
+		accountIDHash = subjectHashes[0]
+	}
+	if len(subjectHashes) > 1 {
+		deviceIDHash = subjectHashes[1]
 	}
 	now := time.Now()
 	ticket := types.Ticket{
@@ -44,6 +52,8 @@ func (s *Service) Issue(clientID, scene, route, requestNonce, ipHash, userAgentH
 		RequestNonce:  requestNonce,
 		IPHash:        ipHash,
 		UserAgentHash: userAgentHash,
+		AccountIDHash: accountIDHash,
+		DeviceIDHash:  deviceIDHash,
 		ExpiresAt:     now.Add(s.ttl),
 		CreatedAt:     now,
 	}

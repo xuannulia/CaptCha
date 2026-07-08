@@ -115,7 +115,7 @@ func (s *MemoryStore) PutTicket(ticket types.Ticket) {
 	s.tickets[ticket.Value] = ticket
 }
 
-func (s *MemoryStore) VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash string, consume bool) (types.Ticket, error) {
+func (s *MemoryStore) VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash string, consume bool, subjectHashes ...string) (types.Ticket, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -142,6 +142,20 @@ func (s *MemoryStore) VerifyTicket(value, clientID, scene, route, requestNonce, 
 		return types.Ticket{}, ErrNotFound
 	}
 	if ticket.UserAgentHash != "" && ticket.UserAgentHash != userAgentHash {
+		return types.Ticket{}, ErrNotFound
+	}
+	accountIDHash := ""
+	deviceIDHash := ""
+	if len(subjectHashes) > 0 {
+		accountIDHash = subjectHashes[0]
+	}
+	if len(subjectHashes) > 1 {
+		deviceIDHash = subjectHashes[1]
+	}
+	if ticket.AccountIDHash != "" && ticket.AccountIDHash != accountIDHash {
+		return types.Ticket{}, ErrNotFound
+	}
+	if ticket.DeviceIDHash != "" && ticket.DeviceIDHash != deviceIDHash {
 		return types.Ticket{}, ErrNotFound
 	}
 	if consume {

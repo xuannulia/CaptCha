@@ -165,6 +165,8 @@ type Ticket struct {
 	RequestNonce  string
 	IPHash        string
 	UserAgentHash string
+	AccountIDHash string
+	DeviceIDHash  string
 	Consumed      bool
 	ExpiresAt     time.Time
 	CreatedAt     time.Time

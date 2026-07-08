@@ -69,7 +69,15 @@ func (s *RedisTransientStore) VerifyClearance(value, clientID, scene, ipHash, us
 	return clearance, nil
 }
 
-func (s *RedisTransientStore) VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash string, consume bool) (types.Ticket, error) {
+func (s *RedisTransientStore) VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash string, consume bool, subjectHashes ...string) (types.Ticket, error) {
+	accountIDHash := ""
+	deviceIDHash := ""
+	if len(subjectHashes) > 0 {
+		accountIDHash = subjectHashes[0]
+	}
+	if len(subjectHashes) > 1 {
+		deviceIDHash = subjectHashes[1]
+	}
 	ctx := context.Background()
 	key := s.ticketKey(value)
 	if !consume {
@@ -77,7 +85,7 @@ func (s *RedisTransientStore) VerifyTicket(value, clientID, scene, route, reques
 		if err != nil {
 			return types.Ticket{}, err
 		}
-		if err := validateTicket(ticket, clientID, scene, route, requestNonce, ipHash, userAgentHash); err != nil {
+		if err := validateTicket(ticket, clientID, scene, route, requestNonce, ipHash, userAgentHash, accountIDHash, deviceIDHash); err != nil {
 			return types.Ticket{}, err
 		}
 		return ticket, nil
@@ -89,7 +97,7 @@ func (s *RedisTransientStore) VerifyTicket(value, clientID, scene, route, reques
 		if err != nil {
 			return err
 		}
-		if err := validateTicket(ticket, clientID, scene, route, requestNonce, ipHash, userAgentHash); err != nil {
+		if err := validateTicket(ticket, clientID, scene, route, requestNonce, ipHash, userAgentHash, accountIDHash, deviceIDHash); err != nil {
 			return err
 		}
 		now := time.Now()
@@ -274,7 +282,7 @@ func (s *RedisTransientStore) getTicketFromClient(ctx context.Context, client re
 	return ticket, nil
 }
 
-func validateTicket(ticket types.Ticket, clientID, scene, route, requestNonce, ipHash, userAgentHash string) error {
+func validateTicket(ticket types.Ticket, clientID, scene, route, requestNonce, ipHash, userAgentHash, accountIDHash, deviceIDHash string) error {
 	if time.Now().After(ticket.ExpiresAt) {
 		return ErrExpired
 	}
@@ -294,6 +302,12 @@ func validateTicket(ticket types.Ticket, clientID, scene, route, requestNonce, i
 		return ErrNotFound
 	}
 	if ticket.UserAgentHash != "" && ticket.UserAgentHash != userAgentHash {
+		return ErrNotFound
+	}
+	if ticket.AccountIDHash != "" && ticket.AccountIDHash != accountIDHash {
+		return ErrNotFound
+	}
+	if ticket.DeviceIDHash != "" && ticket.DeviceIDHash != deviceIDHash {
 		return ErrNotFound
 	}
 	return nil

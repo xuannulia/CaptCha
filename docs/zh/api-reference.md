@@ -94,8 +94,8 @@ POST /api/v1/tickets/verify
 | `request_nonce` | 否 | ticket 绑定过 nonce 时必须匹配。 |
 | `ip_hash` | 否 | ticket 绑定过 IP hash 时必须匹配。 |
 | `user_agent_hash` | 否 | ticket 绑定过 User-Agent hash 时必须匹配。 |
-| `account_id_hash` | 否 | 外部账号标识哈希。 |
-| `device_id_hash` | 否 | 外部设备或访客标识哈希。 |
+| `account_id_hash` | 否 | 外部账号标识哈希；ticket 绑定过账号时必须匹配。 |
+| `device_id_hash` | 否 | 外部设备或访客标识哈希；ticket 绑定过设备时必须匹配。 |
 | `consume` | 否 | 是否消费 ticket 并返回 clearance。 |
 
 示例：
@@ -115,6 +115,8 @@ curl -X POST https://captcha.example.com/api/v1/tickets/verify \
 ```
 
 响应成功时 `valid=true`。失败时 HTTP 仍可能是 `200`，通过 `valid=false` 和 `reason` 判断，例如 `NOT_FOUND`、`EXPIRED`、`CONSUMED`。
+
+自研接入应区分字段形态：`/api/v1/tickets/verify` 接收的是 `ip_hash` / `user_agent_hash`，因为 ticket 内部保存的是绑定哈希；`/api/v1/policy/evaluate` 接收的是服务端解析后的原始 `ip` / `user_agent`，平台会自行哈希后校验 ticket 或 clearance。
 
 #### Evaluate Policy
 

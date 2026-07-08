@@ -92,6 +92,23 @@ func TestRedisTransientStoreSessionTicketAndRate(t *testing.T) {
 	if _, err := store.VerifyTicket(contextTicket.Value, "demo", "login", "/api/login", "", "sha256:ip", "sha256:other", false); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected mismatched user agent hash to reject bound ticket, got %v", err)
 	}
+	subjectTicket := types.Ticket{
+		Value:         "ticket_subject",
+		ClientID:      "demo",
+		Scene:         "login",
+		Route:         "/api/login",
+		AccountIDHash: "acct_hash",
+		DeviceIDHash:  "device_hash",
+		ExpiresAt:     time.Now().Add(time.Minute),
+		CreatedAt:     time.Now(),
+	}
+	store.PutTicket(subjectTicket)
+	if _, err := store.VerifyTicket(subjectTicket.Value, "demo", "login", "/api/login", "", "", "", false, "acct_hash", "device_hash"); err != nil {
+		t.Fatalf("verify subject ticket: %v", err)
+	}
+	if _, err := store.VerifyTicket(subjectTicket.Value, "demo", "login", "/api/login", "", "", "", false, "acct_other", "device_hash"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected mismatched account hash to reject bound ticket, got %v", err)
+	}
 
 	clearance := types.Clearance{
 		Value:         "clearance_1",

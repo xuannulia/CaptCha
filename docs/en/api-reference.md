@@ -94,8 +94,8 @@ Request fields:
 | `request_nonce` | No | Required when the ticket was bound to a nonce. |
 | `ip_hash` | No | Required when the ticket was bound to an IP hash. |
 | `user_agent_hash` | No | Required when the ticket was bound to a User-Agent hash. |
-| `account_id_hash` | No | External account identifier hash. |
-| `device_id_hash` | No | External device or visitor identifier hash. |
+| `account_id_hash` | No | External account identifier hash; required to match when the ticket is account-bound. |
+| `device_id_hash` | No | External device or visitor identifier hash; required to match when the ticket is device-bound. |
 | `consume` | No | Whether to consume the ticket and return clearance. |
 
 Example:
@@ -115,6 +115,8 @@ curl -X POST https://captcha.example.com/api/v1/tickets/verify \
 ```
 
 Successful verification returns `valid=true`. Failed verification may still return HTTP `200`; check `valid=false` and `reason`, such as `NOT_FOUND`, `EXPIRED`, or `CONSUMED`.
+
+Custom integrations must keep field shape straight: `/api/v1/tickets/verify` accepts `ip_hash` / `user_agent_hash` because tickets store bound hashes; `/api/v1/policy/evaluate` accepts the server-resolved raw `ip` / `user_agent`, and the platform hashes them before ticket or clearance validation.
 
 #### Evaluate Policy
 

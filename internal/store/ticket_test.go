@@ -86,6 +86,33 @@ func TestMemoryStoreTicketRequiresBoundIPAndUserAgent(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreTicketRequiresBoundSubjectHashes(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore()
+	ticket := types.Ticket{
+		Value:         "ticket_subject_bound",
+		ClientID:      "demo",
+		Scene:         "login",
+		Route:         "/api/login",
+		AccountIDHash: "acct_hash",
+		DeviceIDHash:  "device_hash",
+		ExpiresAt:     time.Now().Add(time.Minute),
+		CreatedAt:     time.Now(),
+	}
+	store.PutTicket(ticket)
+
+	if _, err := store.VerifyTicket(ticket.Value, "demo", "login", "/api/login", "", "", "", false, "acct_hash", "device_hash"); err != nil {
+		t.Fatalf("expected subject-bound ticket to verify: %v", err)
+	}
+	if _, err := store.VerifyTicket(ticket.Value, "demo", "login", "/api/login", "", "", "", false, "acct_other", "device_hash"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected mismatched account hash to reject bound ticket, got %v", err)
+	}
+	if _, err := store.VerifyTicket(ticket.Value, "demo", "login", "/api/login", "", "", "", false, "acct_hash", "device_other"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected mismatched device hash to reject bound ticket, got %v", err)
+	}
+}
+
 func TestMemoryStoreClearanceRequiresBoundContext(t *testing.T) {
 	t.Parallel()
 

@@ -24,7 +24,7 @@ type SessionStore interface {
 
 type TicketStore interface {
 	PutTicket(ticket types.Ticket)
-	VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash string, consume bool) (types.Ticket, error)
+	VerifyTicket(value, clientID, scene, route, requestNonce, ipHash, userAgentHash string, consume bool, subjectHashes ...string) (types.Ticket, error)
 }
 
 type ClearanceStore interface {

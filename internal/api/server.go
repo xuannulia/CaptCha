@@ -264,7 +264,7 @@ func (s *Server) handleVerifySession(w http.ResponseWriter, r *http.Request) {
 		s.recordFailedVerification(w, session, req, result)
 		return
 	}
-	ticket, err := s.tokens.Issue(session.ClientID, session.Scene, req.Route, session.RequestNonce, session.IPHash, session.UserAgentHash)
+	ticket, err := s.tokens.Issue(session.ClientID, session.Scene, req.Route, session.RequestNonce, session.IPHash, session.UserAgentHash, session.AccountIDHash, session.DeviceIDHash)
 	if err != nil {
 		s.logger.Error("issue ticket", "error", err)
 		writeError(w, http.StatusInternalServerError, "ISSUE_TICKET_FAILED")
@@ -494,7 +494,7 @@ func (s *Server) handleEvaluatePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Ticket != "" {
-		if _, err := s.store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Path, req.RequestNonce, hashValue(req.IP), hashValue(req.UserAgent), true); err == nil {
+		if _, err := s.store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Path, req.RequestNonce, hashValue(req.IP), hashValue(req.UserAgent), true, req.AccountIDHash, req.DeviceIDHash); err == nil {
 			s.store.AddAuditEvent(types.AuditEvent{
 				ClientID:       req.ClientID,
 				Scene:          req.Scene,
@@ -1959,7 +1959,7 @@ func (s *Server) handleVerifyTicket(w http.ResponseWriter, r *http.Request) {
 	if !s.requireClientSecret(w, r, req.ClientID, false) {
 		return
 	}
-	ticket, err := s.store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Route, req.RequestNonce, req.IPHash, req.UserAgentHash, req.Consume)
+	ticket, err := s.store.VerifyTicket(req.Ticket, req.ClientID, req.Scene, req.Route, req.RequestNonce, req.IPHash, req.UserAgentHash, req.Consume, req.AccountIDHash, req.DeviceIDHash)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"valid":  false,
@@ -1975,6 +1975,8 @@ func (s *Server) handleVerifyTicket(w http.ResponseWriter, r *http.Request) {
 		"request_nonce":   ticket.RequestNonce,
 		"ip_hash":         ticket.IPHash,
 		"user_agent_hash": ticket.UserAgentHash,
+		"account_id_hash": ticket.AccountIDHash,
+		"device_id_hash":  ticket.DeviceIDHash,
 		"expire_at":       ticket.ExpiresAt,
 		"consumed":        req.Consume,
 	}
