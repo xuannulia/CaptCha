@@ -42,12 +42,17 @@ jobs:
         run: |
           set -euo pipefail
           pages_base="/${GITHUB_REPOSITORY#*/}/"
-          api_base="${CAPTCHA_API_BASE:-https://154.219.103.114.nip.io}"
+          api_base="${CAPTCHA_API_BASE:-https://api.metool.tech/captcha}"
+          curl -fsS --retry 3 --retry-delay 2 --max-time 10 "$api_base/healthz" >/dev/null
           rm -rf pages
           mkdir -p pages
 
           VITE_API_BASE="$api_base" VITE_BASE_PATH="$pages_base" npm run build:runtime
           cp -R web/runtime/dist/. pages/
+          for route in demo collect challenge; do
+            mkdir -p "pages/$route"
+            cp pages/index.html "pages/$route/index.html"
+          done
           cp pages/index.html pages/404.html
 
           touch pages/.nojekyll

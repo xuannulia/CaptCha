@@ -6,7 +6,7 @@ CaptCha should stay a server-owned verification platform. The browser runtime re
 
 ![CaptCha demo page](../assets/demo-page.png)
 
-The hosted demo is available at [https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/). Use the local run below when you want to change code or test a private backend.
+The hosted demo is available at [https://xuannulia.github.io/CaptCha/demo](https://xuannulia.github.io/CaptCha/demo). Use the local run below when you want to change code or test a private backend.
 
 ## Difficulty Ladder
 
