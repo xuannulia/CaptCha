@@ -489,7 +489,7 @@ function DemoPage() {
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
-      const data = event.data as { type?: string; ticket?: string; captchaType?: string };
+      const data = event.data as { type?: string; ticket?: string; captchaType?: string; loadingNext?: boolean };
       if (data?.type === "CAPTCHA_READY") {
         setActualType(String(data.captchaType || ""));
         setStatus("待验证");
@@ -504,7 +504,7 @@ function DemoPage() {
         scheduleAutoReload(activeRef.current);
       }
       if (data?.type === "CAPTCHA_FAILURE") {
-        setStatus("失败");
+        setStatus(data.loadingNext ? "验证码加载中..." : "失败");
         setLastTicket("");
         setElapsed(Math.max(1, Math.round(performance.now() - startedAt.current)));
       }
@@ -613,7 +613,6 @@ function DemoPage() {
               <dd>{lastTicket ? shortToken(lastTicket) : "-"}</dd>
             </div>
           </dl>
-          <p class="demo-note">当前在线 Demo 跑在小霸王服务器上。验证失败后刷新偏慢主要受演示服务器和带宽限制影响，不代表 CaptCha 代码性能或正式部署效果。</p>
         </aside>
       </section>
     </main>
@@ -716,7 +715,7 @@ function RuntimeChallenge() {
     resetChallenge(loaded.challenge, id);
   }
 
-  async function createFreshSession(statusText = "刷新中") {
+  async function createFreshSession(statusText = "验证码加载中...") {
     setStatus(statusText);
     const created = await post<SessionResponse>("/api/v1/challenge/sessions", {
       client_id: params.get("client_id") || "demo",
@@ -744,7 +743,7 @@ function RuntimeChallenge() {
       await bootstrap();
       return;
     }
-    setStatus("刷新中");
+    setStatus("验证码加载中...");
     try {
       const refreshed = await post<RefreshResponse>(`/api/v1/challenge/sessions/${sessionId}/refresh`, {});
       applySessionContext(refreshed);
@@ -865,13 +864,10 @@ function RuntimeChallenge() {
 
   async function handleFailedVerify(result?: VerifyResponse, fallbackReason = "VERIFY_FAILED") {
     const reason = responseReason(result, fallbackReason);
-    const nextStatus = result?.decision === "challenge_harder"
-      ? "验证升级中"
-      : result?.decision === "block"
-        ? "验证失败次数过多"
-        : "验证失败，正在刷新";
+    const loadingNext = result?.decision !== "block";
+    const nextStatus = loadingNext ? "验证码加载中..." : "验证失败次数过多";
     setStatus(nextStatus);
-    notifyParentFailure(reason);
+    notifyParentFailure(reason, loadingNext);
     if (result?.challenge) {
       applySessionContext(result);
       resetChallenge(result.challenge, sessionId);
@@ -1285,8 +1281,8 @@ function RuntimeChallenge() {
     return verifyInFlight.current || Boolean(ticketRef.current);
   }
 
-  function notifyParentFailure(reason: string) {
-    window.parent?.postMessage({ type: "CAPTCHA_FAILURE", sessionId, route, requestNonce, reason }, "*");
+  function notifyParentFailure(reason: string, loadingNext: boolean) {
+    window.parent?.postMessage({ type: "CAPTCHA_FAILURE", sessionId, route, requestNonce, reason, loadingNext }, "*");
   }
 
   function resetAttemptState(next: Challenge) {
