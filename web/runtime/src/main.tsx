@@ -508,6 +508,10 @@ function DemoPage() {
         setLastTicket("");
         setElapsed(Math.max(1, Math.round(performance.now() - startedAt.current)));
       }
+      if (data?.type === "CAPTCHA_LOADING") {
+        setStatus("验证码加载中...");
+        setLastTicket("");
+      }
       if (data?.type === "CAPTCHA_CLOSE") {
         setStatus("已关闭");
         setLastTicket("");
@@ -646,6 +650,7 @@ function RuntimeChallenge() {
   const jigsawDragStart = useRef<ChallengePoint | null>(null);
   const suppressNextBoardClick = useRef(false);
   const verifyInFlight = useRef(false);
+  const verifyLoadingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const valueRef = useRef(0);
   const pointsRef = useRef<ChallengePoint[]>([]);
   const trackRef = useRef<TrackPoint[]>([]);
@@ -666,6 +671,7 @@ function RuntimeChallenge() {
 
   useEffect(() => {
     void bootstrap();
+    return () => clearVerifyLoadingHint();
   }, []);
 
   useEffect(() => {
@@ -782,6 +788,7 @@ function RuntimeChallenge() {
   }
 
   function resetChallenge(next: Challenge, readySessionId = sessionId) {
+    clearVerifyLoadingHint();
     setChallenge(next);
     setStatus("");
     setTicket("");
@@ -815,11 +822,28 @@ function RuntimeChallenge() {
     if (context.return_url) setReturnUrl(context.return_url);
   }
 
+  function beginVerifyLoadingHint() {
+    clearVerifyLoadingHint();
+    verifyLoadingTimer.current = window.setTimeout(() => {
+      verifyLoadingTimer.current = null;
+      if (!verifyInFlight.current || ticketRef.current || sessionCompleted) return;
+      setStatus("验证码加载中...");
+      notifyParentLoading();
+    }, 250);
+  }
+
+  function clearVerifyLoadingHint() {
+    if (!verifyLoadingTimer.current) return;
+    clearTimeout(verifyLoadingTimer.current);
+    verifyLoadingTimer.current = null;
+  }
+
   async function verify(snapshot?: { value?: number; points?: ChallengePoint[]; track?: TrackPoint[] }) {
     if (!challenge || !sessionId) return;
     if (verifyInFlight.current || ticketRef.current || sessionCompleted) return;
     verifyInFlight.current = true;
     setStatus("验证中");
+    beginVerifyLoadingHint();
     const answerValue = snapshot?.value ?? valueRef.current;
     const answerPoints = snapshot?.points ?? pointsRef.current;
     const answerTrack = snapshot?.track ?? trackRef.current;
@@ -842,6 +866,7 @@ function RuntimeChallenge() {
     try {
       const result = await post<VerifyResponse>(`/api/v1/challenge/sessions/${sessionId}/verify`, payload);
       if (result.ok) {
+        clearVerifyLoadingHint();
         const issued = String(result.ticket || "");
         const successRoute = result.route || route;
         const successRequestNonce = result.request_nonce || requestNonce;
@@ -863,6 +888,7 @@ function RuntimeChallenge() {
   }
 
   async function handleFailedVerify(result?: VerifyResponse, fallbackReason = "VERIFY_FAILED") {
+    clearVerifyLoadingHint();
     const reason = responseReason(result, fallbackReason);
     const loadingNext = result?.decision !== "block";
     const nextStatus = loadingNext ? "验证码加载中..." : "验证失败次数过多";
@@ -1283,6 +1309,10 @@ function RuntimeChallenge() {
 
   function notifyParentFailure(reason: string, loadingNext: boolean) {
     window.parent?.postMessage({ type: "CAPTCHA_FAILURE", sessionId, route, requestNonce, reason, loadingNext }, "*");
+  }
+
+  function notifyParentLoading() {
+    window.parent?.postMessage({ type: "CAPTCHA_LOADING", sessionId, route, requestNonce }, "*");
   }
 
   function resetAttemptState(next: Challenge) {
