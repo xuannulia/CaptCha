@@ -50,14 +50,6 @@ jobs:
           cp -R web/runtime/dist/. pages/
           cp pages/index.html pages/404.html
 
-          VITE_API_BASE="$api_base" VITE_BASE_PATH="${pages_base}admin/" npm run build:admin
-          mkdir -p pages/admin
-          cp -R web/admin/dist/. pages/admin/
-
-          VITE_RUNTIME_URL="$pages_base" VITE_BASE_PATH="${pages_base}collector/" npm run build:collector
-          mkdir -p pages/collector
-          cp -R web/collector/dist/. pages/collector/
-
           touch pages/.nojekyll
 
       - name: Upload artifact

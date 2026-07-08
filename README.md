@@ -15,12 +15,10 @@ CaptCha is a server-owned human verification platform. The browser renders chall
 Try the demo before wiring it into an application. The frontend is hosted on GitHub Pages and talks to a deployed backend.
 
 - 演示页 / Demo: [https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/)
-- 管理台 / Admin console: [https://xuannulia.github.io/CaptCha/admin/](https://xuannulia.github.io/CaptCha/admin/)
-- 采集页 / Sample collector: [https://xuannulia.github.io/CaptCha/collector/](https://xuannulia.github.io/CaptCha/collector/)
 
-管理台需要后端管理令牌才能修改配置。公开演示页主要用于查看验证码体验、素材质量和前后端闭环。
+公开演示页主要用于查看验证码体验、素材质量和前后端闭环。
 
-The admin console needs the backend admin token for configuration changes. The public demo is mainly for checking challenge behavior, material quality, and the frontend-backend loop.
+The public demo is mainly for checking challenge behavior, material quality, and the frontend-backend loop.
 
 ## 这个项目解决什么 / What It Solves
 
@@ -84,37 +82,11 @@ Read this from the smallest useful path to the heavier platform paths. For a fir
 | 2 | Express 中间件 / Express middleware | Node/Express 服务希望在常规请求链路里接入。 / Your service is Node/Express and wants normal middleware protection. |
 | 3 | Gateway 反向代理 / Gateway reverse proxy | 不想大改业务服务，希望在入口统一拦截。 / You want protection in front of an existing HTTP service. |
 | 4 | HTTP / gRPC API 直连 / Direct HTTP or gRPC APIs | 自己有网关、服务网格或平台控制面。 / You are integrating with a gateway, service mesh, or custom platform layer. |
-| 5 | 管理和运营 / Admin and operations | 开始维护策略、素材、审计、样本、模型版本和发布闸门。 / You are ready to operate policies, materials, audit, samples, model versions, and release gates. |
+| 5 | 运营治理 / Operations | 开始维护策略、素材、审计、样本、模型版本和发布闸门。 / You are ready to operate policies, materials, audit, samples, model versions, and release gates. |
 
 详细接入步骤在 [docs/integration-guide.md](docs/integration-guide.md)。系统边界、API、资源模型和安全设计在 [docs/architecture-design.md](docs/architecture-design.md)。
 
 The walkthrough lives in [docs/integration-guide.md](docs/integration-guide.md). System boundaries, APIs, resource model, and security design live in [docs/architecture-design.md](docs/architecture-design.md).
-
-## 管理台和采集页 / Admin And Collector
-
-启动管理台：
-
-Run the admin console:
-
-```bash
-npm run dev:admin
-```
-
-管理台可以维护应用、路由策略、IP 策略、资源图库、审计、样本复核和模型版本。生产部署时请使用运行时输入管理令牌，不要把管理令牌打进静态前端包。
-
-The admin console manages applications, route policies, IP policies, resource gallery, audit, sample review, and model versions. In deployed builds, enter the admin token at runtime instead of baking it into the static frontend bundle.
-
-启动轻量采集页：
-
-Run the lightweight collector:
-
-```text
-http://localhost:5173/collect?input_device=mouse
-```
-
-采集页用于收集滑块轨迹样本。公开采集流量默认写成候选样本，不会直接标为可训练样本。
-
-The collector gathers slider-track samples. Public collection traffic is stored as candidate data and is not directly marked as trainable.
 
 ## 常用部署配置 / Common Deployment Settings
 
@@ -230,9 +202,9 @@ app.use(createCaptchaMiddleware({
 
 ## 风控样本 / Risk Samples
 
-验证码验证后会异步写入轨迹特征快照。样本包含轨迹统计、粗粒度输入设备信息和脱敏资源摘要，不写入答案、素材 URI、完整 metadata 或 checksum。管理台可以做人工标注，只有明确的人类/机器人标签才会进入可训练样本。
+验证码验证后会异步写入轨迹特征快照。样本包含轨迹统计、粗粒度输入设备信息和脱敏资源摘要，不写入答案、素材 URI、完整 metadata 或 checksum。只有明确的人类/机器人标签才会进入可训练样本。
 
-After verification, CaptCha asynchronously stores behavior feature snapshots. Samples contain track statistics, coarse input metadata, and sanitized resource summaries; they do not include answers, material URIs, full metadata, or checksums. Admin users can label samples, and only explicit human/bot labels can become trainable.
+After verification, CaptCha asynchronously stores behavior feature snapshots. Samples contain track statistics, coarse input metadata, and sanitized resource summaries; they do not include answers, material URIs, full metadata, or checksums. Only explicit human/bot labels can become trainable.
 
 生成本地模拟机器人负样本：
 
@@ -302,7 +274,6 @@ CI runs `make verify` and `make docker-build`. Before a public release, `make re
 
 - [接入指南 / Integration guide](docs/integration-guide.md)
 - [架构设计 / Architecture design](docs/architecture-design.md)
-- [后台规划 / Admin management plan](docs/admin-management-plan.md)
 - [发布检查 / Release checklist](docs/release-checklist.md)
 - [开源发布说明 / Open-source release notes](docs/open-source-release.md)
 - [实现审计 / Implementation audit](docs/implementation-audit.md)
