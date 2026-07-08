@@ -16,6 +16,7 @@
 
 ![CaptCha 演示页面](docs/assets/demo-page.png)
 
+- 快速接入：[5 分钟跑通接入](docs/zh/quickstart.md)
 - 在线演示：[https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/)
 - 许可证：[AGPL-3.0-only](LICENSE)
 
@@ -71,6 +72,8 @@ flowchart LR
 ```
 
 ## 本地启动
+
+想先看最短业务闭环，请直接看 [快速接入](docs/zh/quickstart.md)。
 
 默认使用内存存储和 demo 数据。
 
@@ -294,6 +297,7 @@ output/synthetic-bot-tracks.jsonl
 
 ## 文档
 
+- [快速接入](docs/zh/quickstart.md)
 - [接入指南](docs/zh/integration-guide.md)
 - [HTTP / gRPC API](docs/zh/api-reference.md)
 - [架构设计](docs/zh/architecture-design.md)

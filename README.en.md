@@ -16,6 +16,7 @@ CaptCha is a backend-verified captcha platform with trajectory recognition, one-
 
 ![CaptCha demo page](docs/assets/demo-page.png)
 
+- Quickstart: [5-minute integration](docs/en/quickstart.md)
 - Demo: [https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/)
 - License: [AGPL-3.0-only](LICENSE)
 
@@ -71,6 +72,8 @@ flowchart LR
 ```
 
 ## Local Start
+
+For the shortest business integration path, start with the [Quickstart](docs/en/quickstart.md).
 
 The default local run uses in-memory storage and demo data.
 
@@ -296,6 +299,7 @@ output/synthetic-bot-tracks.jsonl
 
 ## Documentation
 
+- [Quickstart](docs/en/quickstart.md)
 - [Integration Guide](docs/en/integration-guide.md)
 - [HTTP / gRPC API](docs/en/api-reference.md)
 - [Architecture Overview](docs/en/architecture-overview.md)
