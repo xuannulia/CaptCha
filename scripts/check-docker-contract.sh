@@ -71,6 +71,13 @@ require_pattern docker-compose.yml '^[[:space:]]+- gateway$' "gateway is guarded
 require_pattern docker-compose.yml 'CAPTCHA_POSTGRES_DSN:' "compose wires PostgreSQL into the server"
 require_pattern docker-compose.yml 'CAPTCHA_REDIS_ADDR:' "compose wires Redis into the server"
 require_pattern docker-compose.yml 'CAPTCHA_PLATFORM_GRPC_ADDR:' "compose wires gateway to platform gRPC"
+require_pattern docker-compose.yml '\["CMD", "captcha-server", "healthcheck", "http://127\.0\.0\.1:8080/healthz"\]' "server healthcheck uses the scratch image binary"
+require_pattern docker-compose.yml '\["CMD", "captcha-gateway", "healthcheck", "http://127\.0\.0\.1:8081/healthz"\]' "gateway healthcheck uses the scratch image binary"
+reject_pattern docker-compose.yml 'wget|curl' "compose healthchecks do not depend on tools missing from scratch images"
+require_pattern docker-compose.yml 'CAPTCHA_GATEWAY_FAIL_POLICY:' "compose exposes gateway fail policy"
+require_pattern docker-compose.yml 'CAPTCHA_GATEWAY_TIMEOUT:' "compose exposes gateway timeout"
+require_pattern docker-compose.yml 'CAPTCHA_GATEWAY_CIRCUIT_BREAKER_FAILURES:' "compose exposes gateway circuit breaker threshold"
+require_pattern docker-compose.yml 'CAPTCHA_GATEWAY_CIRCUIT_BREAKER_COOLDOWN:' "compose exposes gateway circuit breaker cooldown"
 require_pattern docker-compose.yml 'condition: service_healthy' "compose waits for healthy dependencies"
 
 require_pattern docker-compose.dev.yml '^  postgres:$' "dev compose includes PostgreSQL"

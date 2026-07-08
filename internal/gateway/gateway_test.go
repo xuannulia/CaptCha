@@ -92,6 +92,39 @@ func (c *blockingEventClient) Report(ctx context.Context, events []types.AuditEv
 	}
 }
 
+func TestGatewayHealthzDoesNotCallUpstreamOrPolicy(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("upstream should not be reached by gateway health check")
+	}))
+	defer upstream.Close()
+
+	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionBlock, Reason: "SHOULD_NOT_RUN"}}
+	gateway, err := NewWithPolicyClient(Config{
+		ClientID:       "demo",
+		PlatformURL:    "http://platform.local",
+		UpstreamURL:    upstream.URL,
+		RequestTimeout: time.Second,
+	}, policy, nil)
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+
+	response := httptest.NewRecorder()
+	gateway.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200 health check, got %d", response.Code)
+	}
+	if body := response.Body.String(); body != "ok\n" {
+		t.Fatalf("unexpected health body %q", body)
+	}
+	if policy.calls != 0 {
+		t.Fatalf("health check should not call policy, got %d calls", policy.calls)
+	}
+}
+
 func TestGatewayChallengesBeforeProxy(t *testing.T) {
 	t.Parallel()
 

@@ -38,6 +38,10 @@ type transientStore interface {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck("http://127.0.0.1:8080/healthz"))
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	if errors := productionSecurityErrors(os.Getenv); len(errors) > 0 {
 		for _, message := range errors {
@@ -105,6 +109,23 @@ func main() {
 		logger.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+func runHealthcheck(defaultURL string) int {
+	endpoint := defaultURL
+	if len(os.Args) > 2 && strings.TrimSpace(os.Args[2]) != "" {
+		endpoint = strings.TrimSpace(os.Args[2])
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	response, err := client.Get(endpoint)
+	if err != nil {
+		return 1
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return 1
+	}
+	return 0
 }
 
 func env(key, fallback string) string {

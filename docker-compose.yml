@@ -58,7 +58,7 @@ services:
       - "8080:8080"
       - "9090:9090"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      test: ["CMD", "captcha-server", "healthcheck", "http://127.0.0.1:8080/healthz"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -85,12 +85,21 @@ services:
       CAPTCHA_GATEWAY_CONFIG_CACHE: "${CAPTCHA_GATEWAY_CONFIG_CACHE:-true}"
       CAPTCHA_CLIENT_ID: "${CAPTCHA_CLIENT_ID:-demo}"
       CAPTCHA_CLIENT_SECRET: "${CAPTCHA_CLIENT_SECRET:-}"
+      CAPTCHA_GATEWAY_FAIL_POLICY: "${CAPTCHA_GATEWAY_FAIL_POLICY:-fail_open}"
+      CAPTCHA_GATEWAY_TIMEOUT: "${CAPTCHA_GATEWAY_TIMEOUT:-1500ms}"
+      CAPTCHA_GATEWAY_CIRCUIT_BREAKER_FAILURES: "${CAPTCHA_GATEWAY_CIRCUIT_BREAKER_FAILURES:-0}"
+      CAPTCHA_GATEWAY_CIRCUIT_BREAKER_COOLDOWN: "${CAPTCHA_GATEWAY_CIRCUIT_BREAKER_COOLDOWN:-0s}"
       CAPTCHA_GATEWAY_HEADER_ALLOWLIST: "${CAPTCHA_GATEWAY_HEADER_ALLOWLIST:-x-request-id,traceparent}"
       CAPTCHA_GATEWAY_EVENT_BATCH_SIZE: "${CAPTCHA_GATEWAY_EVENT_BATCH_SIZE:-20}"
       CAPTCHA_GATEWAY_EVENT_FLUSH_INTERVAL: "${CAPTCHA_GATEWAY_EVENT_FLUSH_INTERVAL:-1s}"
       CAPTCHA_GATEWAY_EVENT_QUEUE_SIZE: "${CAPTCHA_GATEWAY_EVENT_QUEUE_SIZE:-200}"
     ports:
       - "8081:8081"
+    healthcheck:
+      test: ["CMD", "captcha-gateway", "healthcheck", "http://127.0.0.1:8081/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
 volumes:
   captcha-postgres:

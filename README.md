@@ -303,6 +303,7 @@ output/synthetic-bot-tracks.jsonl
 - [后端 ticket 核销](docs/zh/backend-ticket-verification.md)
 - [中间件接入](docs/zh/middleware-integration.md)
 - [自定义接入](docs/zh/custom-integration.md)
+- [部署运行与自恢复](docs/zh/deployment-operations.md)
 - [HTTP / gRPC API](docs/zh/api-reference.md)
 - [架构设计](docs/zh/architecture-design.md)
 - [安全策略](SECURITY.md)

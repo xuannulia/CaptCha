@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -70,6 +73,36 @@ func TestProductionSecurityErrorsAcceptHardenedSettings(t *testing.T) {
 	}))
 	if len(errors) != 0 {
 		t.Fatalf("expected hardened production config to pass, got %v", errors)
+	}
+}
+
+func TestRunHealthcheck(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	os.Args = []string{"captcha-server", "healthcheck", server.URL}
+
+	if code := runHealthcheck("http://127.0.0.1:8080/healthz"); code != 0 {
+		t.Fatalf("expected successful healthcheck, got exit code %d", code)
+	}
+}
+
+func TestRunHealthcheckFailsOnNonTwoHundred(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	os.Args = []string{"captcha-server", "healthcheck", server.URL}
+
+	if code := runHealthcheck("http://127.0.0.1:8080/healthz"); code == 0 {
+		t.Fatal("expected failing healthcheck")
 	}
 }
 

@@ -12,6 +12,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck("http://127.0.0.1:8081/healthz"))
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	upstreamURL := os.Getenv("CAPTCHA_UPSTREAM_URL")
 	if upstreamURL == "" {
@@ -60,6 +64,23 @@ func main() {
 		logger.Error("gateway stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+func runHealthcheck(defaultURL string) int {
+	endpoint := defaultURL
+	if len(os.Args) > 2 && strings.TrimSpace(os.Args[2]) != "" {
+		endpoint = strings.TrimSpace(os.Args[2])
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	response, err := client.Get(endpoint)
+	if err != nil {
+		return 1
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return 1
+	}
+	return 0
 }
 
 func env(key, fallback string) string {

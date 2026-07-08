@@ -305,6 +305,7 @@ output/synthetic-bot-tracks.jsonl
 - [Backend Ticket Verification](docs/en/backend-ticket-verification.md)
 - [Middleware Integration](docs/en/middleware-integration.md)
 - [Custom Integration](docs/en/custom-integration.md)
+- [Deployment Operations](docs/en/deployment-operations.md)
 - [HTTP / gRPC API](docs/en/api-reference.md)
 - [Architecture Overview](docs/en/architecture-overview.md)
 - [Security Policy](SECURITY.en.md)
