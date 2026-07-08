@@ -687,6 +687,17 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.demo-note {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #e5eaf1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .collector-shell {
   min-height: 100vh;
   display: grid;

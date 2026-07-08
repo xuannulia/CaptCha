@@ -613,6 +613,7 @@ function DemoPage() {
               <dd>{lastTicket ? shortToken(lastTicket) : "-"}</dd>
             </div>
           </dl>
+          <p class="demo-note">验证失败后的等待主要来自下一题图片生成、素材合成和图片加载；服务器性能、带宽、缓存和 CDN 也会影响实际速度。</p>
         </aside>
       </section>
     </main>
