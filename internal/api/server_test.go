@@ -895,6 +895,21 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 
 		session, err = memoryStore.GetSession(created.SessionID)
 		if err != nil {
+			t.Fatalf("get nonce session after mismatch: %v", err)
+		}
+		if session.Status != types.SessionRefreshRequired {
+			t.Fatalf("expected nonce mismatch to require refresh, got %s", session.Status)
+		}
+		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/refresh", nil)
+		var refreshed struct {
+			SessionID string `json:"session_id"`
+		}
+		decode(t, response, &refreshed)
+		if refreshed.SessionID != created.SessionID {
+			t.Fatalf("expected nonce session to refresh in place, got %+v", refreshed)
+		}
+		session, err = memoryStore.GetSession(created.SessionID)
+		if err != nil {
 			t.Fatalf("get refreshed nonce session: %v", err)
 		}
 		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/verify", map[string]any{
@@ -2402,6 +2417,16 @@ func TestChallengeSessionSingleUseAndFailureLimit(t *testing.T) {
 			"track":  trackForX(wrongX),
 		})
 		decode(t, response, &failed)
+		if i < maxSessionFailures-1 {
+			response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+limited.SessionID+"/refresh", nil)
+			var refreshed struct {
+				SessionID string `json:"session_id"`
+			}
+			decode(t, response, &refreshed)
+			if refreshed.SessionID != limited.SessionID {
+				t.Fatalf("expected failed session to refresh in place, got %+v", refreshed)
+			}
+		}
 	}
 	if failed.OK || failed.Decision != types.DecisionBlock || failed.ReasonCode != "TOO_MANY_FAILURES" || failed.CanRefresh {
 		t.Fatalf("expected failure limit block, got %+v", failed)
@@ -2418,7 +2443,7 @@ func TestChallengeSessionSingleUseAndFailureLimit(t *testing.T) {
 	}
 }
 
-func TestFailedVerifyResponseReplacesChallenge(t *testing.T) {
+func TestFailedVerifyResponseDefersReplacementChallengeToRefresh(t *testing.T) {
 	server, memoryStore, _ := testServer()
 
 	for attempt := 0; attempt < 20; attempt++ {
@@ -2442,21 +2467,59 @@ func TestFailedVerifyResponseReplacesChallenge(t *testing.T) {
 			"track":  trackForX(wrongX),
 		})
 		var failed struct {
-			OK        bool                `json:"ok"`
-			Challenge types.RenderPayload `json:"challenge"`
+			OK          bool                `json:"ok"`
+			CanRefresh  bool                `json:"can_refresh"`
+			CaptchaType types.CaptchaType   `json:"captcha_type"`
+			Challenge   types.RenderPayload `json:"challenge"`
 		}
 		decode(t, response, &failed)
-		if failed.OK || failed.Challenge.Type != types.CaptchaSlider || failed.Challenge.View.Width == 0 {
-			t.Fatalf("expected failed verify to return replacement challenge, got %+v", failed)
+		if failed.OK || !failed.CanRefresh || failed.CaptchaType != types.CaptchaSlider || failed.Challenge.Type != "" || failed.Challenge.View.Width != 0 {
+			t.Fatalf("expected failed verify to defer replacement challenge, got %+v", failed)
 		}
-		replaced, err := memoryStore.GetSession(created.SessionID)
+		failedStored, err := memoryStore.GetSession(created.SessionID)
 		if err != nil {
-			t.Fatalf("get replaced session: %v", err)
+			t.Fatalf("get failed session: %v", err)
 		}
-		if replaced.FailureCount != 1 {
-			t.Fatalf("expected failed replacement to preserve failure count, got %d", replaced.FailureCount)
+		if failedStored.FailureCount != 1 {
+			t.Fatalf("expected failed verify to preserve failure count, got %d", failedStored.FailureCount)
 		}
-		if absInt(original.Answer.X-replaced.Answer.X) <= 6 {
+		if failedStored.Status != types.SessionRefreshRequired {
+			t.Fatalf("expected failed verify to require refresh, got %s", failedStored.Status)
+		}
+		if failedStored.Answer.X != 0 || failedStored.Answer.Y != 0 || failedStored.Answer.Angle != 0 || failedStored.Answer.Offset != 0 || len(failedStored.Answer.Points) != 0 || failedStored.Answer.Token != "" || failedStored.RenderPayload.Type != "" {
+			t.Fatalf("expected failed verify to invalidate stale answer before refresh, got answer=%+v challenge=%+v", failedStored.Answer, failedStored.RenderPayload.Type)
+		}
+
+		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/verify", map[string]any{
+			"answer": answerForSession(original),
+			"track":  trackForX(original.Answer.X),
+		})
+		var repeatBeforeRefresh struct {
+			OK         bool   `json:"ok"`
+			ReasonCode string `json:"reason_code"`
+			CanRefresh bool   `json:"can_refresh"`
+		}
+		decode(t, response, &repeatBeforeRefresh)
+		if repeatBeforeRefresh.OK || repeatBeforeRefresh.ReasonCode != "REFRESH_REQUIRED" || !repeatBeforeRefresh.CanRefresh {
+			t.Fatalf("expected repeat verify before refresh to be rejected, got %+v", repeatBeforeRefresh)
+		}
+
+		response = request(t, server, http.MethodPost, "/api/v1/challenge/sessions/"+created.SessionID+"/refresh", nil)
+		var refreshedResponse struct {
+			Challenge types.RenderPayload `json:"challenge"`
+		}
+		decode(t, response, &refreshedResponse)
+		if refreshedResponse.Challenge.Type != types.CaptchaSlider || refreshedResponse.Challenge.View.Width == 0 {
+			t.Fatalf("expected refresh to return replacement challenge, got %+v", refreshedResponse)
+		}
+		refreshed, err := memoryStore.GetSession(created.SessionID)
+		if err != nil {
+			t.Fatalf("get refreshed session: %v", err)
+		}
+		if refreshed.FailureCount != 1 {
+			t.Fatalf("expected refresh to preserve failure count, got %d", refreshed.FailureCount)
+		}
+		if absInt(original.Answer.X-refreshed.Answer.X) <= 6 {
 			continue
 		}
 

@@ -1305,7 +1305,7 @@ func (s *Server) handleRefreshSession(w http.ResponseWriter, r *http.Request) {
 	if !s.requireActiveApplication(w, session.ClientID) {
 		return
 	}
-	if !s.requireActiveSession(w, session) {
+	if !s.requireRefreshableSession(w, session) {
 		return
 	}
 	refreshed, err := s.engine.Refresh(session)
@@ -1779,18 +1779,16 @@ func (s *Server) recordFailedVerification(w http.ResponseWriter, session types.C
 		if result.TrackScore.Bucket == "" {
 			result.TrackScore.Bucket = "low"
 		}
-	}
-	if session.Status == types.SessionActive || session.Status == "" {
-		refreshed, err := s.engine.Refresh(session)
-		if err != nil {
-			s.logger.Error("refresh failed verification session", "error", err)
-			session.Status = types.SessionExpired
-			s.store.UpdateSession(session)
-			writeError(w, http.StatusInternalServerError, "REFRESH_FAILED")
-			return
+	} else if result.Decision == types.DecisionBlock {
+		session.Status = types.SessionExpired
+		attemptedSession.Status = types.SessionExpired
+		if result.TrackScore.Bucket == "" {
+			result.TrackScore.Bucket = "low"
 		}
-		refreshed.RenderPayload = resourcepkg.ApplyVisualsAndAttachForStore(s.store, refreshed.RenderPayload, refreshed.Answer, refreshed.ClientID, refreshed.Scene, refreshed.Type, refreshed.ResourceTag)
-		session = refreshed
+	} else if session.Status == types.SessionActive || session.Status == "" {
+		session.Status = types.SessionRefreshRequired
+		session.Answer = types.Answer{}
+		session.RenderPayload = types.RenderPayload{}
 	}
 	s.store.UpdateSession(session)
 	s.recordRiskFeatureSnapshot(attemptedSession, req, result)
@@ -1816,23 +1814,22 @@ func (s *Server) recordFailedVerification(w http.ResponseWriter, session types.C
 		"can_refresh":  canRefreshAfterFailure(session, result),
 		"captcha_type": nextType,
 	}
-	if session.Status == types.SessionActive || session.Status == "" {
+	if isRefreshableSessionStatus(session.Status) {
 		response["session_id"] = session.ID
 		response["expire_at"] = session.ExpiresAt
 		response["route"] = session.Route
 		response["request_nonce"] = session.RequestNonce
 		response["resource_tag"] = session.ResourceTag
 		response["return_url"] = session.ReturnURL
-		response["challenge"] = session.RenderPayload
 	}
 	writeJSON(w, http.StatusOK, response)
 }
 
 func canRefreshAfterFailure(session types.ChallengeSession, result types.VerifyResult) bool {
-	if session.Status != types.SessionActive || session.FailureCount >= maxSessionFailures {
+	if !isRefreshableSessionStatus(session.Status) || session.FailureCount >= maxSessionFailures {
 		return false
 	}
-	return result.Decision == types.DecisionChallengeHarder || session.FailureCount >= 3
+	return result.Decision != types.DecisionBlock
 }
 
 func (s *Server) newSessionEscalation(routeEscalation []types.CaptchaType) []types.CaptchaType {
@@ -2165,6 +2162,14 @@ func (s *Server) requireActiveSession(w http.ResponseWriter, session types.Chall
 	switch session.Status {
 	case types.SessionActive, "":
 		return true
+	case types.SessionRefreshRequired:
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":          false,
+			"decision":    types.DecisionRetry,
+			"reason_code": "REFRESH_REQUIRED",
+			"can_refresh": true,
+		})
+		return false
 	case types.SessionVerified:
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":           false,
@@ -2184,6 +2189,35 @@ func (s *Server) requireActiveSession(w http.ResponseWriter, session types.Chall
 		})
 		return false
 	}
+}
+
+func (s *Server) requireRefreshableSession(w http.ResponseWriter, session types.ChallengeSession) bool {
+	switch session.Status {
+	case types.SessionActive, types.SessionRefreshRequired, "":
+		return true
+	case types.SessionVerified:
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":           false,
+			"decision":     types.DecisionBlock,
+			"reason_code":  "SESSION_ALREADY_VERIFIED",
+			"can_refresh":  false,
+			"track_bucket": "low",
+		})
+		return false
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":           false,
+			"decision":     types.DecisionBlock,
+			"reason_code":  "SESSION_NOT_ACTIVE",
+			"can_refresh":  false,
+			"track_bucket": "low",
+		})
+		return false
+	}
+}
+
+func isRefreshableSessionStatus(status types.SessionStatus) bool {
+	return status == types.SessionActive || status == types.SessionRefreshRequired || status == ""
 }
 
 func (s *Server) requireClientSecret(w http.ResponseWriter, r *http.Request, clientID string, requireActive bool) bool {

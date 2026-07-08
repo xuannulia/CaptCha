@@ -45,6 +45,8 @@ These endpoints are called by the Runtime frontend. Responses do not expose answ
 | `POST` | `/api/v1/challenge/sessions/{session_id}/verify` | Submit answer and interaction trajectory; returns a one-time ticket on success. |
 | `POST` | `/api/v1/challenge/sessions/{session_id}/refresh` | Refresh the challenge. |
 
+Failed `verify` responses return only a short reason code, decision, and `can_refresh`; they do not inline a replacement `challenge`. When `can_refresh=true`, call `refresh` for the next challenge. Repeating `verify` before refresh returns `REFRESH_REQUIRED`.
+
 Common session creation fields:
 
 | Field | Purpose |

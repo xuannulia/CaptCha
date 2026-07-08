@@ -45,6 +45,8 @@
 | `POST` | `/api/v1/challenge/sessions/{session_id}/verify` | 提交答案和交互轨迹，成功后返回一次性 ticket。 |
 | `POST` | `/api/v1/challenge/sessions/{session_id}/refresh` | 刷新 challenge。 |
 
+`verify` 失败时只返回短错误码、决策和 `can_refresh`，不会内联新的 `challenge`。当 `can_refresh=true` 时，客户端应调用 `refresh` 获取下一题；刷新前重复提交同一 session 会返回 `REFRESH_REQUIRED`。
+
 创建 session 的常用字段：
 
 | 字段 | 说明 |

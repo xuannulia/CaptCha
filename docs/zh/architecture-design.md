@@ -764,7 +764,7 @@ GET /api/v1/challenge/sessions/{session_id}
 POST /api/v1/challenge/sessions/{session_id}/verify
   校验用户答案和行为轨迹。
   输入 answer、track、viewport、route、runtime_meta。
-  成功输出 ticket、route、request_nonce、resource_tag 和 return_url，失败输出可展示的短错误码和是否允许刷新。
+  成功输出 ticket、route、request_nonce、resource_tag 和 return_url，失败只输出可展示的短错误码、决策和是否允许刷新，不内联下一题 challenge；允许刷新时由 Runtime 或接入方调用 refresh 获取下一题，刷新前重复 verify 会返回 REFRESH_REQUIRED。
   不接受 tolerance、target、answer_seed、verify_rule、score_rule、score_threshold、track_score 等会影响校验规则、评分阈值或服务端评分结果的客户端字段；当前实现会递归检查请求 JSON，字段出现在 answer 或 runtime_meta 等嵌套对象中也会被拒绝。
 
 POST /api/v1/challenge/sessions/{session_id}/refresh

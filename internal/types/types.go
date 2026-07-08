@@ -69,9 +69,10 @@ func IsBlockLikeDecision(decision Decision) bool {
 type SessionStatus string
 
 const (
-	SessionActive   SessionStatus = "active"
-	SessionVerified SessionStatus = "verified"
-	SessionExpired  SessionStatus = "expired"
+	SessionActive          SessionStatus = "active"
+	SessionRefreshRequired SessionStatus = "refresh_required"
+	SessionVerified        SessionStatus = "verified"
+	SessionExpired         SessionStatus = "expired"
 )
 
 type ChallengeSession struct {
