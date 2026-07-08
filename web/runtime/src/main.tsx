@@ -2291,9 +2291,14 @@ function appPathname() {
   const current = window.location.pathname || "/";
   if (appBasePath !== "/" && current.startsWith(appBasePath)) {
     const next = current.slice(appBasePath.length - 1) || "/";
-    return next.startsWith("/") ? next : `/${next}`;
+    return normalizeRoutePath(next);
   }
-  return current;
+  return normalizeRoutePath(current);
+}
+
+function normalizeRoutePath(path: string) {
+  const next = path.startsWith("/") ? path : `/${path}`;
+  return next.length > 1 ? next.replace(/\/+$/g, "") : next;
 }
 
 function appURL(path: string, params?: URLSearchParams) {
