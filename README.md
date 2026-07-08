@@ -1,11 +1,26 @@
 # CaptCha
 
+[![CI](https://github.com/xuannulia/CaptCha/actions/workflows/ci.yml/badge.svg)](https://github.com/xuannulia/CaptCha/actions/workflows/ci.yml)
+[![Pages](https://github.com/xuannulia/CaptCha/actions/workflows/pages.yml/badge.svg)](https://github.com/xuannulia/CaptCha/actions/workflows/pages.yml)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
+
 服务端验证码平台。浏览器只负责展示和上报交互轨迹；答案、策略、ticket、clearance、限流、审计和风控判断都在服务端。
 
 ![CaptCha demo page](docs/assets/demo-page.png)
 
 - Demo: [https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/)
 - License: [AGPL-3.0-only](LICENSE)
+
+## 为什么不是第三方验证码服务
+
+CaptCha 适合你需要自己掌握验证链路的场景：
+
+- 策略、素材、答案、ticket、clearance 和审计数据留在自己的服务端。
+- 不把用户行为轨迹交给第三方验证码平台。
+- 私有化部署，或运行环境无法稳定访问外部验证码服务。
+- 验证码只是风控链路的一层，需要和限流、账号信誉、IP 风险、设备信号、业务规则一起工作。
 
 ## 包含什么
 
@@ -15,6 +30,39 @@
 - Gateway：放在业务服务前的反向代理。
 - 中间件：Express、Go `net/http`、Python ASGI、Java `HttpHandler`、ASP.NET Core。
 - HTTP / gRPC API：接入自研网关、服务网格或平台控制面。
+
+## 项目状态
+
+当前是早期可运行版本。
+
+已具备：
+
+- API Server、Runtime 前端、Demo 数据。
+- Gateway 和 Express / Go / Python / Java / ASP.NET Core 中间件。
+- PostgreSQL / Redis 配置。
+- 基础审计、ticket、clearance、策略评估和样本快照。
+
+仍在完善：
+
+- 管理台体验和策略编辑器。
+- 更多可直接复用的验证码素材。
+- 模型训练闭环和性能压测报告。
+
+## 架构一览
+
+```mermaid
+flowchart LR
+  Browser["业务浏览器"] --> Runtime["Runtime iframe / redirect"]
+  Browser --> Entry["中间件 / Gateway"]
+  Runtime --> API["CaptCha API Server"]
+  Entry --> API
+  Entry --> Upstream["业务服务"]
+  API --> Challenge["challenge / ticket / clearance"]
+  API --> Policy["policy / rate limit / audit"]
+  API --> Resource["resource manager"]
+  API --> Sample["sample snapshots"]
+  API --> Store[("PostgreSQL / Redis")]
+```
 
 ## 本地启动
 
@@ -125,6 +173,24 @@ CAPTCHA_REDIS_ADDR=localhost:6379 \
 CAPTCHA_SEED_DEMO=false \
   go run ./cmd/captcha-server
 ```
+
+## 安全边界
+
+CaptCha 不是万能反爬系统，也不能单独阻止所有自动化攻击。它更适合作为风控链路中的验证层。
+
+不建议：
+
+- 单独依赖验证码保护高价值接口。
+- 把 IP 当作长期白名单。
+- 把 `client_secret`、管理 token 或 gRPC token 放到浏览器。
+- 接受客户端提交答案、评分阈值或验证规则。
+- 把公开采集流量直接作为训练数据。
+
+建议：
+
+- 高风险操作绑定 route 和一次性 nonce。
+- ticket 消费失败按失败处理。
+- 配合限流、账号信誉、设备信号、IP 风险和业务规则使用。
 
 ## Docker
 
