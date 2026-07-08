@@ -17,7 +17,7 @@
 ![CaptCha 演示页面](docs/assets/demo-page.png)
 
 - 快速接入：[5 分钟跑通接入](docs/zh/quickstart.md)
-- 在线演示：[https://xuannulia.github.io/CaptCha/demo](https://xuannulia.github.io/CaptCha/demo)
+- 在线演示：[https://xuannulia.github.io/CaptCha/demo/](https://xuannulia.github.io/CaptCha/demo/)
 - 许可证：[AGPL-3.0-only](LICENSE)
 
 ## 为什么不是第三方验证码服务

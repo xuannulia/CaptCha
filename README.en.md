@@ -17,7 +17,7 @@ CaptCha is a backend-verified captcha platform with trajectory recognition, one-
 ![CaptCha demo page](docs/assets/demo-page.png)
 
 - Quickstart: [5-minute integration](docs/en/quickstart.md)
-- Demo: [https://xuannulia.github.io/CaptCha/demo](https://xuannulia.github.io/CaptCha/demo)
+- Demo: [https://xuannulia.github.io/CaptCha/demo/](https://xuannulia.github.io/CaptCha/demo/)
 - License: [AGPL-3.0-only](LICENSE)
 
 ## Why Not A Third-Party Captcha Service

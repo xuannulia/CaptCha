@@ -6,7 +6,7 @@ CaptCha 应保持为服务端掌握的人机验证平台。浏览器 Runtime 只
 
 ![CaptCha demo page](../assets/demo-page.png)
 
-在线 Demo：[https://xuannulia.github.io/CaptCha/demo](https://xuannulia.github.io/CaptCha/demo)
+在线 Demo：[https://xuannulia.github.io/CaptCha/demo/](https://xuannulia.github.io/CaptCha/demo/)
 
 ## 接入层级
 
