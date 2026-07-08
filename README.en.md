@@ -99,14 +99,15 @@ These options decide where business requests are intercepted.
 
 | Option | When to use it | Entry |
 |---|---|---|
-| Runtime iframe + backend ticket check | You can change both the page and backend; smallest integration path. | [Integration Guide](docs/en/integration-guide.md) |
-| Middleware | Your service can add middleware and handle tickets, clearance, and policy in the request chain. | [Middleware](#middleware) |
+| Runtime iframe + backend ticket check | You can change both the page and backend; smallest integration path. | [Backend Ticket Verification](docs/en/backend-ticket-verification.md) |
+| Middleware | Your service can add middleware and handle tickets, clearance, and policy in the request chain. | [Middleware Integration](docs/en/middleware-integration.md) |
 | Gateway | The business service is hard to change; intercept at the edge. | [Gateway](#gateway) |
 
 ## Custom Integration
 
 HTTP / gRPC APIs are low-level interfaces, not another turnkey option beside middleware and Gateway. Use them when building your own gateway, service mesh adapter, or platform control plane.
 
+- Integration Guide: [Custom Integration](docs/en/custom-integration.md)
 - API Reference: [HTTP / gRPC API](docs/en/api-reference.md)
 
 ## Marker And Identity Dimensions
@@ -301,6 +302,9 @@ output/synthetic-bot-tracks.jsonl
 
 - [Quickstart](docs/en/quickstart.md)
 - [Integration Guide](docs/en/integration-guide.md)
+- [Backend Ticket Verification](docs/en/backend-ticket-verification.md)
+- [Middleware Integration](docs/en/middleware-integration.md)
+- [Custom Integration](docs/en/custom-integration.md)
 - [HTTP / gRPC API](docs/en/api-reference.md)
 - [Architecture Overview](docs/en/architecture-overview.md)
 - [Security Policy](SECURITY.en.md)

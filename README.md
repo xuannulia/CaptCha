@@ -99,14 +99,15 @@ http://localhost:5173/demo
 
 | 方式 | 什么时候选 | 入口 |
 |---|---|---|
-| Runtime iframe + 后端 ticket 校验 | 页面和后端都能改；改动最小 | [接入指南](docs/zh/integration-guide.md) |
-| 中间件 | 服务能加 middleware；在请求链路内处理 ticket、clearance 和策略 | [中间件](#中间件) |
+| Runtime iframe + 后端 ticket 校验 | 页面和后端都能改；改动最小 | [后端核销](docs/zh/backend-ticket-verification.md) |
+| 中间件 | 服务能加 middleware；在请求链路内处理 ticket、clearance 和策略 | [中间件接入](docs/zh/middleware-integration.md) |
 | Gateway | 业务服务不便改；在入口统一拦截 | [Gateway](#gateway) |
 
 ## 自研接入
 
 HTTP / gRPC API 是底层接口，不是和中间件、Gateway 并列的开箱接入方式。已有网关、服务网格或平台控制面时，用它们自己封装接入层。
 
+- 接入说明：[自定义接入](docs/zh/custom-integration.md)
 - API 文档：[HTTP / gRPC API](docs/zh/api-reference.md)
 
 ## 标记和区分能力
@@ -299,6 +300,9 @@ output/synthetic-bot-tracks.jsonl
 
 - [快速接入](docs/zh/quickstart.md)
 - [接入指南](docs/zh/integration-guide.md)
+- [后端 ticket 核销](docs/zh/backend-ticket-verification.md)
+- [中间件接入](docs/zh/middleware-integration.md)
+- [自定义接入](docs/zh/custom-integration.md)
 - [HTTP / gRPC API](docs/zh/api-reference.md)
 - [架构设计](docs/zh/architecture-design.md)
 - [安全策略](SECURITY.md)

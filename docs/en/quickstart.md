@@ -72,6 +72,8 @@ app.post("/api/login", async (req, res) => {
 });
 ```
 
+See [Backend Ticket Verification](backend-ticket-verification.md) for the full path.
+
 ## 4. Minimal Middleware Integration
 
 If your service can add middleware, let it handle tickets, clearance, policy, and failure behavior.
@@ -88,6 +90,8 @@ app.use(createCaptchaMiddleware({
 ```
 
 The middleware reads `X-Captcha-Ticket`, `X-Captcha-Clearance`, and `captcha_clearance` by default. It sends request IP/User-Agent hashes plus optional account/device hashes to CaptCha, and writes short-lived clearance after a successful decision.
+
+See [Middleware Integration](middleware-integration.md) for the full path.
 
 ## 5. Custom Integration
 
@@ -140,6 +144,8 @@ Minimal rules:
 
 Next:
 
+- [Backend Ticket Verification](backend-ticket-verification.md)
+- [Middleware Integration](middleware-integration.md)
+- [Custom Integration](custom-integration.md)
 - [Full Integration Guide](integration-guide.md)
 - [HTTP / gRPC API](api-reference.md)
-- [Express middleware](../../integrations/express-middleware/README.md)

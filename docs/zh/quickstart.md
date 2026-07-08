@@ -72,6 +72,8 @@ app.post("/api/login", async (req, res) => {
 });
 ```
 
+完整说明见 [后端 ticket 核销](backend-ticket-verification.md)。
+
 ## 4. 中间件最小接入
 
 服务能加 middleware 时，用中间件接管 ticket、clearance、策略和失败处理。
@@ -88,6 +90,8 @@ app.use(createCaptchaMiddleware({
 ```
 
 中间件默认读取 `X-Captcha-Ticket`、`X-Captcha-Clearance` 和 `captcha_clearance`，会把请求 IP/User-Agent hash、可选账号/设备 hash 送入平台，并在通过后写入短期 clearance。
+
+完整说明见 [中间件接入](middleware-integration.md)。
 
 ## 5. 自定义接入
 
@@ -140,6 +144,8 @@ return res.status(403).json({ error: decision.reason || "CAPTCHA_BLOCKED" });
 
 下一步：
 
+- [后端 ticket 核销](backend-ticket-verification.md)
+- [中间件接入](middleware-integration.md)
+- [自定义接入](custom-integration.md)
 - [完整接入指南](integration-guide.md)
 - [HTTP / gRPC API](api-reference.md)
-- [Express middleware](../../integrations/express-middleware/README.md)
