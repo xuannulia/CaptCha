@@ -5,8 +5,12 @@
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
+![Backend verification](https://img.shields.io/badge/Backend-Verification-2ea44f)
+![Trajectory recognition](https://img.shields.io/badge/Trajectory-Recognition-6f42c1)
+![Ticket clearance](https://img.shields.io/badge/Ticket-Clearance-0969da)
+![Self hosted](https://img.shields.io/badge/Self--hosted-Captcha-555)
 
-服务端验证码平台。浏览器只负责展示和上报交互轨迹；答案、策略、ticket、clearance、限流、审计和风控判断都在服务端。
+后端验证型验证码平台，带轨迹识别、ticket、clearance 和策略风控。浏览器只负责展示和上报交互轨迹；答案、策略、限流、审计和风控判断都在服务端。
 
 ![CaptCha demo page](docs/assets/demo-page.png)
 
