@@ -18,6 +18,7 @@ const targets = new Set(
 const docFiles = [
   "README.md",
   "CONTRIBUTING.md",
+  "docs/api-reference.md",
   "docs/architecture-design.md",
 ].filter((file) => fs.existsSync(file));
 

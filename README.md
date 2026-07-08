@@ -98,7 +98,7 @@ http://localhost:5173/demo
 
 HTTP / gRPC API 是底层接口，不是和中间件、Gateway 并列的开箱接入方式。已有网关、服务网格或平台控制面时，用它们自己封装接入层。
 
-- 接口和边界：[架构设计](docs/architecture-design.md)
+- API Reference：[HTTP / gRPC API](docs/api-reference.md)
 
 ## 管理台
 
@@ -264,6 +264,7 @@ output/synthetic-bot-tracks.jsonl
 ## 文档
 
 - [接入指南](docs/integration-guide.md)
+- [HTTP / gRPC API](docs/api-reference.md)
 - [架构设计](docs/architecture-design.md)
 - [安全策略](SECURITY.md)
 - [贡献指南](CONTRIBUTING.md)

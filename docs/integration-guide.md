@@ -208,6 +208,8 @@ curl -X POST https://captcha.example.com/api/v1/policy/evaluate \
 
 gRPC is the better long-running data-plane path. It gives you typed contracts for policy evaluation, ticket consumption, config snapshots, config watching, and event reporting. Protect gRPC with `CAPTCHA_GRPC_TOKEN` or an equivalent deployment boundary, and keep application client secrets separate from the platform token.
 
+See [API Reference](api-reference.md) for the HTTP endpoints, gRPC services, auth headers, and response fields.
+
 ## Level 5: Production Controls
 
 Before deployment, configure:
