@@ -14,7 +14,7 @@ The hosted demo is available at [https://xuannulia.github.io/CaptCha/](https://x
 |---|---|---|
 | 0 | Demo page | Nothing in your app. You only run the platform and runtime locally. |
 | 1 | Runtime iframe + backend ticket check | One iframe or redirect, plus one backend API call after success. |
-| 2 | Express middleware | A normal Node/Express middleware layer. |
+| 2 | Multi-language middleware | A normal middleware layer for Node/Express, Go `net/http`, Python ASGI, Java, or ASP.NET Core. |
 | 3 | Gateway reverse proxy | A proxy in front of an existing service. |
 | 4 | Direct HTTP/gRPC integration | Your own gateway, service mesh, or platform control plane. |
 | 5 | Production operations | Admin token, storage, Redis, resource materials, audit, model versions, and release checks. |
@@ -98,9 +98,17 @@ curl -X POST https://captcha.example.com/api/v1/tickets/verify \
 
 For follow-up requests, consume the ticket and mint clearance. Clearance is server-side state. It can be bound to `client_id`, `scene`, route, request nonce, IP hash, User-Agent hash, account hash, and device hash. Anonymous flows should prefer a clearance cookie plus a device or visitor hash when available. Do not treat IP as a broad allowlist.
 
-## Level 2: Express Middleware
+## Level 2: Multi-Language Middleware
 
-Use this path when the protected service is Node/Express and you want CaptCha to sit in the normal request chain.
+Use this path when the protected service can add CaptCha to its normal request chain.
+
+| Runtime | Package |
+|---|---|
+| Node/Express | `integrations/express-middleware` |
+| Go `net/http` | `integrations/go-middleware` |
+| Python ASGI | `integrations/python-middleware` |
+| Java JDK `HttpHandler` | `integrations/java-middleware` |
+| ASP.NET Core | `integrations/dotnet-middleware` |
 
 ```ts
 import express from "express";
@@ -122,7 +130,29 @@ app.use(createCaptchaMiddleware({
 }));
 ```
 
-The middleware consumes tickets, stores clearance, calls policy evaluation, reports fail-open/fail-close outcomes asynchronously, and lets allowed requests continue to `next()`. It deliberately stays thin; CaptCha still owns policy, ticket state, clearance state, rate limits, audit, and risk scoring.
+```go
+captcha, err := captchamiddleware.New(captchamiddleware.Options{
+  PlatformURL:         "https://captcha.example.com",
+  ClientID:            "your-client",
+  ClientSecret:        os.Getenv("CAPTCHA_CLIENT_SECRET"),
+  ClearanceHeader:     "X-Captcha-Clearance",
+  ClearanceCookieName: "captcha_clearance",
+  RequestNonceHeader:  "X-Captcha-Request-Nonce",
+  AccountIDHashHeader: "X-Captcha-Account-ID-Hash",
+  DeviceIDHashHeader:  "X-Captcha-Device-ID-Hash",
+  HeaderAllowlist:     []string{"X-Request-ID", "Traceparent"},
+  ShouldProtect: func(r *http.Request) bool {
+    return strings.HasPrefix(r.URL.Path, "/api")
+  },
+})
+if err != nil {
+  log.Fatal(err)
+}
+
+http.ListenAndServe(":3000", captcha.Handler(mux))
+```
+
+See each package README for the framework-specific setup. Every package consumes tickets, stores clearance, calls policy evaluation, reports fail-open/fail-close outcomes asynchronously, and lets allowed requests continue to the next handler. They deliberately stay thin; CaptCha still owns policy, ticket state, clearance state, rate limits, audit, and risk scoring.
 
 ## Level 3: Gateway Reverse Proxy
 

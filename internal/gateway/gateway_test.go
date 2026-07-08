@@ -194,6 +194,44 @@ func TestGatewayAllowsProxyWhenPolicyAllows(t *testing.T) {
 	}
 }
 
+func TestGatewayBlocksUnsupportedPolicyDecision(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Fatal("upstream should not be reached for unsupported policy decisions")
+	}))
+	defer upstream.Close()
+
+	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionRetry, Reason: "VERIFY_RETRY"}}
+	gateway, err := NewWithPolicyClient(Config{
+		ClientID:       "demo",
+		PlatformURL:    "http://platform.local",
+		UpstreamURL:    upstream.URL,
+		RequestTimeout: time.Second,
+	}, policy, nil)
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
+	rec := httptest.NewRecorder()
+	gateway.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected unsupported decision to block, got %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Action types.Decision `json:"action"`
+		Reason string         `json:"reason"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Action != types.DecisionBlock || body.Reason != "UNSUPPORTED_POLICY_DECISION" {
+		t.Fatalf("unexpected unsupported decision body: %+v", body)
+	}
+}
+
 func TestGatewayForwardsClearanceToPolicy(t *testing.T) {
 	t.Parallel()
 

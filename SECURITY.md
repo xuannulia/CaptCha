@@ -16,7 +16,7 @@ Use the public issue tracker only for non-sensitive bug reports and hardening di
 
 Please include:
 
-- Affected component: server, runtime, admin, Gateway, Express middleware, gRPC contract, storage, or deployment.
+- Affected component: server, runtime, admin, Gateway, multi-language middleware, gRPC contract, storage, or deployment.
 - Reproduction steps and impact.
 - Whether the issue leaks answers, bypasses tickets, weakens client secret checks, bypasses rate limits, exposes sensitive headers, or allows unsafe resource fetching.
 - Suggested fix, if available.

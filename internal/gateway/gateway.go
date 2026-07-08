@@ -388,7 +388,6 @@ func (g *Gateway) Handler() http.Handler {
 			return
 		}
 		g.policyBreaker.RecordSuccess()
-		g.writeClearance(w, r, decision.ClearanceToken, decision.ClearanceTTLSeconds)
 		g.handleDecision(w, r, decision)
 	})
 }
@@ -410,6 +409,9 @@ func (g *Gateway) ticketScene(req types.PolicyEvaluateRequest) string {
 
 func (g *Gateway) handleDecision(w http.ResponseWriter, r *http.Request, decision types.PolicyDecision) {
 	switch decision.Action {
+	case types.DecisionAllow, types.DecisionPass, types.DecisionObserve, types.DecisionSkipChallenge:
+		g.writeClearance(w, r, decision.ClearanceToken, decision.ClearanceTTLSeconds)
+		g.proxy.ServeHTTP(w, r)
 	case types.DecisionChallenge, types.DecisionChallengeHarder, types.DecisionStepUpChallenge, types.DecisionRateLimit:
 		g.writeChallenge(w, decision)
 	case types.DecisionBlock, types.DecisionCooldown, types.DecisionBusinessVerify:
@@ -420,7 +422,10 @@ func (g *Gateway) handleDecision(w http.ResponseWriter, r *http.Request, decisio
 			"business_verify_type": decision.BusinessVerifyType,
 		})
 	default:
-		g.proxy.ServeHTTP(w, r)
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"action": types.DecisionBlock,
+			"reason": "UNSUPPORTED_POLICY_DECISION",
+		})
 	}
 }
 

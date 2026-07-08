@@ -247,7 +247,7 @@ export function createCaptchaMiddleware(options: CaptchaMiddlewareOptions) {
         });
         return;
       }
-      next();
+      response.status(403).json({ action: "block", reason: "UNSUPPORTED_POLICY_DECISION" });
     } catch (error) {
       if (currentRequest) {
         reportDecision(client, currentRequest, {

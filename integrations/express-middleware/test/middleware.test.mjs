@@ -182,6 +182,24 @@ test("returns challenge details without calling next", async () => {
   assert.equal(response.body.challenge_type, "SLIDER");
 });
 
+test("blocks unsupported policy decisions instead of passing through", async () => {
+  const middleware = createCaptchaMiddleware({
+    platformURL: "http://captcha.local",
+    fetch: async () => jsonResponse({ action: "retry", reason: "VERIFY_RETRY" })
+  });
+
+  const response = fakeResponse();
+  let nextCalled = false;
+  await middleware(fakeRequest({ path: "/login" }), response, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, false);
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.body.action, "block");
+  assert.equal(response.body.reason, "UNSUPPORTED_POLICY_DECISION");
+});
+
 test("sends client secret to platform requests", async () => {
   const middleware = createCaptchaMiddleware({
     platformURL: "http://captcha.local",

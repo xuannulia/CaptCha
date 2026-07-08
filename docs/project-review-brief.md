@@ -84,7 +84,7 @@ flowchart LR
 项目提供两种接入参考：
 
 - Go 参考 Gateway：反向代理模式，支持 HTTP / gRPC 调平台策略和 ticket 服务。
-- Express 参考中间件：薄中间件，只负责提取上下文、消费 ticket、写入 clearance、调用平台策略。
+- 多语言参考中间件：Express、Go `net/http`、Python ASGI、Java JDK `HttpHandler` 和 ASP.NET Core；薄中间件，只负责提取上下文、消费 ticket、写入 clearance、调用平台策略。
 
 设计原则是中间件保持轻薄，不在业务侧复制验证码生成、答案保存、风险算法和策略状态。
 
@@ -234,7 +234,7 @@ sequenceDiagram
 - 平台 HTTP API 和 gRPC 数据面。
 - iframe Runtime、Demo、管理后台。
 - 完整验证码类型闭环。
-- 策略、ticket、clearance、Gateway、Express 中间件。
+- 策略、ticket、clearance、Gateway、多语言中间件。
 - 资源图库、服务端图片合成、资源敏感字段清理。
 - 审计、metrics、样本复核、模型登记。
 - 第一版鼠标轨迹模型 shadow 接入。

@@ -13,6 +13,12 @@
 | `make release-audit` | 发布前检查许可证、安全报告渠道、CI 工作流契约、HTTP/gRPC API 文档契约、验证码类型契约、Browser smoke 路由覆盖契约、文档命令契约、构建产物、本地浏览器产物、git remote、Docker daemon 和常见密钥模式 |
 | `make clean` | 清理前端、集成中间件、本地浏览器 smoke 和输出目录的生成产物 |
 
+多语言中间件补充验证：
+
+- Python：`cd integrations/python-middleware && PYTHONPATH=. python3 -m unittest discover -s tests`
+- Java：`cd integrations/java-middleware && rm -rf build && mkdir -p build/classes && javac -d build/classes $(find src/main/java src/test/java -name '*.java') && java -cp build/classes captcha.middleware.CaptchaMiddlewareSmokeTest && rm -rf build`
+- .NET：`cd integrations/dotnet-middleware && dotnet run --project tests/Captcha.AspNetCoreMiddleware.Tests/Captcha.AspNetCoreMiddleware.Tests.csproj`
+
 ## MVP 范围
 
 | 要求 | 当前证据 |
@@ -27,7 +33,7 @@
 | IP allowlist / blocklist | `internal/policy`、`internal/gateway`；IP 优先级、单 IP/CIDR、Gateway 本地缓存测试 |
 | 基础 rate limit | `internal/store`、`internal/policy`；固定窗口、滑动窗口、令牌桶、IP/账号/设备维度测试 |
 | gRPC Policy / Ticket / Config / Event | `proto/captcha/v1/captcha.proto`、`gen/captcha/v1`、`internal/grpcserver`、`internal/gateway/grpc_client.go`；gRPC server/client 测试和 `make smoke` 的 gRPC Gateway 路径 |
-| Express 参考中间件 | `integrations/express-middleware`；workspace test 覆盖 allow/challenge/ticket/client secret/trusted proxy/circuit breaker/fail-open/fail-close |
+| 多语言参考中间件 | `integrations/express-middleware`、`integrations/go-middleware`、`integrations/python-middleware`、`integrations/java-middleware`、`integrations/dotnet-middleware`；workspace test、Go test、Python unittest、Java smoke test 和 .NET smoke test 覆盖 allow/challenge/ticket/client secret/trusted proxy/circuit breaker/fail-open/fail-close |
 | 参考 Gateway 反向代理 | `cmd/captcha-gateway`、`internal/gateway`；Gateway 单元测试和 `make smoke` 覆盖 HTTP/gRPC 策略路径、配置缓存、本地决策、事件批量上报和事件队列回压降级 |
 | PostgreSQL 控制面存储 | `internal/store/postgres.go`、`migrations/postgres`；sqlmock 测试和 migration schema 测试；Docker/真实 PostgreSQL 需要 `make docker-build` 或部署环境验证 |
 | Redis 临时态存储 | `internal/store/redis.go`；Redis transient store 测试覆盖 session、ticket、rate 计数 |
@@ -42,13 +48,13 @@
 | 答案、容差、评分规则不下发客户端 | `internal/resource/selector.go` 过滤 metadata；`make smoke` 检查 challenge payload 不包含 answer/target/tolerance/rule/secret/token |
 | Verify API 拒绝客户端规则字段 | `readVerifySessionRequest`；`TestChallengeSessionSingleUseAndFailureLimit` 和 `make smoke` 覆盖顶层/嵌套禁用字段、评分阈值字段和客户端伪造评分字段 |
 | ticket 不可伪造、一次性消费、绑定上下文 | token 使用随机值并由 store 管理；ticket store/API/gRPC/Gateway 测试覆盖 consumed、client、scene、route、nonce、IP hash、UA hash，Policy Evaluate 携带缺失 route/nonce/IP/UA 上下文的 bound ticket 会阻断且不回退普通策略 |
-| clearance 短期通行态 | `internal/token`、`internal/store`、Policy/Ticket HTTP/gRPC、Gateway、Express middleware；测试覆盖 ticket 换 clearance、后续同 scene 放行、账号 hash 不匹配回退 challenge、匿名设备 hash 绑定、Gateway 写回 header/cookie 和 middleware 读取 cookie |
+| clearance 短期通行态 | `internal/token`、`internal/store`、Policy/Ticket HTTP/gRPC、Gateway、多语言 middleware；测试覆盖 ticket 换 clearance、后续同 scene 放行、账号 hash 不匹配回退 challenge、匿名设备 hash 绑定、Gateway 写回 header/cookie 和 middleware 读取 cookie |
 | challenge id 随机且短 TTL | `internal/store/id.go`、`internal/engine`；session 创建、TTL 配置和过期状态测试 |
 | 应用 client secret 只返回一次并 hash 存储 | `internal/secret`、`handleRotateApplicationSecret`；API 和 store 测试确认不泄露 `secret_hash` |
 | 管理 API 令牌保护 | `CAPTCHA_ADMIN_TOKEN`、`withAdminAuth`、`GET /api/v1/admin/auth/check`；`TestAdminTokenAuth` |
 | gRPC 平台 token 和应用 secret 鉴权 | `internal/grpcserver` interceptors；`TestGRPCPlatformTokenAuth`、`TestGRPCClientSecretAuth` 覆盖 Policy、Ticket、Config 和 Event 服务，Event 同时拒绝缺失 `client_id` 的匿名写入 |
-| 中间件/Gateway header allowlist | `collectAllowedHeaders`、Express middleware；Gateway 和 middleware 测试确认默认不信任/不转发敏感头 |
-| 远程调用 deadline 与故障降级 | Gateway `context.WithTimeout`/HTTP client timeout、Express `AbortController` timeout、风险推理 HTTP/gRPC 入口降级、样本快照异步写入异常恢复、Gateway 事件队列回压降级；Gateway、middleware、策略评估和验证接口测试覆盖 fail-open/fail-close、熔断、超时、外部推理失败、样本采集失败和事件队列满不阻塞主链路 |
+| 中间件/Gateway header allowlist | `collectAllowedHeaders` 和各语言中间件 allowlist 实现；Gateway 和 middleware 测试确认默认不信任/不转发敏感头 |
+| 远程调用 deadline 与故障降级 | Gateway、Go middleware 和 .NET middleware `context`/HTTP client timeout、Express `AbortController` timeout、Python ASGI `urllib` timeout、Java `HttpClient` timeout、风险推理 HTTP/gRPC 入口降级、样本快照异步写入异常恢复、Gateway 事件队列回压降级；Gateway、middleware、策略评估和验证接口测试覆盖 fail-open/fail-close、熔断、超时、外部推理失败、样本采集失败和事件队列满不阻塞主链路 |
 | CORS 和 return_url allowlist | `withCORS`、`normalizeReturnURL`；CORS 和 return URL 测试 |
 | 生产误配置拒绝启动 | `productionSecurityErrors`；单元测试和 `make smoke` 真实进程级检查 |
 | 应用状态治理 | `requireActiveApplication`、`applicationPolicyDecision`、`applicationTicketRejection`、Event client 校验；HTTP 和 gRPC 测试覆盖 disabled/unknown 应用在 Runtime、Policy、Ticket、Event、Config 路径上的行为 |

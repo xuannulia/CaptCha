@@ -68,7 +68,7 @@
 - 路由 `rate_limit` 策略已支持 IP、账号 hash 和设备 hash 三个维度计数；任一维度超过阈值都会触发 challenge；计数策略支持默认 `fixed_window`、滚动窗口 `sliding_window` 和令牌桶 `token_bucket`。
 - 路由策略支持全应用范围：`path_pattern` 为空或 `*` 表示全部路径，`method` 为空表示全部方法；同时支持 `rollout_percent` 基础灰度发布，平台策略服务和 Gateway 本地缓存都会按账号 hash、设备 hash、IP、UA 或路径做稳定哈希抽样；未命中高优先级灰度策略时继续匹配低优先级路由。路由策略也支持 `challenge_escalation` 覆盖平台默认升级序列，使不同路由可以使用不同的 `challenge_harder` 多级挑战编排。
 - Gateway 会异步上报本地缓存决策、ticket 消费结果和平台不可用降级结果；远程 PolicyService 决策由平台策略服务自身写入审计。Gateway 可通过 `CAPTCHA_GATEWAY_EVENT_BATCH_SIZE`、`CAPTCHA_GATEWAY_EVENT_FLUSH_INTERVAL` 和 `CAPTCHA_GATEWAY_EVENT_QUEUE_SIZE` 启用有界队列批量上报，达到批量大小或 flush 间隔后调用 EventService。
-- 已提供 `@captcha/express-middleware` Node.js Express 参考中间件，有 ticket 时优先调用 HTTP ticket API 消费一次性 ticket 并写回短期 clearance，无 ticket 时读取 `x-captcha-clearance` 或 `captcha_clearance` cookie 并通过平台策略 API 决定放行、返回 challenge 或阻断；ticket 结果和降级结果会异步上报平台事件 API，并支持 `trustedProxyCIDRs` 控制是否信任 `X-Forwarded-For`，支持 `requestNonceHeader` 透传 nonce-bound ticket 上下文，支持账号/设备/匿名访客 hash、风险/模型上下文头，支持 `headerAllowlist` 只上传显式 allowlist 的低敏业务头，支持 `circuitBreakerFailureThreshold` / `circuitBreakerCooldownMs` 对连续 policy/ticket 调用失败短期熔断。
+- 已提供 `@captcha/express-middleware` Node.js Express、`integrations/go-middleware` Go `net/http`、`integrations/python-middleware` Python ASGI、`integrations/java-middleware` Java JDK `HttpHandler` 和 `integrations/dotnet-middleware` ASP.NET Core 参考中间件，有 ticket 时优先调用 HTTP ticket API 消费一次性 ticket 并写回短期 clearance，无 ticket 时读取 clearance header 或 `captcha_clearance` cookie 并通过平台策略 API 决定放行、返回 challenge 或阻断；ticket 结果和降级结果会异步上报平台事件 API，并支持 trusted proxy CIDR 控制是否信任 `X-Forwarded-For`，支持透传 nonce-bound ticket 上下文，支持账号/设备/匿名访客 hash、风险/模型上下文头，支持 header allowlist 只上传显式 allowlist 的低敏业务头，支持短期熔断避免连续 policy/ticket 调用失败时反复阻塞平台。
 - 验证请求会异步写入 `RiskFeatureSnapshot` 候选样本，当前采集脱敏轨迹摘要特征，包括路径长度、速度方差、加速度方差、方向变化、停顿、异常标记和命中资源摘要；资源摘要只保留资源 ID、类型、验证码类型和 tag，不写入 URI、metadata、checksum 或答案数据，并用于管理指标和 Prometheus 的资源命中/失败率分析。管理面支持样本复核标签反馈、`RiskModelVersion` 登记、启用和恢复上一版；active 模型可在异步入池阶段写入服务端影子评分；不在线训练。后端/Gateway/middleware 可向 PolicyService 提供脱敏 `risk_score`、`risk_level`、`model_score` 和 `model_mode`，平台服务也可通过 `CAPTCHA_RISK_INFERENCE_URL` 调用外部推理服务补充模型风险分；`risk_based` 路由在显式配置 `risk_observe_score`、`risk_challenge_score` 或 `risk_block_score` 后按阈值决策；`risk_challenge_type` 只在风险分触发 challenge 时覆盖默认验证码类型；`shadow` 模型模式不参与决策，`observe` / `enforce` 只作为 risk_score 输入。
 
 ## 2. 产品定位
@@ -568,9 +568,9 @@ Python
   ASP.NET Core Middleware
 ```
 
-一期参考实现选择 Node.js Express。原因是 Express 生态覆盖广、接入形态轻，示例也容易被 Java、Go、Python、.NET 等生态复刻。该中间件不是平台 SDK，只是业务后端的薄接入层；平台仍负责策略、验证码、ticket、限流、审计和训练候选样本。
+一期参考实现先选择 Node.js Express，随后补充 Go `net/http`、Python ASGI、Java JDK `HttpHandler` 和 ASP.NET Core 包。中间件不是平台 SDK，只是业务后端的薄接入层；平台仍负责策略、验证码、ticket、限流、审计和训练候选样本。框架专用形态如 Spring Filter、Django middleware、Flask hook、Gin/Echo、Koa/Fastify/NestJS 可以继续在这些薄核心上适配。
 
-Express 参考中间件事件边界：
+多语言参考中间件事件边界：
 
 ```text
 异步上报：
@@ -597,7 +597,7 @@ Gateway 适合企业级多服务统一入口。
 
 后续可支持 Kong、Apache APISIX、Envoy External Authorization、Nginx/OpenResty、Spring Cloud Gateway、Kubernetes Ingress。
 
-当前一期已提供内置 Go 参考反向代理 Gateway 和 Node.js Express 参考中间件；其他 Gateway 生态保持薄适配器边界，按实际接入需求扩展。
+当前一期已提供内置 Go 参考反向代理 Gateway，以及 Node.js Express、Go `net/http`、Python ASGI、Java JDK `HttpHandler` 和 ASP.NET Core 参考中间件；其他 Gateway 生态保持薄适配器边界，按实际接入需求扩展。
 
 ### 7.4 反向代理模式
 
@@ -1181,6 +1181,22 @@ Gateway
 Express middleware
   trustedProxyCIDRs: ["10.0.0.0/8", "192.168.0.0/16"]
   headerAllowlist: ["x-request-id", "traceparent"]
+
+Go middleware
+  TrustedProxyCIDRs: []string{"10.0.0.0/8", "192.168.0.0/16"}
+  HeaderAllowlist: []string{"X-Request-ID", "Traceparent"}
+
+Python middleware
+  trusted_proxy_cidrs=["10.0.0.0/8", "192.168.0.0/16"]
+  header_allowlist=["x-request-id", "traceparent"]
+
+Java middleware
+  trustedProxyCIDRs = List.of("10.0.0.0/8", "192.168.0.0/16")
+  headerAllowlist = List.of("X-Request-ID", "Traceparent")
+
+ASP.NET Core middleware
+  TrustedProxyCidrs = ["10.0.0.0/8", "192.168.0.0/16"]
+  HeaderAllowlist = ["X-Request-ID", "Traceparent"]
 ```
 
 默认优先级：
@@ -1197,7 +1213,7 @@ explicit allowlist
 
 当前实现中，平台策略服务和 Gateway 本地配置缓存都按上述优先级执行；`allowlist` 与 `blocklist` 重叠时优先放行。IP 条目可写 CIDR，也可写单个 IPv4/IPv6 地址。
 
-路由策略的 `path_pattern` 为空或 `*` 表示全部路径，`method` 为空表示全部 HTTP 方法；两者同时为空就是全站防护策略，不受路由限制。`always` 表示没有有效通行态时验证，适合作为全站默认保护；`force_challenge` 表示忽略已有通行态并每次验证，适合短信发送、发券、提现等高风险接口覆盖。当前路由 `rate_limit` 策略会按请求中的 IP、`account_id_hash` 和 `device_id_hash` 分别计数；任一维度超过路由阈值都会返回 `RATE_LIMIT` challenge。`rate_limit.strategy` 默认为 `fixed_window`，也可以配置为 `sliding_window` 或 `token_bucket`：滚动窗口会清理窗口外命中后计数，令牌桶以 `max_requests` 为容量，并在 `window_seconds` 内连续补满一桶，适合允许短时突发但限制长期速率。内存存储和 Redis 临时态都支持这些策略。Gateway 默认从 `X-Captcha-Account-ID-Hash` 和 `X-Captcha-Device-ID-Hash` 提取外部账号/设备维度，Express middleware 默认从 `x-captcha-account-id-hash` 和 `x-captcha-device-id-hash` 提取，也可通过 resolver 覆盖。Gateway 本地缓存不执行分布式限流，仍由平台策略服务或 Redis 计数承担。
+路由策略的 `path_pattern` 为空或 `*` 表示全部路径，`method` 为空表示全部 HTTP 方法；两者同时为空就是全站防护策略，不受路由限制。`always` 表示没有有效通行态时验证，适合作为全站默认保护；`force_challenge` 表示忽略已有通行态并每次验证，适合短信发送、发券、提现等高风险接口覆盖。当前路由 `rate_limit` 策略会按请求中的 IP、`account_id_hash` 和 `device_id_hash` 分别计数；任一维度超过路由阈值都会返回 `RATE_LIMIT` challenge。`rate_limit.strategy` 默认为 `fixed_window`，也可以配置为 `sliding_window` 或 `token_bucket`：滚动窗口会清理窗口外命中后计数，令牌桶以 `max_requests` 为容量，并在 `window_seconds` 内连续补满一桶，适合允许短时突发但限制长期速率。内存存储和 Redis 临时态都支持这些策略。Gateway 和各语言中间件默认从 CaptCha 账号/设备 hash header 提取外部账号/设备维度；中间件也可通过 resolver 覆盖。Gateway 本地缓存不执行分布式限流，仍由平台策略服务或 Redis 计数承担。
 
 路由策略支持基础灰度发布：`rollout_percent` 取 `1..100`，未设置或超出范围时按 `100` 处理。灰度命中使用稳定哈希，优先使用 `account_id_hash`，其次是 `device_id_hash`、IP、User-Agent 和路径。未命中当前路由灰度的请求会继续匹配下一条低优先级路由，因此可以用“高优先级小流量新策略 + 低优先级全量旧策略”完成平滑切换。Gateway 本地缓存使用同一套灰度逻辑；ticket 场景推断不使用灰度跳过，以避免已签发 ticket 在消费时因重新抽样产生场景错配。
 
@@ -1255,7 +1271,7 @@ ConsumeTicket
   校验并消费 ticket，推荐用于业务关键动作。
 ```
 
-当前实现支持 route、`request_nonce`、IP 摘要和 UA 摘要绑定：创建 session 或 Policy challenge 时传入 route/request_nonce 后，服务端会把它们保存到 session；Runtime 只带 `session_id` 启动时也会从服务端恢复上下文。verify 可以省略 route，此时使用 session route 签发 route-bound ticket；如果提交的 route 与 session route 不一致，则返回 `ROUTE_MISMATCH`。request_nonce 必须在 `runtime_meta.request_nonce` 中回传相同值；由 PolicyService/Policy API 创建的 challenge 会保存请求 IP 和 User-Agent 的 SHA-256 摘要，签发的 ticket 会绑定这些摘要。Gateway 使用 `X-Captcha-Request-Nonce` 并自动传入当前请求 IP/UA 摘要；Express middleware 默认使用 `x-captcha-request-nonce` 并自动传入当前请求 IP/UA 摘要；HTTP/gRPC ticket 校验请求使用 route、`request_nonce`、`ip_hash` 和 `user_agent_hash` 字段。
+当前实现支持 route、`request_nonce`、IP 摘要和 UA 摘要绑定：创建 session 或 Policy challenge 时传入 route/request_nonce 后，服务端会把它们保存到 session；Runtime 只带 `session_id` 启动时也会从服务端恢复上下文。verify 可以省略 route，此时使用 session route 签发 route-bound ticket；如果提交的 route 与 session route 不一致，则返回 `ROUTE_MISMATCH`。request_nonce 必须在 `runtime_meta.request_nonce` 中回传相同值；由 PolicyService/Policy API 创建的 challenge 会保存请求 IP 和 User-Agent 的 SHA-256 摘要，签发的 ticket 会绑定这些摘要。Gateway 和各语言中间件都会读取请求 nonce header 并自动传入当前请求 IP/UA 摘要；HTTP/gRPC ticket 校验请求使用 route、`request_nonce`、`ip_hash` 和 `user_agent_hash` 字段。
 
 HTTP/gRPC Policy Evaluate 如果收到 `ticket`，必须先消费并校验 ticket；有效 ticket 直接返回 `TICKET_CONSUMED` allow，并可签发 `clearance_token`；无效、过期、已消费或上下文不匹配的 ticket 返回 block，不会退回普通无票策略评估。请求只带 `clearance` 时，平台会先检查是否命中 `force_challenge` 路由；命中时忽略已有通行态并创建新的验证码 session。`/api/v1/tickets/verify` 使用 `consume=true` 时也会返回 clearance。
 
@@ -1874,7 +1890,7 @@ fail_close
 - 所有远程调用必须设置 deadline。
 - 平台异常必须打点。
 - fail-open / fail-close 必须进入审计日志。
-- Gateway 和 Express 参考中间件支持可选短期熔断；连续 policy/ticket 调用失败达到阈值后，在冷却窗口内跳过阻塞式平台调用并按 fail-open / fail-close 降级，同时继续尝试异步事件上报。
+- Gateway 和多语言参考中间件支持可选短期熔断；连续 policy/ticket 调用失败达到阈值后，在冷却窗口内跳过阻塞式平台调用并按 fail-open / fail-close 降级，同时继续尝试异步事件上报。
 - AI 数据采集、事件队列或外部推理服务不可用时必须降级，不能阻塞验证接口。
 
 ## 17. 数据模型草案
@@ -2187,6 +2203,10 @@ created_at
 - gRPC TicketService。
 - gRPC ConfigService 基础配置拉取、同进程配置更新推送和 Gateway 本地配置缓存刷新。
 - 一个 Node.js Express 参考中间件。
+- 一个 Go `net/http` 参考中间件。
+- 一个 Python ASGI 参考中间件。
+- 一个 Java JDK `HttpHandler` 参考中间件。
+- 一个 ASP.NET Core 参考中间件。
 - 一个参考 Gateway 反向代理。
 - PostgreSQL 存储应用、路由策略、IP 策略、验证码资源和审计事件。
 - Redis 存储 challenge、ticket、限流计数。
@@ -2235,7 +2255,7 @@ created_at
 - IP 策略。
 - 路由策略。
 - fail-open / fail-close。
-- 一个主流后端中间件：Node.js Express。
+- 主流后端中间件：Node.js Express、Go `net/http`、Python ASGI、Java JDK `HttpHandler` 和 ASP.NET Core。
 - 内置参考 Gateway 反向代理，支持 HTTP JSON 策略客户端、gRPC PolicyService 客户端和可选 ConfigService 本地配置缓存。
 
 ### Phase 3: Gateway 能力
