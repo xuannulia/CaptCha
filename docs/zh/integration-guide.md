@@ -95,6 +95,8 @@ curl -X POST https://captcha.example.com/api/v1/tickets/verify \
 
 后续请求可以使用消费 ticket 后返回的 clearance。匿名场景优先使用 clearance cookie 加设备或访客标识，不要把 IP 当成长期白名单。
 
+默认中间件和 Gateway 会把通行态写入 `captcha_clearance` 这类短期安全 cookie，用于减少重复验证并支撑策略判断。它不应用于广告、分析、跨站识别或长期画像。在欧盟和类似 ePrivacy 规则下，写入或读取 cookie、local storage、匿名访客 ID 等终端存储都可能触发 cookie / terminal storage 合规要求；接入方应在自己的 cookie policy 中说明用途、TTL 和作用域，并按地区判断是否需要同意或额外告知。
+
 ## Level 2：多语言中间件
 
 业务服务可以改请求链路时，优先使用中间件。

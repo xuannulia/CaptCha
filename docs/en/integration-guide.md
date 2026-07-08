@@ -98,6 +98,8 @@ curl -X POST https://captcha.example.com/api/v1/tickets/verify \
 
 For follow-up requests, consume the ticket and mint clearance. Clearance is server-side state. It can be bound to `client_id`, `scene`, route, request nonce, IP hash, User-Agent hash, account hash, and device hash. Anonymous flows should prefer a clearance cookie plus a device or visitor hash when available. Do not treat IP as a broad allowlist.
 
+Middleware and Gateway integrations write short-lived clearance to a security cookie such as `captcha_clearance` to reduce repeated challenges and support policy decisions. Do not use this cookie for advertising, analytics, cross-site recognition, or long-term profiling. In the EU and similar ePrivacy regimes, writing or reading cookies, local storage, anonymous visitor IDs, or other terminal storage can trigger cookie / terminal-storage compliance duties. Integrators should document purpose, TTL, and scope in their own cookie policy and decide whether consent or additional notice is required for their region and use case.
+
 ## Level 2: Multi-Language Middleware
 
 Use this path when the protected service can add CaptCha to its normal request chain.

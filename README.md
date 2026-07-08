@@ -180,6 +180,19 @@ CAPTCHA_SEED_DEMO=false \
   go run ./cmd/captcha-server
 ```
 
+## Cookie 和合规边界
+
+CaptCha 为了减少重复验证、支撑通行态、限流和风险策略，会在中间件和 Gateway 路径中使用短期安全 cookie，例如 `captcha_clearance`。这个 cookie 用于标记当前浏览器会话已经完成验证，不用于广告、分析或跨站追踪；账号和设备维度请优先由业务后端提供 `account_id_hash` / `device_id_hash`，不要把原始 uid 暴露给浏览器或 CaptCha。
+
+在欧盟和类似 ePrivacy 规则语境下，写入或读取 cookie、local storage、匿名访客 ID 等终端存储都可能落入 cookie / terminal storage 合规边界。验证码通行态更适合按“用户请求的受保护服务所需的安全措施”评估，而不是简单归类为“通信传输所必需”。接入方应结合自己的地区、业务场景和 cookie policy 判断是否需要同意、告知或额外配置。
+
+建议：
+
+- 将 `captcha_clearance` 作为安全/功能 cookie 说明用途、TTL 和作用域。
+- 使用短 TTL、HttpOnly、SameSite、Secure，并限制 domain/path。
+- 不把 CaptCha cookie 用于广告、分析、跨站识别或长期用户画像。
+- 匿名访客 ID 如需持久化，应由接入方基于同意或明确的严格必要评估后启用。
+
 ## 安全边界
 
 CaptCha 不是万能反爬系统，也不能单独阻止所有自动化攻击。它更适合作为风控链路中的验证层。

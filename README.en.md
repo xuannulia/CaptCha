@@ -182,6 +182,19 @@ CAPTCHA_SEED_DEMO=false \
   go run ./cmd/captcha-server
 ```
 
+## Cookie And Compliance Boundary
+
+CaptCha keeps anti-abuse capability by using short-lived security cookies in middleware and Gateway integrations, such as `captcha_clearance`. The cookie marks that the current browser session has passed verification; it is not intended for advertising, analytics, or cross-site tracking. Prefer server-provided `account_id_hash` / `device_id_hash` for account and device dimensions, and do not expose raw user IDs to the browser or to CaptCha.
+
+In the EU and similar ePrivacy regimes, writing or reading cookies, local storage, anonymous visitor IDs, or other terminal storage can fall within cookie / terminal-storage rules. CaptCha clearance is better assessed as a security measure for a protected service requested by the user, not as a blanket "communication transmission" cookie. Integrators should evaluate their region, use case, and cookie policy to decide whether consent, notice, or additional configuration is required.
+
+Recommended practice:
+
+- Document `captcha_clearance` as a security or functional cookie, including purpose, TTL, and scope.
+- Use a short TTL, HttpOnly, SameSite, Secure, and narrow domain/path settings.
+- Do not use CaptCha cookies for advertising, analytics, cross-site recognition, or long-term profiling.
+- Enable persistent anonymous visitor IDs only after the integrator has a consent path or a documented strictly-necessary assessment.
+
 ## Security Boundaries
 
 CaptCha is not a universal anti-bot system and should not be the only protection for high-value endpoints. Use it as a verification layer in a broader risk-control system.
