@@ -4,7 +4,7 @@ This guide is written in the order most teams actually adopt CaptCha: look at th
 
 CaptCha should stay a server-owned verification platform. The browser runtime renders challenges and returns interaction facts; answers, scoring rules, tickets, clearance, rate limits, audit, and risk signals stay on the platform side.
 
-![CaptCha demo page](assets/demo-page.png)
+![CaptCha demo page](../assets/demo-page.png)
 
 The hosted demo is available at [https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/). Use the local run below when you want to change code or test a private backend.
 
@@ -39,7 +39,7 @@ Open:
 http://localhost:5173/demo
 ```
 
-Use this page to check the feel of the challenge types and the packaged demo materials before you make integration choices. It is also a quick way to catch visual regressions after changing renderer or resource code.
+Use this page to check the feel of the challenge types and the packaged demo materials before choosing an integration path. It is also a quick way to catch visual regressions after changing renderer or resource code.
 
 ## Level 1: Runtime Iframe And Ticket Check
 

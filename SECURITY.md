@@ -1,58 +1,60 @@
-# Security Policy
+# 安全策略
 
-CaptCha assumes the implementation is open source. Security must come from deployment secrets, server-side state, short-lived challenges, one-time tickets, rate limits, policy configuration, audit, and risk feedback, not from hidden frontend code.
+语言：中文 | [English](SECURITY.en.md)
 
-## Supported Versions
+CaptCha 默认实现是开源可见的。安全性来自部署密钥、服务端状态、短生命周期 challenge、一次性 ticket、限流、策略配置、审计和风险反馈，而不是隐藏前端代码。
 
-The project is currently pre-release. Security fixes apply to the current main branch until versioned releases are introduced.
+## 支持版本
 
-## Reporting a Vulnerability
+项目当前还没有正式版本号。引入版本化发布前，安全修复只面向当前 `main` 分支。
 
-Do not publish exploit details, bypass recipes, or working attack payloads in public issues.
+## 报告漏洞
 
-Report vulnerabilities privately by email: loser@iloser.cn.
+请不要在公开 issue 中发布利用细节、绕过方法或可直接运行的攻击 payload。
 
-Use the public issue tracker only for non-sensitive bug reports and hardening discussions that do not include exploit details, bypass recipes, or working payloads.
+安全问题请通过邮件私下报告：loser@iloser.cn。
 
-Please include:
+公开 issue 只适合提交不包含利用细节的普通 bug、加固建议和安全边界讨论。
 
-- Affected component: server, runtime, admin, Gateway, multi-language middleware, gRPC contract, storage, or deployment.
-- Reproduction steps and impact.
-- Whether the issue leaks answers, bypasses tickets, weakens client secret checks, bypasses rate limits, exposes sensitive headers, or allows unsafe resource fetching.
-- Suggested fix, if available.
+报告时请尽量包含：
 
-## Security Boundaries
+- 受影响组件：server、runtime、admin、Gateway、多语言中间件、gRPC 契约、存储或部署配置。
+- 复现步骤和影响范围。
+- 是否会泄露答案、绕过 ticket、削弱 client secret 校验、绕过限流、暴露敏感 header，或允许不安全的资源抓取。
+- 如有可行修复方案，也请一并说明。
 
-Expected private state:
+## 安全边界
 
-- Challenge answer, target, tolerance, scoring rules, and track thresholds.
-- Ticket value, consumption state, TTL, route binding, nonce binding, IP hash, and User-Agent hash.
-- Client secrets, admin token, metrics token, gRPC token, and TLS or mTLS keys.
-- Production policy thresholds, IP lists, rollout state, rate counters, and model artifacts.
+应该保持私有的状态：
 
-Expected public state:
+- challenge 答案、目标点、容差、评分规则和轨迹阈值。
+- ticket 值、消费状态、TTL、route 绑定、nonce 绑定、IP hash 和 User-Agent hash。
+- client secret、admin token、metrics token、gRPC token、TLS 或 mTLS key。
+- 生产策略阈值、IP 列表、灰度状态、限流计数器和模型产物。
 
-- Frontend runtime code.
-- Public challenge rendering data after answer and rule metadata are sanitized.
-- Protobuf and HTTP contracts.
-- Server algorithms and rule scoring logic.
+可以公开的状态：
 
-## Deployment Requirements
+- 前端 runtime 代码。
+- 清理掉答案和规则元数据后的公开 challenge 渲染数据。
+- Protobuf 和 HTTP 契约。
+- 服务端算法和规则评分逻辑。
 
-Production deployments should enable the startup security gate:
+## 部署要求
+
+生产环境应开启启动安全门禁：
 
 ```bash
 CAPTCHA_ENV=production
 ```
 
-or:
+或：
 
 ```bash
 CAPTCHA_PRODUCTION=true
 ```
 
-Production mode requires admin, gRPC, and metrics tokens, explicit non-wildcard browser origins, PostgreSQL, Redis, and disabled demo seeding.
+生产模式要求配置 admin、gRPC、metrics token，显式配置非通配的浏览器来源，启用 PostgreSQL 和 Redis，并关闭 demo 数据写入。
 
-## Disclosure
+## 披露原则
 
-Security fixes should avoid publishing bypass mechanics in changelog text. Use concise impact language and document required upgrade or mitigation steps.
+安全修复的 changelog 不应公开绕过细节。说明影响范围、升级要求和缓解步骤即可。

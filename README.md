@@ -1,5 +1,7 @@
 # CaptCha
 
+语言：中文 | [English](README.en.md)
+
 [![CI](https://github.com/xuannulia/CaptCha/actions/workflows/ci.yml/badge.svg)](https://github.com/xuannulia/CaptCha/actions/workflows/ci.yml)
 [![Pages](https://github.com/xuannulia/CaptCha/actions/workflows/pages.yml/badge.svg)](https://github.com/xuannulia/CaptCha/actions/workflows/pages.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
@@ -12,10 +14,10 @@
 
 后端验证型验证码平台，带轨迹识别、ticket、clearance 和策略风控。浏览器只负责展示和上报交互轨迹；答案、策略、限流、审计和风控判断都在服务端。
 
-![CaptCha demo page](docs/assets/demo-page.png)
+![CaptCha 演示页面](docs/assets/demo-page.png)
 
-- Demo: [https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/)
-- License: [AGPL-3.0-only](LICENSE)
+- 在线演示：[https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/)
+- 许可证：[AGPL-3.0-only](LICENSE)
 
 ## 为什么不是第三方验证码服务
 
@@ -94,7 +96,7 @@ http://localhost:5173/demo
 
 | 方式 | 什么时候选 | 入口 |
 |---|---|---|
-| Runtime iframe + 后端 ticket 校验 | 页面和后端都能改；改动最小 | [接入指南](docs/integration-guide.md) |
+| Runtime iframe + 后端 ticket 校验 | 页面和后端都能改；改动最小 | [接入指南](docs/zh/integration-guide.md) |
 | 中间件 | 服务能加 middleware；在请求链路内处理 ticket、clearance 和策略 | [中间件](#中间件) |
 | Gateway | 业务服务不便改；在入口统一拦截 | [Gateway](#gateway) |
 
@@ -102,7 +104,7 @@ http://localhost:5173/demo
 
 HTTP / gRPC API 是底层接口，不是和中间件、Gateway 并列的开箱接入方式。已有网关、服务网格或平台控制面时，用它们自己封装接入层。
 
-- API Reference：[HTTP / gRPC API](docs/api-reference.md)
+- API 文档：[HTTP / gRPC API](docs/zh/api-reference.md)
 
 ## 管理台
 
@@ -267,9 +269,9 @@ output/synthetic-bot-tracks.jsonl
 
 ## 文档
 
-- [接入指南](docs/integration-guide.md)
-- [HTTP / gRPC API](docs/api-reference.md)
-- [架构设计](docs/architecture-design.md)
+- [接入指南](docs/zh/integration-guide.md)
+- [HTTP / gRPC API](docs/zh/api-reference.md)
+- [架构设计](docs/zh/architecture-design.md)
 - [安全策略](SECURITY.md)
 - [贡献指南](CONTRIBUTING.md)
 

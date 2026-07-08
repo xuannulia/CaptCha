@@ -26,7 +26,7 @@ extract_rpc_signatures() {
 	' "$1" | sort -u
 }
 
-extract_rpc_signatures docs/architecture-design.md >"$docs_file"
+extract_rpc_signatures docs/zh/architecture-design.md >"$docs_file"
 extract_rpc_signatures proto/captcha/v1/captcha.proto >"$proto_file"
 
 missing_proto="$(comm -23 "$docs_file" "$proto_file" || true)"
@@ -38,7 +38,7 @@ fi
 
 missing_docs="$(comm -13 "$docs_file" "$proto_file" || true)"
 if [[ -n "$missing_docs" ]]; then
-	echo "gRPC methods present in proto but not documented in docs/architecture-design.md:" >&2
+	echo "gRPC methods present in proto but not documented in docs/zh/architecture-design.md:" >&2
 	echo "$missing_docs" >&2
 	exit 1
 fi

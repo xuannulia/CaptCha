@@ -21,8 +21,8 @@ for i in "${!concrete_types[@]}"; do
 	captcha_type="${concrete_types[$i]}"
 	go_constant="${go_constants[$i]}"
 
-	grep -Fq "$captcha_type" docs/architecture-design.md ||
-		fail "docs/architecture-design.md must document $captcha_type"
+	grep -Fq "$captcha_type" docs/zh/architecture-design.md ||
+		fail "docs/zh/architecture-design.md must document $captcha_type"
 	grep -Eq "${go_constant}[[:space:]]+CaptchaType[[:space:]]*=[[:space:]]*\"${captcha_type}\"" internal/types/types.go ||
 		fail "internal/types/types.go must define $go_constant as $captcha_type"
 	grep -Fq "types.${go_constant}" internal/engine/engine.go ||

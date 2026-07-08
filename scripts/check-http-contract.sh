@@ -12,7 +12,7 @@ normalize_path() {
 	sed -E 's/\{[A-Za-z0-9_]+\}/\{\}/g'
 }
 
-awk '/^(GET|POST|PUT|PATCH|DELETE) \// { print $1 " " $2 }' docs/architecture-design.md \
+awk '/^(GET|POST|PUT|PATCH|DELETE) \// { print $1 " " $2 }' docs/zh/architecture-design.md \
 	| normalize_path \
 	| sort -u >"$docs_file"
 
@@ -36,7 +36,7 @@ fi
 
 missing_docs="$(comm -13 "$docs_file" "$server_file" || true)"
 if [[ -n "$missing_docs" ]]; then
-	echo "HTTP endpoints implemented but not documented in docs/architecture-design.md:" >&2
+	echo "HTTP endpoints implemented but not documented in docs/zh/architecture-design.md:" >&2
 	echo "$missing_docs" >&2
 	exit 1
 fi

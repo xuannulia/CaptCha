@@ -17,9 +17,15 @@ const targets = new Set(
 
 const docFiles = [
   "README.md",
+  "README.en.md",
   "CONTRIBUTING.md",
-  "docs/api-reference.md",
-  "docs/architecture-design.md",
+  "CONTRIBUTING.en.md",
+  "docs/zh/api-reference.md",
+  "docs/zh/architecture-design.md",
+  "docs/zh/integration-guide.md",
+  "docs/en/api-reference.md",
+  "docs/en/architecture-overview.md",
+  "docs/en/integration-guide.md",
 ].filter((file) => fs.existsSync(file));
 
 let failures = 0;
@@ -39,11 +45,11 @@ for (const file of docFiles) {
 }
 
 const requiredMentions = {
-  verify: ["README.md", "CONTRIBUTING.md"],
-  "docker-build": ["README.md", "CONTRIBUTING.md"],
-  "release-audit": ["README.md", "CONTRIBUTING.md"],
-  "browser-smoke": ["README.md", "CONTRIBUTING.md"],
-  clean: ["README.md", "CONTRIBUTING.md"],
+  verify: ["README.md", "README.en.md", "CONTRIBUTING.md", "CONTRIBUTING.en.md"],
+  "docker-build": ["README.md", "README.en.md", "CONTRIBUTING.md", "CONTRIBUTING.en.md"],
+  "release-audit": ["README.md", "README.en.md", "CONTRIBUTING.md", "CONTRIBUTING.en.md"],
+  "browser-smoke": ["README.md", "README.en.md", "CONTRIBUTING.md", "CONTRIBUTING.en.md"],
+  clean: ["README.md", "README.en.md", "CONTRIBUTING.md", "CONTRIBUTING.en.md"],
 };
 
 for (const [target, files] of Object.entries(requiredMentions)) {
