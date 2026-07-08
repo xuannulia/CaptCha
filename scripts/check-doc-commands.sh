@@ -19,7 +19,6 @@ const docFiles = [
   "README.md",
   "CONTRIBUTING.md",
   "docs/architecture-design.md",
-  "docs/usa-deployment.md",
 ].filter((file) => fs.existsSync(file));
 
 let failures = 0;

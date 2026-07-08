@@ -199,7 +199,6 @@ output/synthetic-bot-tracks.jsonl
 
 - [接入指南](docs/integration-guide.md)
 - [架构设计](docs/architecture-design.md)
-- [美国区部署基线](docs/usa-deployment.md)
 - [安全策略](SECURITY.md)
 - [贡献指南](CONTRIBUTING.md)
 

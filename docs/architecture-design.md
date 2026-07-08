@@ -405,7 +405,7 @@ Admin 文案：
 - 平台容器必须包含 `migrations`，保证 `CAPTCHA_POSTGRES_MIGRATIONS=./migrations/postgres` 的默认行为在容器内可用。
 - 默认 `docker-compose.yml` 启动 PostgreSQL、Redis 和平台服务；Gateway 作为 `gateway` profile 启动，避免没有业务 upstream 时阻塞平台本身。
 - `docker-compose.dev.yml` 只保留开发依赖服务，用于本地直接 `go run` 和前端 Vite 开发。
-- 目标生产部署可以限定在美国区；此时平台服务、PostgreSQL、Redis、对象存储、备份、日志、审计和模型 artifact 应保持在同一美国区域边界内，细节见 `docs/usa-deployment.md`。
+- 生产部署应按实际合规要求限定数据边界；平台服务、PostgreSQL、Redis、对象存储、备份、日志、审计和模型 artifact 应保持在同一受控边界内。
 - CI 至少覆盖 `make verify`、`make docker-build`、protobuf 工具安装、Node workspace 依赖安装、平台镜像构建和 Gateway 镜像构建；`make verify` 内部覆盖 Go 测试、workspace 测试、workspace 构建、protobuf drift、契约检查、smoke 和 Docker Compose 配置校验。
 - 仓库不提供生产密钥；`CAPTCHA_ADMIN_TOKEN`、`CAPTCHA_METRICS_TOKEN`、`CAPTCHA_GRPC_TOKEN`、应用 client secret、TLS/mTLS 密钥和真实 CORS allowlist 必须由部署方配置。设置 `CAPTCHA_ENV=production` 或 `CAPTCHA_PRODUCTION=true` 会启用启动期安全校验，防止生产模式误用本地开发默认值。
 
