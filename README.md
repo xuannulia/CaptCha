@@ -36,14 +36,21 @@ npm run dev:runtime
 http://localhost:5173/demo
 ```
 
-## 接入方式
+## 业务流量接入
+
+这三种方式决定业务请求在哪里被拦截。
 
 | 方式 | 什么时候选 | 入口 |
 |---|---|---|
 | Runtime iframe + 后端 ticket 校验 | 页面和后端都能改；改动最小 | [接入指南](docs/integration-guide.md) |
 | 中间件 | 服务能加 middleware；在请求链路内处理 ticket、clearance 和策略 | [中间件](#中间件) |
 | Gateway | 业务服务不便改；在入口统一拦截 | [Gateway](#gateway) |
-| HTTP / gRPC API | 已有网关、服务网格或平台控制面 | [架构设计](docs/architecture-design.md) |
+
+## 自研接入
+
+HTTP / gRPC API 是底层接口，不是和中间件、Gateway 并列的开箱接入方式。已有网关、服务网格或平台控制面时，用它们自己封装接入层。
+
+- 接口和边界：[架构设计](docs/architecture-design.md)
 
 ## 管理台
 
