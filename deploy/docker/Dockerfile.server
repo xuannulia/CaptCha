@@ -36,6 +36,7 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 COPY --from=build /out/captcha-server /usr/local/bin/captcha-server
 COPY migrations ./migrations
 COPY configs ./configs
+COPY resources ./resources
 
 USER captcha
 

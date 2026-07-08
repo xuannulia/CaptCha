@@ -56,6 +56,7 @@ require_pattern Makefile 'docker build --build-arg GOPROXY="\$\(DOCKER_GOPROXY\)
 
 require_pattern deploy/docker/Dockerfile.server '^COPY migrations \./migrations$' "server image includes migrations"
 require_pattern deploy/docker/Dockerfile.server '^COPY configs \./configs$' "server image includes configs"
+require_pattern deploy/docker/Dockerfile.server '^COPY resources \./resources$' "server image includes captcha resources"
 require_pattern deploy/docker/Dockerfile.server '^EXPOSE 8080 9090$' "server image exposes HTTP and gRPC ports"
 require_pattern deploy/docker/Dockerfile.server '^ENTRYPOINT \["captcha-server"\]$' "server image entrypoint is captcha-server"
 require_pattern deploy/docker/Dockerfile.gateway '^EXPOSE 8081$' "gateway image exposes gateway port"

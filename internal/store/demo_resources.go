@@ -111,8 +111,8 @@ func demoClasspathImageResources(now time.Time) []types.CaptchaResource {
 				map[string]any{
 					"label":     category.label,
 					"mime_type": "image/jpeg",
-					"width":     360,
-					"height":    360,
+					"width":     320,
+					"height":    320,
 				},
 				now,
 			))
