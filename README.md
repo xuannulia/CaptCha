@@ -8,6 +8,13 @@ It is not a tiny browser widget. The browser renders the challenge and sends int
 
 License: [AGPL-3.0-only](LICENSE).
 
+Online demo: [https://xuannulia.github.io/CaptCha/](https://xuannulia.github.io/CaptCha/)
+
+Related hosted pages:
+
+- Admin console: [https://xuannulia.github.io/CaptCha/admin/](https://xuannulia.github.io/CaptCha/admin/)
+- Sample collector: [https://xuannulia.github.io/CaptCha/collector/](https://xuannulia.github.io/CaptCha/collector/)
+
 ## Start Here
 
 If you are opening the project for the first time, start with the demo page. It lets you try every bundled challenge type before you wire CaptCha into an application.
