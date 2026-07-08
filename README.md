@@ -44,7 +44,13 @@ http://localhost:5173/demo
 | 中间件 | 服务能加 middleware；在请求链路内处理 ticket、clearance 和策略 | [中间件](#中间件) |
 | Gateway | 业务服务不便改；在入口统一拦截 | [Gateway](#gateway) |
 | HTTP / gRPC API | 已有网关、服务网格或平台控制面 | [架构设计](docs/architecture-design.md) |
-| Admin | 需要管理应用、路由策略、素材、审计、样本和模型版本 | [管理计划](docs/admin-management-plan.md) |
+
+## 管理台
+
+Admin 不参与业务请求接入。它用于管理应用、路由策略、素材、审计、样本和模型版本。
+
+- 文档：[管理计划](docs/admin-management-plan.md)
+- 本地启动：`npm run dev:admin`
 
 ## 中间件
 
