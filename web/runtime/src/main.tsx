@@ -613,7 +613,7 @@ function DemoPage() {
               <dd>{lastTicket ? shortToken(lastTicket) : "-"}</dd>
             </div>
           </dl>
-          <p class="demo-note">当前在线 Demo 跑在小霸王服务器上。验证失败后需要重新生成下一题图片并加载素材，所以刷新会偏慢；正式部署时可通过更好的机器、缓存和 CDN 改善。</p>
+          <p class="demo-note">当前在线 Demo 跑在小霸王服务器上。验证失败后刷新偏慢主要受演示服务器和带宽限制影响，不代表 CaptCha 代码性能或正式部署效果。</p>
         </aside>
       </section>
     </main>
