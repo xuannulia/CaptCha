@@ -70,6 +70,8 @@ gateway:
     - "traceparent"
   trusted_proxy_cidrs:
     - "10.0.0.0/8"
+  trusted_context_token: "replace-with-random-secret"
+  trusted_context_header: "X-Captcha-Trusted-Context-Token"
   fail_policy: "fail_open"
   timeout: "1500ms"
   circuit_breaker:

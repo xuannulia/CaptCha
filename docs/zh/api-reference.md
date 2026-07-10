@@ -214,7 +214,7 @@ POST /api/v1/events/report
 | `GET` | `/api/v1/risk/demo-collection-summary` | Demo 轨迹采集摘要。 |
 | `POST` | `/api/v1/risk/track-samples` | 写入候选轨迹特征快照；默认不直接进入训练集。 |
 
-生产模式要求通过 `X-Captcha-Collector-Token` 或 Bearer token 提供 `CAPTCHA_COLLECTOR_TOKEN`，并按来源执行每分钟有界限流。
+生产模式要求通过 `X-Captcha-Collector-Token` 或 Bearer token 提供 `CAPTCHA_COLLECTOR_TOKEN`；URL 查询参数不接受 token。接口在基础样本校验通过后，按应用和可信代理链解析出的客户端 IP 执行每分钟有界限流。
 
 ### Admin API
 

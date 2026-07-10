@@ -745,8 +745,9 @@ func TestGRPCClientSecretAuth(t *testing.T) {
 	if config.ClientID != "demo" || config.ApplicationStatus != "active" {
 		t.Fatalf("expected authorized config snapshot, got %+v", config)
 	}
+	forgedCreatedAt := time.Date(2001, time.January, 1, 0, 0, 0, 0, time.UTC)
 	reportPB, err := eventClient.Report(ctx, grpccontract.EventBatchToProto([]types.AuditEvent{
-		{ClientID: "demo", Scene: "login", Route: "/api/login", Action: types.DecisionObserve, DecisionReason: "GRPC_SECRET_EVENT", Result: "observe"},
+		{ID: "forged-audit-id", ClientID: "demo", Scene: "login", Route: "/api/login", Action: types.DecisionObserve, DecisionReason: "GRPC_SECRET_EVENT", Result: "observe", CreatedAt: forgedCreatedAt},
 	}))
 	if err != nil {
 		t.Fatalf("authorized event report: %v", err)
@@ -755,6 +756,16 @@ func TestGRPCClientSecretAuth(t *testing.T) {
 	if report.Accepted != 1 {
 		t.Fatalf("expected authorized event report accepted, got %+v", report)
 	}
+	for _, event := range memoryStore.ListAuditEvents("demo", 20) {
+		if event.DecisionReason != "GRPC_SECRET_EVENT" {
+			continue
+		}
+		if event.ID == "forged-audit-id" || event.CreatedAt.Equal(forgedCreatedAt) {
+			t.Fatalf("expected server-controlled audit identity, got %+v", event)
+		}
+		return
+	}
+	t.Fatal("reported grpc audit event not found")
 }
 
 func TestGRPCSecureModeRejectsApplicationWithoutClientSecret(t *testing.T) {

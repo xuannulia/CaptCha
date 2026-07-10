@@ -32,6 +32,8 @@ func main() {
 		PolicyTransport:        env("CAPTCHA_GATEWAY_POLICY_TRANSPORT", "http"),
 		EnableConfigCache:      boolEnv("CAPTCHA_GATEWAY_CONFIG_CACHE", false),
 		TrustedProxyCIDRs:      csvEnv("CAPTCHA_TRUSTED_PROXY_CIDRS"),
+		TrustedContextToken:    os.Getenv("CAPTCHA_TRUSTED_CONTEXT_TOKEN"),
+		TrustedContextHeader:   env("CAPTCHA_TRUSTED_CONTEXT_HEADER", "X-Captcha-Trusted-Context-Token"),
 		UpstreamURL:            upstreamURL,
 		TicketHeader:           env("CAPTCHA_TICKET_HEADER", "X-Captcha-Ticket"),
 		ClearanceHeader:        env("CAPTCHA_CLEARANCE_HEADER", "X-Captcha-Clearance"),

@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/png"
 	"log/slog"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -3459,6 +3460,16 @@ func TestCollectTrackSampleRequiresCollectorToken(t *testing.T) {
 	}
 }
 
+func TestCollectTrackSampleRejectsCollectorTokenInQuery(t *testing.T) {
+	t.Parallel()
+
+	server, _, _ := testServerWithOptions(Options{CollectorToken: "collector-secret"})
+	rec := request(t, server, http.MethodPost, "/api/v1/risk/track-samples?collector_token=collector-secret", validCollectorTrackSampleBody())
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected query token to be rejected, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCollectTrackSampleRateLimit(t *testing.T) {
 	t.Parallel()
 
@@ -3468,9 +3479,47 @@ func TestCollectTrackSampleRateLimit(t *testing.T) {
 	if first.Code != http.StatusBadRequest {
 		t.Fatalf("expected first invalid sample to reach validation, got %d %s", first.Code, first.Body.String())
 	}
-	second := requestWithHeaders(t, server, http.MethodPost, "/api/v1/risk/track-samples", map[string]any{}, headers)
-	if second.Code != http.StatusTooManyRequests || second.Header().Get("Retry-After") != "60" {
-		t.Fatalf("expected collector rate limit, got %d headers=%v body=%s", second.Code, second.Header(), second.Body.String())
+	accepted := requestWithHeaders(t, server, http.MethodPost, "/api/v1/risk/track-samples", validCollectorTrackSampleBody(), headers)
+	if accepted.Code != http.StatusOK {
+		t.Fatalf("invalid sample should not consume valid sample quota, got %d %s", accepted.Code, accepted.Body.String())
+	}
+	limited := requestWithHeaders(t, server, http.MethodPost, "/api/v1/risk/track-samples", validCollectorTrackSampleBody(), headers)
+	if limited.Code != http.StatusTooManyRequests || limited.Header().Get("Retry-After") != "60" {
+		t.Fatalf("expected collector rate limit, got %d headers=%v body=%s", limited.Code, limited.Header(), limited.Body.String())
+	}
+}
+
+func TestCollectTrackSampleRateLimitSeparatesForwardedClients(t *testing.T) {
+	t.Parallel()
+
+	server, _, _ := testServerWithOptions(Options{
+		CollectorToken:     "collector-secret",
+		CollectorRateLimit: 1,
+		TrustedProxyCIDRs:  []string{"192.0.2.0/24"},
+	})
+	baseHeaders := map[string]string{"X-Captcha-Collector-Token": "collector-secret"}
+	for _, clientIP := range []string{"198.51.100.10", "198.51.100.11"} {
+		headers := maps.Clone(baseHeaders)
+		headers["X-Forwarded-For"] = clientIP
+		rec := requestWithHeadersFrom(t, server, http.MethodPost, "/api/v1/risk/track-samples", validCollectorTrackSampleBody(), headers, "192.0.2.10:443")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected independent quota for %s, got %d %s", clientIP, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func validCollectorTrackSampleBody() map[string]any {
+	return map[string]any{
+		"client_id":         "demo",
+		"scene":             "collector-mouse",
+		"task_type":         "slider_long",
+		"task_target":       map[string]any{"x": 280, "y": 24},
+		"input_device_hint": "mouse",
+		"track": []map[string]any{
+			{"x": 0, "y": 30, "t": 0, "type": "start"},
+			{"x": 80, "y": 32, "t": 260, "type": "move"},
+			{"x": 170, "y": 31, "t": 620, "type": "end"},
+		},
 	}
 }
 
@@ -3687,6 +3736,10 @@ func request(t *testing.T, handler http.Handler, method, path string, body any) 
 }
 
 func requestWithHeaders(t *testing.T, handler http.Handler, method, path string, body any, headers map[string]string) *httptest.ResponseRecorder {
+	return requestWithHeadersFrom(t, handler, method, path, body, headers, "")
+}
+
+func requestWithHeadersFrom(t *testing.T, handler http.Handler, method, path string, body any, headers map[string]string, remoteAddr string) *httptest.ResponseRecorder {
 	t.Helper()
 	var payload bytes.Buffer
 	if body != nil {
@@ -3695,6 +3748,9 @@ func requestWithHeaders(t *testing.T, handler http.Handler, method, path string,
 		}
 	}
 	req := httptest.NewRequest(method, path, &payload)
+	if remoteAddr != "" {
+		req.RemoteAddr = remoteAddr
+	}
 	req.Header.Set("Content-Type", "application/json")
 	for key, value := range headers {
 		req.Header.Set(key, value)

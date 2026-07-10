@@ -61,9 +61,9 @@
 - Server 启动支持生产安全闸门：设置 `CAPTCHA_ENV=production` 或 `CAPTCHA_PRODUCTION=true` 后，缺少管理 token、gRPC token、metrics token、采集 token、显式非通配 CORS/return_url allowlist、PostgreSQL、Redis，或未禁用 demo seed 时会启动失败。
 - gRPC 当前服务已覆盖 Policy、Ticket、Config、Event，并支持平台级 `CAPTCHA_GRPC_TOKEN` 强鉴权和应用 client secret metadata 鉴权；Go 侧已由 `proto/captcha/v1/captcha.proto` 生成 `gen/captcha/v1` 客户端和服务端代码，业务内部类型通过转换层与 protobuf 契约隔离。
 - ConfigService 支持 `GetConfig` 基础拉取和 `WatchConfig` 流式配置更新；配置快照包含 `application_status`、路由策略、可配置策略规则、IP 策略和验证码资源，管理 API 修改应用、路由策略、策略规则、IP 策略或资源后会推送新版本配置快照。
-- 已提供 `cmd/captcha-gateway` 参考反向代理入口，无 ticket 时通过平台策略 API 或 gRPC PolicyService 决定放行、返回 challenge 或阻断；有 ticket 时优先通过 HTTP ticket API 或 gRPC TicketService 消费一次性 ticket，并透传请求 IP/UA 摘要和 `X-Captcha-Request-Nonce` 参与上下文绑定校验。ticket 消费成功后平台会返回短期 clearance，Gateway 默认写入 `X-Captcha-Clearance` 和 HttpOnly `captcha_clearance` cookie，后续请求带 clearance 时由平台按 `client_id`、`scene`、IP/UA 摘要、账号 hash 和设备/匿名访客 hash 重新校验。Gateway 还支持从可信代理注入的 `X-Captcha-Account-ID-Hash`、`X-Captcha-Device-ID-Hash`、`X-Captcha-Risk-Score`、`X-Captcha-Risk-Level`、`X-Captcha-Model-Score` 和 `X-Captcha-Model-Mode` 提取内部策略上下文；不可信来源的这些头会在评估和上游转发前删除。`X-Captcha-Resource-Tag`、ticket、clearance 和 nonce 保留客户端协议语义。Gateway 通过 `CAPTCHA_GATEWAY_HEADER_ALLOWLIST` 只上传显式 allowlist 的低敏业务头，并可通过 `CAPTCHA_GATEWAY_CIRCUIT_BREAKER_FAILURES` / `CAPTCHA_GATEWAY_CIRCUIT_BREAKER_COOLDOWN` 对连续平台调用失败短期熔断降级。
+- 已提供 `cmd/captcha-gateway` 参考反向代理入口，无 ticket 时通过平台策略 API 或 gRPC PolicyService 决定放行、返回 challenge 或阻断；有 ticket 时优先通过 HTTP ticket API 或 gRPC TicketService 消费一次性 ticket，并透传请求 IP/UA 摘要和 `X-Captcha-Request-Nonce` 参与上下文绑定校验。ticket 消费成功后平台会返回短期 clearance，Gateway 默认写入 `X-Captcha-Clearance` 和 HttpOnly `captcha_clearance` cookie，后续请求带 clearance 时由平台按 `client_id`、`scene`、IP/UA 摘要、账号 hash 和设备/匿名访客 hash 重新校验。Gateway 只从可信代理且携带正确 `CAPTCHA_TRUSTED_CONTEXT_TOKEN` 的请求提取 `X-Captcha-Account-ID-Hash`、`X-Captcha-Device-ID-Hash`、`X-Captcha-Risk-Score`、`X-Captcha-Risk-Level`、`X-Captcha-Model-Score` 和 `X-Captcha-Model-Mode` 内部策略上下文；来源或令牌校验失败时，这些头会在评估和上游转发前删除，令牌头本身始终被消费。`X-Captcha-Resource-Tag`、ticket、clearance 和 nonce 保留客户端协议语义。Gateway 通过 `CAPTCHA_GATEWAY_HEADER_ALLOWLIST` 只上传显式 allowlist 的低敏业务头，并可通过 `CAPTCHA_GATEWAY_CIRCUIT_BREAKER_FAILURES` / `CAPTCHA_GATEWAY_CIRCUIT_BREAKER_COOLDOWN` 对连续平台调用失败短期熔断降级。
 - Gateway 支持可选本地配置缓存，通过 gRPC ConfigService 拉取配置并订阅 `WatchConfig` 更新；本地处理应用禁用、静态 IP allow/block、无聚合且非挑战类的策略规则、未命中路由、全应用或路由级 `manual_bypass`、`silent` 和 `observe` 等确定性决策；挑战类策略规则和聚合限流仍由平台端创建 session 或执行分布式计数。
-- Gateway 支持 `CAPTCHA_TRUSTED_PROXY_CIDRS` 配置可信代理，只有请求来自可信代理 CIDR 时才读取 `X-Forwarded-For`，并接收账号、设备和风险/模型上下文头。
+- Gateway 支持 `CAPTCHA_TRUSTED_PROXY_CIDRS` 配置可信代理，只有请求来自可信代理 CIDR 时才读取 `X-Forwarded-For`；账号、设备和风险/模型上下文还必须通过 `CAPTCHA_TRUSTED_CONTEXT_TOKEN` 校验。
 - IP 策略支持 CIDR 和单 IP 写法，并在平台策略和 Gateway 本地缓存中统一执行 `allowlist -> blocklist -> 其他 IP 策略` 的确定性优先级。
 - 路由 `rate_limit` 策略已支持 IP、账号 hash 和设备 hash 三个维度计数；任一维度超过阈值都会触发 challenge；计数策略支持默认 `fixed_window`、滚动窗口 `sliding_window` 和令牌桶 `token_bucket`。
 - 路由策略支持全应用范围：`path_pattern` 为空或 `*` 表示全部路径，`method` 为空表示全部方法；同时支持 `rollout_percent` 基础灰度发布，平台策略服务和 Gateway 本地缓存都会按账号 hash、设备 hash、IP、UA 或路径做稳定哈希抽样；未命中高优先级灰度策略时继续匹配低优先级路由。路由策略也支持 `challenge_escalation` 覆盖平台默认升级序列，使不同路由可以使用不同的 `challenge_harder` 多级挑战编排。
@@ -1166,7 +1166,7 @@ ipPolicy:
 真实客户端 IP 不能无条件信任 header。
 
 - 只有请求来自可信代理时，才读取 `X-Forwarded-For` 等代理头。
-- 账号、设备和风险/模型上下文头也只接受可信代理注入；公网伪造值会被删除。
+- 账号、设备和风险/模型上下文头要求可信代理来源和独立共享令牌同时通过；公网伪造值或代理透传的无令牌值会被删除。
 - 支持配置可信代理 CIDR。
 - 从 `X-Forwarded-For` 中按可信链路解析真实客户端 IP。
 - 默认使用 TCP peer IP。
@@ -1177,6 +1177,7 @@ ipPolicy:
 ```text
 Gateway
   CAPTCHA_TRUSTED_PROXY_CIDRS=10.0.0.0/8,192.168.0.0/16
+  CAPTCHA_TRUSTED_CONTEXT_TOKEN=replace-with-random-secret
   CAPTCHA_GATEWAY_HEADER_ALLOWLIST=x-request-id,traceparent
 
 Express middleware
@@ -1405,7 +1406,7 @@ database metadata
 
 前端 Runtime 只采集行为事实，不判断是否通过。
 
-除完整验证码 Runtime 外，项目提供轻量采集页 `/collect`，用于高效率采集真人鼠标、触控板和触屏滑块轨迹。采集页不创建完整 challenge、不加载背景图库，也不要求人工刷新页面；页面展示真实滑块拖条，随机生成短距、中距、长距、慢拖、快拖和末端微调任务，每次松手后自动提交样本并切换下一条滑块任务。部署方可通过 `input_device=mouse|trackpad|touch` 显式标记设备类型，通过 `CAPTCHA_COLLECTOR_TOKEN` 保护 `POST /api/v1/risk/track-samples` 采集接口。
+除完整验证码 Runtime 外，项目提供轻量采集页 `/collect`，用于高效率采集真人鼠标、触控板和触屏滑块轨迹。采集页不创建完整 challenge、不加载背景图库，也不要求人工刷新页面；页面展示真实滑块拖条，随机生成短距、中距、长距、慢拖、快拖和末端微调任务，每次松手后自动提交样本并切换下一条滑块任务。部署方可通过 `input_device=mouse|trackpad|touch` 显式标记设备类型，通过 Header 或 Bearer 形式的 `CAPTCHA_COLLECTOR_TOKEN` 保护 `POST /api/v1/risk/track-samples` 采集接口；URL 查询参数不接受 token。API Server 位于代理后时用 `CAPTCHA_SERVER_TRUSTED_PROXY_CIDRS` 启用可信代理链解析，限流键由应用和最近非可信客户端 IP 组成，基础校验失败的样本不占用有效采集额度。
 
 采集页写入的样本默认标记为 `likely_human`、`label_source=collector`、`model_trainable=false`。这些样本只能作为候选池，必须经过人工确认、离线清洗或业务反馈后才能进入训练集，避免公开采集入口被投毒。
 

@@ -61,6 +61,20 @@ Confirm the GitHub Pages demo is reachable:
 curl -fsS https://xuannulia.github.io/CaptCha/demo/
 ```
 
+## Admin Security Headers
+
+The admin UI cannot rely on an HTML `<meta>` tag for clickjacking protection. Production static hosting must send a CSP response header containing `frame-ancestors 'none'` and `X-Frame-Options: DENY`. Copy `deploy/nginx/captcha-admin.conf.example`, replace the host, static root, and API origin, then validate it with `nginx -t`.
+
+When using internal account, device, or risk context headers, the authenticating proxy must overwrite them and inject the shared context token:
+
+```nginx
+proxy_set_header X-Captcha-Trusted-Context-Token "replace-with-random-secret";
+proxy_set_header X-Captcha-Account-ID-Hash $authenticated_account_hash;
+proxy_set_header X-Captcha-Device-ID-Hash $authenticated_device_hash;
+```
+
+Configure the Gateway with `CAPTCHA_TRUSTED_PROXY_CIDRS` and the same `CAPTCHA_TRUSTED_CONTEXT_TOKEN`. Never expose the shared token to ordinary public requests.
+
 ## Gateway Failure Policy
 
 Gateway uses the same failure posture as middleware. The default is `fail_open`, so CaptCha platform incidents do not block business traffic. Configure it by route value and business risk:

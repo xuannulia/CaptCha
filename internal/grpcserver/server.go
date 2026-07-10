@@ -12,6 +12,7 @@ import (
 	"time"
 
 	captchav1 "captcha/gen/captcha/v1"
+	auditpkg "captcha/internal/audit"
 	"captcha/internal/configsync"
 	"captcha/internal/engine"
 	"captcha/internal/grpccontract"
@@ -452,7 +453,7 @@ func (s *Server) Report(ctx context.Context, req *captchav1.EventBatch) (*captch
 	}
 	accepted := 0
 	for _, event := range batch.Events {
-		s.deps.Store.AddAuditEvent(event)
+		s.deps.Store.AddAuditEvent(auditpkg.SanitizeReportedEvent(event))
 		accepted++
 	}
 	return grpccontract.ReportResultToProto(types.ReportResult{Accepted: accepted}), nil

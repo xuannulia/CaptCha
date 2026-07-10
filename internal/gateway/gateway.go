@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/netip"
@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"captcha/internal/nettrust"
 	"captcha/internal/policy"
 	"captcha/internal/routepolicy"
 	"captcha/internal/types"
@@ -46,6 +47,8 @@ type Config struct {
 	PolicyTransport        string
 	EnableConfigCache      bool
 	TrustedProxyCIDRs      []string
+	TrustedContextToken    string
+	TrustedContextHeader   string
 	UpstreamURL            string
 	TicketHeader           string
 	ClearanceHeader        string
@@ -124,6 +127,9 @@ func New(config Config, logger *slog.Logger) (*Gateway, error) {
 	if config.ModelModeHeader == "" {
 		config.ModelModeHeader = "X-Captcha-Model-Mode"
 	}
+	if config.TrustedContextHeader == "" {
+		config.TrustedContextHeader = "X-Captcha-Trusted-Context-Token"
+	}
 	if config.FailPolicy == "" {
 		config.FailPolicy = "fail_open"
 	}
@@ -142,7 +148,7 @@ func New(config Config, logger *slog.Logger) (*Gateway, error) {
 	if err != nil || upstreamURL.Scheme == "" || upstreamURL.Host == "" {
 		return nil, fmt.Errorf("invalid upstream url: %q", config.UpstreamURL)
 	}
-	trustedProxies, err := parseTrustedProxyCIDRs(config.TrustedProxyCIDRs)
+	trustedProxies, err := nettrust.ParseCIDRs(config.TrustedProxyCIDRs)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +308,7 @@ func (g *Gateway) Handler() http.Handler {
 			}
 			return
 		}
-		g.stripUntrustedContextHeaders(r)
+		g.sanitizeContextHeaders(r)
 
 		ctx, cancel := context.WithTimeout(r.Context(), g.config.RequestTimeout)
 		defer cancel()
@@ -975,17 +981,16 @@ func sceneFromRequest(r *http.Request) string {
 }
 
 func (g *Gateway) remoteIP(r *http.Request) string {
-	direct := directRemoteIP(r.RemoteAddr)
-	if g.trustsProxy(direct) {
-		if forwarded := firstForwardedIP(r.Header.Get("X-Forwarded-For")); forwarded != "" {
-			return forwarded
-		}
-	}
-	return direct
+	return nettrust.ClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), g.proxies)
 }
 
-func (g *Gateway) stripUntrustedContextHeaders(r *http.Request) {
-	if g.trustsProxy(directRemoteIP(r.RemoteAddr)) {
+func (g *Gateway) sanitizeContextHeaders(r *http.Request) {
+	expected := strings.TrimSpace(g.config.TrustedContextToken)
+	actual := strings.TrimSpace(r.Header.Get(g.config.TrustedContextHeader))
+	r.Header.Del(g.config.TrustedContextHeader)
+	if expected != "" && actual != "" &&
+		g.trustsProxy(nettrust.DirectIP(r.RemoteAddr)) &&
+		subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1 {
 		return
 	}
 	for _, header := range []string{
@@ -1003,65 +1008,7 @@ func (g *Gateway) stripUntrustedContextHeaders(r *http.Request) {
 }
 
 func (g *Gateway) trustsProxy(ip string) bool {
-	if len(g.proxies) == 0 || ip == "" {
-		return false
-	}
-	addr, err := netip.ParseAddr(ip)
-	if err != nil {
-		return false
-	}
-	for _, prefix := range g.proxies {
-		if prefix.Contains(addr) {
-			return true
-		}
-	}
-	return false
-}
-
-func directRemoteIP(remoteAddr string) string {
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err == nil {
-		return host
-	}
-	return remoteAddr
-}
-
-func firstForwardedIP(forwarded string) string {
-	for _, part := range strings.Split(forwarded, ",") {
-		candidate := strings.TrimSpace(part)
-		if candidate == "" {
-			continue
-		}
-		if _, err := netip.ParseAddr(candidate); err == nil {
-			return candidate
-		}
-	}
-	return ""
-}
-
-func parseTrustedProxyCIDRs(cidrs []string) ([]netip.Prefix, error) {
-	prefixes := make([]netip.Prefix, 0, len(cidrs))
-	for _, cidr := range cidrs {
-		cidr = strings.TrimSpace(cidr)
-		if cidr == "" {
-			continue
-		}
-		prefix, err := netip.ParsePrefix(cidr)
-		if err == nil {
-			prefixes = append(prefixes, prefix.Masked())
-			continue
-		}
-		addr, addrErr := netip.ParseAddr(cidr)
-		if addrErr != nil {
-			return nil, fmt.Errorf("invalid trusted proxy cidr %q: %w", cidr, err)
-		}
-		bits := 128
-		if addr.Is4() {
-			bits = 32
-		}
-		prefixes = append(prefixes, netip.PrefixFrom(addr, bits))
-	}
-	return prefixes, nil
+	return nettrust.Contains(g.proxies, ip)
 }
 
 type circuitBreaker struct {

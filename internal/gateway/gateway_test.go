@@ -51,6 +51,8 @@ type blockingEventClient struct {
 	release chan struct{}
 }
 
+const trustedContextToken = "gateway-context-test-token"
+
 func (c *fakePolicyClient) Evaluate(_ context.Context, req types.PolicyEvaluateRequest) (types.PolicyDecision, error) {
 	c.calls++
 	c.request = req
@@ -143,12 +145,13 @@ func TestGatewayChallengesBeforeProxy(t *testing.T) {
 		TTLSeconds:    120,
 	}}
 	gateway, err := NewWithPolicyClient(Config{
-		ClientID:          "demo",
-		PlatformURL:       "http://platform.local",
-		UpstreamURL:       upstream.URL,
-		TrustedProxyCIDRs: []string{"198.51.100.9/32"},
-		HeaderAllowlist:   []string{"X-Trace-ID"},
-		RequestTimeout:    time.Second,
+		ClientID:            "demo",
+		PlatformURL:         "http://platform.local",
+		UpstreamURL:         upstream.URL,
+		TrustedProxyCIDRs:   []string{"198.51.100.9/32"},
+		TrustedContextToken: trustedContextToken,
+		HeaderAllowlist:     []string{"X-Trace-ID"},
+		RequestTimeout:      time.Second,
 	}, policy, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
@@ -163,6 +166,7 @@ func TestGatewayChallengesBeforeProxy(t *testing.T) {
 	req.Header.Set("X-Captcha-Risk-Level", "high")
 	req.Header.Set("X-Captcha-Model-Score", "88")
 	req.Header.Set("X-Captcha-Model-Mode", "observe")
+	req.Header.Set("X-Captcha-Trusted-Context-Token", trustedContextToken)
 	req.Header.Set("X-Trace-ID", "trace-gateway")
 	req.Header.Set("Authorization", "Bearer should-not-forward")
 	rec := httptest.NewRecorder()
@@ -216,12 +220,13 @@ func TestGatewayStripsContextHeadersFromUntrustedSources(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
 	req.RemoteAddr = "198.51.100.20:12345"
 	for key, value := range map[string]string{
-		"X-Captcha-Account-ID-Hash": "forged-account",
-		"X-Captcha-Device-ID-Hash":  "forged-device",
-		"X-Captcha-Risk-Score":      "1",
-		"X-Captcha-Risk-Level":      "low",
-		"X-Captcha-Model-Score":     "1",
-		"X-Captcha-Model-Mode":      "enforce",
+		"X-Captcha-Account-ID-Hash":       "forged-account",
+		"X-Captcha-Device-ID-Hash":        "forged-device",
+		"X-Captcha-Risk-Score":            "1",
+		"X-Captcha-Risk-Level":            "low",
+		"X-Captcha-Model-Score":           "1",
+		"X-Captcha-Model-Mode":            "enforce",
+		"X-Captcha-Trusted-Context-Token": trustedContextToken,
 	} {
 		req.Header.Set(key, value)
 	}
@@ -242,10 +247,44 @@ func TestGatewayStripsContextHeadersFromUntrustedSources(t *testing.T) {
 		"X-Captcha-Risk-Level",
 		"X-Captcha-Model-Score",
 		"X-Captcha-Model-Mode",
+		"X-Captcha-Trusted-Context-Token",
 	} {
 		if value := headers.Get(key); value != "" {
 			t.Fatalf("untrusted header %s reached upstream with value %q", key, value)
 		}
+	}
+}
+
+func TestGatewayRequiresContextTokenFromTrustedProxy(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("upstream should not be reached")
+	}))
+	defer upstream.Close()
+	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionBlock, Reason: "BLOCK"}}
+	gateway, err := NewWithPolicyClient(Config{
+		ClientID:            "demo",
+		PlatformURL:         "http://platform.local",
+		UpstreamURL:         upstream.URL,
+		TrustedProxyCIDRs:   []string{"192.0.2.0/24"},
+		TrustedContextToken: trustedContextToken,
+		RequestTimeout:      time.Second,
+	}, policy, nil)
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
+	req.RemoteAddr = "192.0.2.10:12345"
+	req.Header.Set("X-Captcha-Account-ID-Hash", "forged-account")
+	req.Header.Set("X-Captcha-Risk-Score", "1")
+	req.Header.Set("X-Captcha-Trusted-Context-Token", "wrong-token")
+	rec := httptest.NewRecorder()
+	gateway.Handler().ServeHTTP(rec, req)
+
+	if policy.request.AccountIDHash != "" || policy.request.RiskScore != 0 {
+		t.Fatalf("context without valid token reached policy evaluation: %+v", policy.request)
 	}
 }
 
@@ -362,7 +401,10 @@ func TestGatewayForwardsClearanceToPolicy(t *testing.T) {
 func TestGatewayConsumesTicketBeforePolicy(t *testing.T) {
 	t.Parallel()
 
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if value := r.Header.Get("X-Captcha-Trusted-Context-Token"); value != "" {
+			t.Errorf("trusted context token reached upstream: %q", value)
+		}
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("ticket-proxied"))
 	}))
@@ -372,11 +414,12 @@ func TestGatewayConsumesTicketBeforePolicy(t *testing.T) {
 	ticket := &fakeTicketClient{response: types.TicketVerifyResponse{Valid: true, ClientID: "demo", Scene: "login", Route: "/api/login", ClearanceToken: "clearance_gateway", ClearanceTTLSeconds: 600}}
 	events := newFakeEventClient()
 	gateway, err := NewWithClientsAndEvent(Config{
-		ClientID:          "demo",
-		PlatformURL:       "http://platform.local",
-		UpstreamURL:       upstream.URL,
-		TrustedProxyCIDRs: []string{"192.0.2.1/32"},
-		RequestTimeout:    time.Second,
+		ClientID:            "demo",
+		PlatformURL:         "http://platform.local",
+		UpstreamURL:         upstream.URL,
+		TrustedProxyCIDRs:   []string{"192.0.2.1/32"},
+		TrustedContextToken: trustedContextToken,
+		RequestTimeout:      time.Second,
 	}, policy, ticket, events, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
@@ -395,6 +438,7 @@ func TestGatewayConsumesTicketBeforePolicy(t *testing.T) {
 	req.Header.Set("X-Captcha-Request-Nonce", "nonce-gateway")
 	req.Header.Set("X-Captcha-Account-ID-Hash", "acct_gateway")
 	req.Header.Set("X-Captcha-Device-ID-Hash", "device_gateway")
+	req.Header.Set("X-Captcha-Trusted-Context-Token", trustedContextToken)
 	req.Header.Set("User-Agent", "gateway-test")
 	rec := httptest.NewRecorder()
 	gateway.Handler().ServeHTTP(rec, req)
@@ -515,12 +559,13 @@ func TestGatewayLocalCacheBlocksIPWithoutRemotePolicy(t *testing.T) {
 	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionAllow, Reason: "SHOULD_NOT_CALL"}}
 	events := newFakeEventClient()
 	gateway, err := NewWithClientsAndEvent(Config{
-		ClientID:          "demo",
-		PlatformURL:       "http://platform.local",
-		UpstreamURL:       upstream.URL,
-		RequestTimeout:    time.Second,
-		EnableConfigCache: true,
-		TrustedProxyCIDRs: []string{"192.0.2.0/24"},
+		ClientID:            "demo",
+		PlatformURL:         "http://platform.local",
+		UpstreamURL:         upstream.URL,
+		RequestTimeout:      time.Second,
+		EnableConfigCache:   true,
+		TrustedProxyCIDRs:   []string{"192.0.2.0/24"},
+		TrustedContextToken: trustedContextToken,
 	}, policy, nil, events, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
@@ -537,6 +582,7 @@ func TestGatewayLocalCacheBlocksIPWithoutRemotePolicy(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "198.51.100.22")
 	req.Header.Set("X-Captcha-Account-ID-Hash", "acct_local_block")
 	req.Header.Set("X-Captcha-Device-ID-Hash", "device_local_block")
+	req.Header.Set("X-Captcha-Trusted-Context-Token", trustedContextToken)
 	req.RemoteAddr = "192.0.2.10:12345"
 	rec := httptest.NewRecorder()
 	gateway.Handler().ServeHTTP(rec, req)
@@ -749,12 +795,13 @@ func TestGatewayCachedPolicyRuleSkipChallenge(t *testing.T) {
 	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionBlock, Reason: "SHOULD_NOT_CALL"}}
 	events := newFakeEventClient()
 	gateway, err := NewWithClientsAndEvent(Config{
-		ClientID:          "demo",
-		PlatformURL:       "http://platform.local",
-		UpstreamURL:       upstream.URL,
-		RequestTimeout:    time.Second,
-		EnableConfigCache: true,
-		TrustedProxyCIDRs: []string{"192.0.2.1/32"},
+		ClientID:            "demo",
+		PlatformURL:         "http://platform.local",
+		UpstreamURL:         upstream.URL,
+		RequestTimeout:      time.Second,
+		EnableConfigCache:   true,
+		TrustedProxyCIDRs:   []string{"192.0.2.1/32"},
+		TrustedContextToken: trustedContextToken,
 	}, policy, nil, events, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
@@ -783,6 +830,7 @@ func TestGatewayCachedPolicyRuleSkipChallenge(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/register", nil)
 	req.Header.Set("X-Captcha-Account-ID-Hash", "acct_trusted")
 	req.Header.Set("X-Captcha-Device-ID-Hash", "device_trusted")
+	req.Header.Set("X-Captcha-Trusted-Context-Token", trustedContextToken)
 	rec := httptest.NewRecorder()
 	gateway.Handler().ServeHTTP(rec, req)
 
@@ -810,12 +858,13 @@ func TestGatewayLocalCacheSkipsRouteOutsideRollout(t *testing.T) {
 	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionBlock, Reason: "SHOULD_NOT_CALL"}}
 	events := newFakeEventClient()
 	gateway, err := NewWithClientsAndEvent(Config{
-		ClientID:          "demo",
-		PlatformURL:       "http://platform.local",
-		UpstreamURL:       upstream.URL,
-		RequestTimeout:    time.Second,
-		EnableConfigCache: true,
-		TrustedProxyCIDRs: []string{"192.0.2.1/32"},
+		ClientID:            "demo",
+		PlatformURL:         "http://platform.local",
+		UpstreamURL:         upstream.URL,
+		RequestTimeout:      time.Second,
+		EnableConfigCache:   true,
+		TrustedProxyCIDRs:   []string{"192.0.2.1/32"},
+		TrustedContextToken: trustedContextToken,
 	}, policy, nil, events, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
@@ -843,6 +892,7 @@ func TestGatewayLocalCacheSkipsRouteOutsideRollout(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/pay", nil)
 	req.Header.Set("X-Captcha-Account-ID-Hash", gatewayRolloutMissAccount(t, grayRoute))
+	req.Header.Set("X-Captcha-Trusted-Context-Token", trustedContextToken)
 	rec := httptest.NewRecorder()
 	gateway.Handler().ServeHTTP(rec, req)
 

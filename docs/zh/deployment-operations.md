@@ -61,6 +61,20 @@ curl -fsS https://api.metool.tech/captcha/healthz
 curl -fsS https://xuannulia.github.io/CaptCha/demo/
 ```
 
+## 管理台安全响应头
+
+管理台不能只依赖 HTML `<meta>` 防点击劫持。生产静态站点必须由 Web Server 下发包含 `frame-ancestors 'none'` 的 CSP 响应头，并设置 `X-Frame-Options: DENY`。可复制 `deploy/nginx/captcha-admin.conf.example`，替换域名、静态目录和 API 地址后执行 `nginx -t`。
+
+使用 Gateway 内部账号、设备或风险头时，认证代理必须覆盖这些头并注入共享令牌：
+
+```nginx
+proxy_set_header X-Captcha-Trusted-Context-Token "replace-with-random-secret";
+proxy_set_header X-Captcha-Account-ID-Hash $authenticated_account_hash;
+proxy_set_header X-Captcha-Device-ID-Hash $authenticated_device_hash;
+```
+
+Gateway 同时配置 `CAPTCHA_TRUSTED_PROXY_CIDRS` 和相同的 `CAPTCHA_TRUSTED_CONTEXT_TOKEN`。不要让普通公网请求直接携带共享令牌。
+
 ## Gateway 失败策略
 
 Gateway 与中间件一样，平台不可用时默认 `fail_open`，不会因为 CaptCha 平台故障阻断业务。生产可按接口价值调整：

@@ -200,7 +200,11 @@ CAPTCHA_SEED_DEMO=false \
 
 管理台创建应用时会自动生成并仅展示一次 `client_secret`。生产模式会拒绝历史遗留的无密钥应用访问 Policy、Ticket、Config 和 Event 数据面；应先在管理台为这些应用生成密钥并同步到 Gateway 或服务端中间件。
 
-Gateway 仅接受 `CAPTCHA_TRUSTED_PROXY_CIDRS` 内来源注入的账号、设备和风险/模型上下文头；不可信来源携带的这些头会在策略评估和上游转发前被删除。
+Gateway 仅接受 `CAPTCHA_TRUSTED_PROXY_CIDRS` 内来源且携带正确 `CAPTCHA_TRUSTED_CONTEXT_TOKEN` 的账号、设备和风险/模型上下文头。认证代理应通过 `X-Captcha-Trusted-Context-Token` 注入这个令牌并覆盖所有上下文头；Gateway 会在策略评估前消费令牌，不会把它转发给业务上游。来源或令牌校验失败时，上下文头会被删除。
+
+API Server 位于反向代理后时，可设置 `CAPTCHA_SERVER_TRUSTED_PROXY_CIDRS`。采集接口会从可信代理链的最近非可信节点解析客户端 IP，并按 `client_id + 客户端 IP` 限流；采集 token 只接受 `X-Captcha-Collector-Token` 或 Bearer token，不接受 URL 参数。
+
+管理端生产静态托管必须下发 CSP 响应头和 `X-Frame-Options: DENY`；仓库提供 [Nginx 示例](deploy/nginx/captcha-admin.conf.example)。
 
 ## Cookie 和合规边界
 

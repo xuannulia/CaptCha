@@ -78,6 +78,8 @@ require_pattern docker-compose.yml 'CAPTCHA_GATEWAY_FAIL_POLICY:' "compose expos
 require_pattern docker-compose.yml 'CAPTCHA_GATEWAY_TIMEOUT:' "compose exposes gateway timeout"
 require_pattern docker-compose.yml 'CAPTCHA_GATEWAY_CIRCUIT_BREAKER_FAILURES:' "compose exposes gateway circuit breaker threshold"
 require_pattern docker-compose.yml 'CAPTCHA_GATEWAY_CIRCUIT_BREAKER_COOLDOWN:' "compose exposes gateway circuit breaker cooldown"
+require_pattern docker-compose.yml 'CAPTCHA_TRUSTED_CONTEXT_TOKEN:' "compose exposes gateway trusted context token"
+require_pattern docker-compose.yml 'CAPTCHA_SERVER_TRUSTED_PROXY_CIDRS:' "compose exposes server trusted proxy configuration"
 require_pattern docker-compose.yml 'condition: service_healthy' "compose waits for healthy dependencies"
 
 require_pattern docker-compose.dev.yml '^  postgres:$' "dev compose includes PostgreSQL"

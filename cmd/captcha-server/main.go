@@ -66,6 +66,10 @@ func main() {
 		os.Getenv("CAPTCHA_RISK_INFERENCE_TOKEN"),
 		durationEnv("CAPTCHA_RISK_INFERENCE_TIMEOUT", 500*time.Millisecond),
 	)
+	trustedProxyCIDRs := csvEnv("CAPTCHA_SERVER_TRUSTED_PROXY_CIDRS")
+	if len(trustedProxyCIDRs) == 0 {
+		trustedProxyCIDRs = csvEnv("CAPTCHA_TRUSTED_PROXY_CIDRS")
+	}
 	server := api.NewServerWithOptions(captchaEngine, policyEvaluator, appStore, tokenService, logger, api.Options{
 		RuntimeBaseURL:          os.Getenv("CAPTCHA_RUNTIME_URL"),
 		AdminToken:              os.Getenv("CAPTCHA_ADMIN_TOKEN"),
@@ -73,6 +77,7 @@ func main() {
 		CollectorToken:          os.Getenv("CAPTCHA_COLLECTOR_TOKEN"),
 		CollectorRateLimit:      intEnv("CAPTCHA_COLLECTOR_RATE_LIMIT_PER_MINUTE", 120),
 		RequireClientSecret:     secureMode,
+		TrustedProxyCIDRs:       trustedProxyCIDRs,
 		ResourceUploadDir:       env("CAPTCHA_RESOURCE_UPLOAD_DIR", "./data/resources"),
 		AllowedOrigins:          csvEnv("CAPTCHA_ALLOWED_ORIGINS"),
 		AllowedReturnURLOrigins: csvEnv("CAPTCHA_ALLOWED_RETURN_URL_ORIGINS"),

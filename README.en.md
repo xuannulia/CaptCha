@@ -202,7 +202,11 @@ CAPTCHA_SEED_DEMO=false \
 
 The admin UI generates a `client_secret` when an application is created and displays it only once. Production mode rejects Policy, Ticket, Config, and Event requests for legacy applications that have no secret; generate a secret first and configure it in the Gateway or server-side middleware.
 
-The Gateway accepts account, device, and risk/model context headers only from sources inside `CAPTCHA_TRUSTED_PROXY_CIDRS`. It removes those headers from both policy evaluation and upstream forwarding for untrusted sources.
+The Gateway accepts account, device, and risk/model context headers only when the direct source is inside `CAPTCHA_TRUSTED_PROXY_CIDRS` and the request carries the configured `CAPTCHA_TRUSTED_CONTEXT_TOKEN`. The authenticating proxy must inject that value through `X-Captcha-Trusted-Context-Token` and overwrite every context header. The Gateway consumes the token before policy evaluation and never forwards it upstream; failed source or token checks remove all trusted context headers.
+
+When the API Server is behind a reverse proxy, configure `CAPTCHA_SERVER_TRUSTED_PROXY_CIDRS`. The collector resolves the nearest untrusted address in the proxy chain and rate-limits by `client_id + client IP`. Collector authentication accepts only `X-Captcha-Collector-Token` or a Bearer token, never URL parameters.
+
+Production static hosting for the admin UI must send a CSP response header and `X-Frame-Options: DENY`; see the bundled [Nginx example](deploy/nginx/captcha-admin.conf.example).
 
 ## Cookie And Compliance Boundary
 

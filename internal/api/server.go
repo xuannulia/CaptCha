@@ -11,14 +11,17 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	auditpkg "captcha/internal/audit"
 	challengepkg "captcha/internal/challenge"
 	"captcha/internal/configsync"
 	"captcha/internal/engine"
+	"captcha/internal/nettrust"
 	"captcha/internal/policy"
 	resourcepkg "captcha/internal/resource"
 	"captcha/internal/risk"
@@ -29,12 +32,13 @@ import (
 )
 
 type Server struct {
-	engine  *engine.Engine
-	policy  *policy.Evaluator
-	store   store.Store
-	tokens  *token.Service
-	logger  *slog.Logger
-	options Options
+	engine         *engine.Engine
+	policy         *policy.Evaluator
+	store          store.Store
+	tokens         *token.Service
+	logger         *slog.Logger
+	options        Options
+	trustedProxies []netip.Prefix
 }
 
 type Options struct {
@@ -44,6 +48,7 @@ type Options struct {
 	CollectorToken          string
 	CollectorRateLimit      int
 	RequireClientSecret     bool
+	TrustedProxyCIDRs       []string
 	ResourceUploadDir       string
 	AllowedOrigins          []string
 	AllowedReturnURLOrigins []string
@@ -68,7 +73,12 @@ func NewServerWithOptions(engine *engine.Engine, policy *policy.Evaluator, store
 	if options.CollectorRateLimit <= 0 {
 		options.CollectorRateLimit = 120
 	}
-	return &Server{engine: engine, policy: policy, store: store, tokens: tokens, logger: logger, options: options}
+	trustedProxies, err := nettrust.ParseCIDRs(options.TrustedProxyCIDRs)
+	if err != nil && logger != nil {
+		logger.Warn("invalid trusted proxy configuration; forwarded client addresses disabled", "error", err)
+		trustedProxies = nil
+	}
+	return &Server{engine: engine, policy: policy, store: store, tokens: tokens, logger: logger, options: options, trustedProxies: trustedProxies}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -310,12 +320,6 @@ func (s *Server) handleCollectTrackSample(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
 		return
 	}
-	rateKey := "collector:" + hashValue(remoteIP(r))
-	if s.store.IncrementRate(rateKey, time.Minute, s.options.CollectorRateLimit) > s.options.CollectorRateLimit {
-		w.Header().Set("Retry-After", "60")
-		writeError(w, http.StatusTooManyRequests, "COLLECTOR_RATE_LIMITED")
-		return
-	}
 	var req collectTrackSampleRequest
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST")
@@ -346,6 +350,12 @@ func (s *Server) handleCollectTrackSample(w http.ResponseWriter, r *http.Request
 	inputDeviceHint := normalizeCollectorInputDevice(req.InputDeviceHint)
 	if inputDeviceHint == "" {
 		inputDeviceHint = "unknown"
+	}
+	rateKey := "collector:" + clientID + ":" + hashValue(s.collectorClientIP(r))
+	if s.store.IncrementRate(rateKey, time.Minute, s.options.CollectorRateLimit) > s.options.CollectorRateLimit {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "COLLECTOR_RATE_LIMITED")
+		return
 	}
 
 	trackScore := engine.ScoreTrack(req.Track)
@@ -1322,7 +1332,7 @@ func (s *Server) handleReportEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	accepted := 0
 	for _, event := range batch.Events {
-		event = sanitizeReportedAuditEvent(event)
+		event = auditpkg.SanitizeReportedEvent(event)
 		s.store.AddAuditEvent(event)
 		accepted++
 	}
@@ -2144,12 +2154,6 @@ func validEventBatch(w http.ResponseWriter, batch types.EventBatch) bool {
 	return true
 }
 
-func sanitizeReportedAuditEvent(event types.AuditEvent) types.AuditEvent {
-	event.ID = ""
-	event.CreatedAt = time.Time{}
-	return event
-}
-
 func (s *Server) applicationPolicyDecision(req types.PolicyEvaluateRequest) (types.PolicyDecision, bool) {
 	application, ok := s.applicationByClientID(req.ClientID)
 	if !ok {
@@ -2438,6 +2442,10 @@ func remoteIP(r *http.Request) string {
 	return host
 }
 
+func (s *Server) collectorClientIP(r *http.Request) string {
+	return nettrust.ClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), s.trustedProxies)
+}
+
 func hashValue(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -2541,17 +2549,7 @@ func validAdminToken(r *http.Request, expected string) bool {
 }
 
 func validCollectorToken(r *http.Request, expected string) bool {
-	if validNamedToken(r, "X-Captcha-Collector-Token", expected) {
-		return true
-	}
-	actual := strings.TrimSpace(r.URL.Query().Get("collector_token"))
-	if actual == "" {
-		actual = strings.TrimSpace(r.URL.Query().Get("token"))
-	}
-	if actual == "" {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
+	return validNamedToken(r, "X-Captcha-Collector-Token", expected)
 }
 
 func validNamedToken(r *http.Request, headerName, expected string) bool {

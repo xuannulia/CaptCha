@@ -69,7 +69,11 @@ Production mode requires admin, gRPC, metrics, and collector tokens, explicit br
 
 The admin UI generates an application secret on creation and displays it once. It keeps the admin token only in the current tab's `sessionStorage`; the token cannot be injected through a frontend build variable. The production HTML CSP limits network requests to the API origin configured at build time.
 
-The Gateway trusts account, device, and risk/model context headers only when the direct source matches `CAPTCHA_TRUSTED_PROXY_CIDRS`. Headers from untrusted sources are removed before policy evaluation and upstream forwarding.
+The Gateway trusts account, device, and risk/model context headers only when the direct source matches `CAPTCHA_TRUSTED_PROXY_CIDRS` and `CAPTCHA_TRUSTED_CONTEXT_TOKEN` is valid. Failed checks remove the context headers, and the context token is never forwarded upstream.
+
+The collector accepts its token only through a dedicated header or Bearer authentication. `CAPTCHA_SERVER_TRUSTED_PROXY_CIDRS` enables nearest-untrusted-hop client IP resolution for per-application collection rate limits.
+
+Admin hosting must emit clickjacking protection as HTTP response headers. Vite dev/preview does this automatically; production Nginx deployments can use `deploy/nginx/captcha-admin.conf.example`.
 
 ## Related Documents
 

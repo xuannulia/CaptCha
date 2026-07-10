@@ -5,9 +5,18 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiBase = env.VITE_API_BASE || "http://localhost:8080";
   const apiOrigin = new URL(apiBase, "http://localhost").origin;
+  const policies = contentSecurityPolicies(apiOrigin, mode === "development");
+  const securityHeaders = {
+    "Content-Security-Policy": policies.header,
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer"
+  };
   return {
     base: env.VITE_BASE_PATH || "/",
-    plugins: [react(), contentSecurityPolicy(apiOrigin, mode === "development")],
+    plugins: [react(), contentSecurityPolicyMeta(policies.meta)],
+    server: { headers: securityHeaders },
+    preview: { headers: securityHeaders },
     build: {
       target: "es2022",
       rollupOptions: {
@@ -23,10 +32,10 @@ export default defineConfig(({ mode }) => {
   };
 });
 
-function contentSecurityPolicy(apiOrigin: string, development: boolean): Plugin {
+function contentSecurityPolicies(apiOrigin: string, development: boolean) {
   const scriptSource = development ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'";
   const connectSource = development ? `connect-src 'self' ${apiOrigin} ws: wss:` : `connect-src 'self' ${apiOrigin}`;
-  const policy = [
+  const directives = [
     "default-src 'self'",
     scriptSource,
     "style-src 'self' 'unsafe-inline'",
@@ -34,9 +43,15 @@ function contentSecurityPolicy(apiOrigin: string, development: boolean): Plugin 
     "font-src 'self' data:",
     connectSource,
     "object-src 'none'",
-    "base-uri 'self'",
-    "frame-ancestors 'none'"
-  ].join("; ");
+    "base-uri 'self'"
+  ];
+  return {
+    meta: directives.join("; "),
+    header: [...directives, "frame-ancestors 'none'"].join("; ")
+  };
+}
+
+function contentSecurityPolicyMeta(policy: string): Plugin {
   return {
     name: "admin-content-security-policy",
     transformIndexHtml: {

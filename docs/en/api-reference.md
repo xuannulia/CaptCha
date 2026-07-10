@@ -214,7 +214,7 @@ The server overwrites externally supplied event time and event ID.
 | `GET` | `/api/v1/risk/demo-collection-summary` | Demo trajectory collection summary. |
 | `POST` | `/api/v1/risk/track-samples` | Writes candidate trajectory feature snapshots; samples do not directly enter the training set by default. |
 
-Production mode requires `CAPTCHA_COLLECTOR_TOKEN` through `X-Captcha-Collector-Token` or a Bearer token and applies a bounded per-source rate limit.
+Production mode requires `CAPTCHA_COLLECTOR_TOKEN` through `X-Captcha-Collector-Token` or a Bearer token; query-string tokens are rejected. After basic sample validation, the endpoint applies a bounded rate limit by application and the client IP resolved from the trusted proxy chain.
 
 ### Admin API
 
