@@ -42,6 +42,8 @@ type Options struct {
 	AdminToken              string
 	MetricsToken            string
 	CollectorToken          string
+	CollectorRateLimit      int
+	RequireClientSecret     bool
 	ResourceUploadDir       string
 	AllowedOrigins          []string
 	AllowedReturnURLOrigins []string
@@ -50,7 +52,11 @@ type Options struct {
 	RiskInferencer          risk.Inferencer
 }
 
-const maxSessionFailures = 5
+const (
+	maxSessionFailures    = 5
+	maxJSONRequestBytes   = 2 * 1024 * 1024
+	maxUploadRequestBytes = maxUploadArchiveBytes + 1024*1024
+)
 
 var errForbiddenVerifyField = errors.New("forbidden verify field")
 
@@ -59,6 +65,9 @@ func NewServer(engine *engine.Engine, policy *policy.Evaluator, store store.Stor
 }
 
 func NewServerWithOptions(engine *engine.Engine, policy *policy.Evaluator, store store.Store, tokens *token.Service, logger *slog.Logger, options Options) *Server {
+	if options.CollectorRateLimit <= 0 {
+		options.CollectorRateLimit = 120
+	}
 	return &Server{engine: engine, policy: policy, store: store, tokens: tokens, logger: logger, options: options}
 }
 
@@ -106,7 +115,7 @@ func (s *Server) Handler() http.Handler {
 	if s.options.AdminToken != "" {
 		handler = withAdminAuth(handler, s.options.AdminToken)
 	}
-	return withCORS(withJSON(handler), s.options.AllowedOrigins)
+	return withCORS(withJSON(withRequestBodyLimit(handler)), s.options.AllowedOrigins)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +308,12 @@ func (s *Server) handleVerifySession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCollectTrackSample(w http.ResponseWriter, r *http.Request) {
 	if s.options.CollectorToken != "" && !validCollectorToken(r, s.options.CollectorToken) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED")
+		return
+	}
+	rateKey := "collector:" + hashValue(remoteIP(r))
+	if s.store.IncrementRate(rateKey, time.Minute, s.options.CollectorRateLimit) > s.options.CollectorRateLimit {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "COLLECTOR_RATE_LIMITED")
 		return
 	}
 	var req collectTrackSampleRequest
@@ -830,10 +845,27 @@ func (s *Server) handleUpsertApplication(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "CLIENT_AND_NAME_REQUIRED")
 		return
 	}
+	clientSecret := ""
+	if existing, ok := s.applicationByClientID(application.ClientID); ok {
+		application.SecretHash = existing.SecretHash
+	}
+	if application.SecretHash == "" {
+		value, hash, err := secret.NewClientSecret()
+		if err != nil {
+			s.logger.Error("generate client secret", "error", err)
+			writeError(w, http.StatusInternalServerError, "SECRET_GENERATION_FAILED")
+			return
+		}
+		clientSecret = value
+		application.SecretHash = hash
+	}
 	saved := s.store.UpsertApplication(application)
 	s.recordConfigAuditEvent(r, saved.ClientID, "CONFIG_APPLICATION_UPSERT", r.URL.Path, "", "")
 	s.notifyConfigChanged()
-	writeJSON(w, http.StatusOK, saved)
+	writeJSON(w, http.StatusOK, struct {
+		types.Application
+		ClientSecret string `json:"client_secret,omitempty"`
+	}{Application: saved, ClientSecret: clientSecret})
 }
 
 func (s *Server) handleRotateApplicationSecret(w http.ResponseWriter, r *http.Request) {
@@ -2011,9 +2043,12 @@ func readJSON(r *http.Request, v any) error {
 
 func readVerifySessionRequest(r *http.Request, req *verifySessionRequest) error {
 	defer r.Body.Close()
-	data, err := io.ReadAll(r.Body)
+	data, err := io.ReadAll(io.LimitReader(r.Body, maxJSONRequestBytes+1))
 	if err != nil {
 		return err
+	}
+	if len(data) > maxJSONRequestBytes {
+		return &http.MaxBytesError{Limit: maxJSONRequestBytes}
 	}
 	if containsForbiddenVerifyField(data) {
 		return errForbiddenVerifyField
@@ -2231,6 +2266,10 @@ func (s *Server) requireClientSecret(w http.ResponseWriter, r *http.Request, cli
 		return false
 	}
 	if application.SecretHash == "" {
+		if s.options.RequireClientSecret {
+			writeError(w, http.StatusUnauthorized, "CLIENT_SECRET_NOT_CONFIGURED")
+			return false
+		}
 		return true
 	}
 	value := clientSecretFromRequest(r)
@@ -2412,6 +2451,25 @@ func hashValue(value string) string {
 func withJSON(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func withRequestBodyLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil || r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+		limit := int64(maxJSONRequestBytes)
+		if r.URL.Path == "/api/v1/admin/resources/upload" {
+			limit = int64(maxUploadRequestBytes)
+		}
+		if r.ContentLength > limit {
+			writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
 }

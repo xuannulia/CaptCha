@@ -61,13 +61,17 @@ func TestAdminListsAndPolicyEvaluate(t *testing.T) {
 			Status:            "active",
 			DefaultFailPolicy: "fail_open",
 		})
-		var application types.Application
-		decode(t, response, &application)
+		var result struct {
+			types.Application
+			ClientSecret string `json:"client_secret"`
+		}
+		decode(t, response, &result)
+		application := result.Application
 		if application.ID == "" || application.ClientID != "new-client" || application.Name != "new app" {
 			t.Fatalf("unexpected application: %+v", application)
 		}
-		if application.HasSecret {
-			t.Fatalf("new application should report no secret, got %+v", application)
+		if !application.HasSecret || result.ClientSecret == "" {
+			t.Fatalf("new application should return a one-time secret, got %+v", result)
 		}
 
 		response = request(t, server, http.MethodGet, "/api/v1/admin/applications", nil)
@@ -2134,6 +2138,49 @@ func TestClientSecretAuthForIntegrationAPIs(t *testing.T) {
 	}
 }
 
+func TestSecureModeRejectsApplicationWithoutClientSecret(t *testing.T) {
+	t.Parallel()
+
+	server, _, _ := testServerWithOptions(Options{RequireClientSecret: true})
+	response := request(t, server, http.MethodPost, "/api/v1/policy/evaluate", types.PolicyEvaluateRequest{
+		ClientID: "demo",
+		Path:     "/api/register",
+		Method:   http.MethodPost,
+		IP:       "198.51.100.9",
+	})
+	var body struct {
+		Error string `json:"error"`
+	}
+	decodeAny(t, response, &body)
+	if response.Code != http.StatusUnauthorized || body.Error != "CLIENT_SECRET_NOT_CONFIGURED" {
+		t.Fatalf("expected secretless application rejection, got status=%d body=%+v", response.Code, body)
+	}
+}
+
+func TestRequestBodyLimitRejectsOversizedRequests(t *testing.T) {
+	t.Parallel()
+
+	server, _, _ := testServer()
+	for _, tc := range []struct {
+		name   string
+		path   string
+		length int64
+	}{
+		{name: "json", path: "/api/v1/policy/evaluate", length: int64(maxJSONRequestBytes + 1)},
+		{name: "multipart", path: "/api/v1/admin/resources/upload", length: int64(maxUploadRequestBytes + 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader("{}"))
+			req.ContentLength = tc.length
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+			if rec.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("expected request too large, got %d %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestEventReportRejectsEventsWithoutClientID(t *testing.T) {
 	server, memoryStore, _ := testServer()
 	before := len(memoryStore.ListAuditEvents("", 100))
@@ -3409,6 +3456,21 @@ func TestCollectTrackSampleRequiresCollectorToken(t *testing.T) {
 	}
 	if got := memoryStore.ListRiskFeatureSnapshots("demo", 10); len(got) != 0 {
 		t.Fatalf("unexpected snapshots: %d", len(got))
+	}
+}
+
+func TestCollectTrackSampleRateLimit(t *testing.T) {
+	t.Parallel()
+
+	server, _, _ := testServerWithOptions(Options{CollectorToken: "collector-secret", CollectorRateLimit: 1})
+	headers := map[string]string{"X-Captcha-Collector-Token": "collector-secret"}
+	first := requestWithHeaders(t, server, http.MethodPost, "/api/v1/risk/track-samples", map[string]any{}, headers)
+	if first.Code != http.StatusBadRequest {
+		t.Fatalf("expected first invalid sample to reach validation, got %d %s", first.Code, first.Body.String())
+	}
+	second := requestWithHeaders(t, server, http.MethodPost, "/api/v1/risk/track-samples", map[string]any{}, headers)
+	if second.Code != http.StatusTooManyRequests || second.Header().Get("Retry-After") != "60" {
+		t.Fatalf("expected collector rate limit, got %d headers=%v body=%s", second.Code, second.Header(), second.Body.String())
 	}
 }
 

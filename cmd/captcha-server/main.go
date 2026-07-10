@@ -49,6 +49,7 @@ func main() {
 		}
 		os.Exit(1)
 	}
+	secureMode := productionMode(os.Getenv)
 	appStore := buildStore(logger)
 	configNotifier := configsync.NewNotifier()
 	sessionTTL := durationSecondsEnv("CAPTCHA_SESSION_TTL_SECONDS", 120*time.Second)
@@ -70,6 +71,8 @@ func main() {
 		AdminToken:              os.Getenv("CAPTCHA_ADMIN_TOKEN"),
 		MetricsToken:            os.Getenv("CAPTCHA_METRICS_TOKEN"),
 		CollectorToken:          os.Getenv("CAPTCHA_COLLECTOR_TOKEN"),
+		CollectorRateLimit:      intEnv("CAPTCHA_COLLECTOR_RATE_LIMIT_PER_MINUTE", 120),
+		RequireClientSecret:     secureMode,
 		ResourceUploadDir:       env("CAPTCHA_RESOURCE_UPLOAD_DIR", "./data/resources"),
 		AllowedOrigins:          csvEnv("CAPTCHA_ALLOWED_ORIGINS"),
 		AllowedReturnURLOrigins: csvEnv("CAPTCHA_ALLOWED_RETURN_URL_ORIGINS"),
@@ -78,15 +81,16 @@ func main() {
 		RiskInferencer:          riskInferencer,
 	})
 	grpcServer := grpcserver.New(grpcserver.Dependencies{
-		Engine:         captchaEngine,
-		Policy:         policyEvaluator,
-		Store:          appStore,
-		Logger:         logger,
-		RuntimeBaseURL: os.Getenv("CAPTCHA_RUNTIME_URL"),
-		GRPCToken:      os.Getenv("CAPTCHA_GRPC_TOKEN"),
-		Tokens:         tokenService,
-		RiskInferencer: riskInferencer,
-		ConfigNotifier: configNotifier,
+		Engine:              captchaEngine,
+		Policy:              policyEvaluator,
+		Store:               appStore,
+		Logger:              logger,
+		RuntimeBaseURL:      os.Getenv("CAPTCHA_RUNTIME_URL"),
+		GRPCToken:           os.Getenv("CAPTCHA_GRPC_TOKEN"),
+		RequireClientSecret: secureMode,
+		Tokens:              tokenService,
+		RiskInferencer:      riskInferencer,
+		ConfigNotifier:      configNotifier,
 	})
 
 	addr := env("CAPTCHA_ADDR", ":8080")
@@ -105,7 +109,16 @@ func main() {
 	}()
 
 	logger.Info("starting captcha server", "addr", addr)
-	if err := http.ListenAndServe(addr, server.Handler()); err != nil {
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: durationEnv("CAPTCHA_HTTP_READ_HEADER_TIMEOUT", 5*time.Second),
+		ReadTimeout:       durationEnv("CAPTCHA_HTTP_READ_TIMEOUT", 2*time.Minute),
+		WriteTimeout:      durationEnv("CAPTCHA_HTTP_WRITE_TIMEOUT", 2*time.Minute),
+		IdleTimeout:       durationEnv("CAPTCHA_HTTP_IDLE_TIMEOUT", time.Minute),
+		MaxHeaderBytes:    intEnv("CAPTCHA_HTTP_MAX_HEADER_BYTES", 1<<20),
+	}
+	if err := httpServer.ListenAndServe(); err != nil {
 		logger.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
@@ -204,6 +217,7 @@ func productionSecurityErrors(getenv func(string) string) []string {
 		{"CAPTCHA_ADMIN_TOKEN", "CAPTCHA_ADMIN_TOKEN must be set in production"},
 		{"CAPTCHA_GRPC_TOKEN", "CAPTCHA_GRPC_TOKEN must be set in production"},
 		{"CAPTCHA_METRICS_TOKEN", "CAPTCHA_METRICS_TOKEN must be set in production"},
+		{"CAPTCHA_COLLECTOR_TOKEN", "CAPTCHA_COLLECTOR_TOKEN must be set in production"},
 		{"CAPTCHA_POSTGRES_DSN", "CAPTCHA_POSTGRES_DSN must be set in production"},
 		{"CAPTCHA_REDIS_ADDR", "CAPTCHA_REDIS_ADDR must be set in production"},
 	}

@@ -26,10 +26,10 @@ const queryClient = new QueryClient({
   }
 });
 const apiBase = import.meta.env.VITE_API_BASE || "http://localhost:8080";
-const adminTokenFromEnv = import.meta.env.VITE_ADMIN_TOKEN || "";
 const adminTokenStorageKey = "captcha-admin-token";
 const adminUnauthorizedEvent = "captcha-admin-unauthorized";
-type AdminAuthState = "checking" | "authorized" | "required";
+type AdminAuthState = "checking" | "authorized" | "required" | "unavailable";
+type AdminAccessResult = "authorized" | "unauthorized" | "unavailable";
 
 type RoutePolicy = {
   id: string;
@@ -212,6 +212,10 @@ type Application = {
   default_fail_policy: string;
   created_at?: string;
   updated_at?: string;
+};
+
+type ApplicationUpsertResult = Application & {
+  client_secret?: string;
 };
 
 type SelectOption = {
@@ -525,6 +529,7 @@ function AdminShell() {
   const [adminTokenDraft, setAdminTokenDraft] = useState("");
   const [authSaving, setAuthSaving] = useState(false);
   const [hasAdminToken, setHasAdminToken] = useState(() => Boolean(currentAdminToken()));
+  const [authCheckVersion, setAuthCheckVersion] = useState(0);
   const scopedApplications = authReady ? applications : undefined;
   const appOptions = useMemo(() => applicationOptions(scopedApplications), [scopedApplications]);
   const scopeOptions = useMemo(() => [{ value: "", label: "全部应用", searchText: "全部应用" }, ...appOptions], [appOptions]);
@@ -534,15 +539,21 @@ function AdminShell() {
     let mounted = true;
     const verify = async () => {
       const token = currentAdminToken();
-      const ok = await checkAdminAccess(token);
+      const result = await checkAdminAccess(token);
       if (!mounted) return;
-      if (ok) {
+      if (result === "authorized") {
         setAuthState("authorized");
         setHasAdminToken(Boolean(token));
         return;
       }
-      localStorage.removeItem(adminTokenStorageKey);
       queryClient.clear();
+      if (result === "unavailable") {
+        setHasAdminToken(Boolean(token));
+        setAuthOpen(false);
+        setAuthState("unavailable");
+        return;
+      }
+      sessionStorage.removeItem(adminTokenStorageKey);
       setHasAdminToken(false);
       setAuthOpen(true);
       setAuthState("required");
@@ -551,7 +562,7 @@ function AdminShell() {
     return () => {
       mounted = false;
     };
-  }, [queryClient]);
+  }, [authCheckVersion, queryClient]);
 
   useEffect(() => {
     if (selectedClientID) {
@@ -570,7 +581,7 @@ function AdminShell() {
 
   useEffect(() => {
     const openAuth = () => {
-      localStorage.removeItem(adminTokenStorageKey);
+      sessionStorage.removeItem(adminTokenStorageKey);
       queryClient.clear();
       setHasAdminToken(false);
       setAuthState("required");
@@ -588,15 +599,20 @@ function AdminShell() {
       return;
     }
     setAuthSaving(true);
-    const ok = await checkAdminAccess(token);
+    const result = await checkAdminAccess(token);
     setAuthSaving(false);
-    if (!ok) {
+    if (result !== "authorized") {
+      if (result === "unavailable") {
+        setAuthState("unavailable");
+        message.error("管理服务暂时不可用");
+        return;
+      }
       setAuthState("required");
       setHasAdminToken(false);
       message.error("管理令牌无效");
       return;
     }
-    localStorage.setItem(adminTokenStorageKey, token);
+    sessionStorage.setItem(adminTokenStorageKey, token);
     setAuthState("authorized");
     setHasAdminToken(true);
     setAuthOpen(false);
@@ -606,18 +622,18 @@ function AdminShell() {
   };
 
   const clearAdminToken = async () => {
-    localStorage.removeItem(adminTokenStorageKey);
-    const ok = await checkAdminAccess("");
-    setAuthState(ok ? "authorized" : "required");
+    sessionStorage.removeItem(adminTokenStorageKey);
+    const result = await checkAdminAccess("");
+    setAuthState(result === "authorized" ? "authorized" : result === "unavailable" ? "unavailable" : "required");
     setHasAdminToken(false);
     setAdminTokenDraft("");
-    setAuthOpen(!ok);
-    if (ok) {
+    setAuthOpen(result === "unauthorized");
+    if (result === "authorized") {
       await queryClient.invalidateQueries();
     } else {
       queryClient.clear();
     }
-    message.success(ok ? "已清除本机令牌" : "已清除令牌，请重新输入");
+    message.success(result === "authorized" ? "已清除当前会话令牌" : "已清除令牌");
   };
 
   const applicationScope = useMemo(() => ({
@@ -656,6 +672,7 @@ function AdminShell() {
                 />
                 {authState === "checking" && <Tag>校验中</Tag>}
                 {authState === "required" && <Tag color="red">需令牌</Tag>}
+                {authState === "unavailable" && <Tag color="orange">服务不可用</Tag>}
                 <Button onClick={() => setAuthOpen(true)}>管理令牌</Button>
               </Space>
             </Layout.Header>
@@ -667,7 +684,14 @@ function AdminShell() {
                   <Route path="*" element={<Navigate to="/overview" replace />} />
                 </RouterRoutes>
               ) : (
-                <AdminAuthorizationPanel checking={authState === "checking"} onAuthorize={() => setAuthOpen(true)} />
+                <AdminAuthorizationPanel
+                  state={authState}
+                  onAuthorize={() => setAuthOpen(true)}
+                  onRetry={() => {
+                    setAuthState("checking");
+                    setAuthCheckVersion((version) => version + 1);
+                  }}
+                />
               )}
             </Layout.Content>
           </Layout>
@@ -689,19 +713,22 @@ function AdminShell() {
                 onChange={(event) => setAdminTokenDraft(event.target.value)}
               />
             </Form.Item>
-            <Button onClick={clearAdminToken}>清除本机令牌</Button>
+            <Button onClick={clearAdminToken}>清除当前会话令牌</Button>
           </Form>
         </Modal>
     </ApplicationScopeContext.Provider>
   );
 }
 
-function AdminAuthorizationPanel({ checking, onAuthorize }: { checking: boolean; onAuthorize: () => void }) {
+function AdminAuthorizationPanel({ state, onAuthorize, onRetry }: { state: AdminAuthState; onAuthorize: () => void; onRetry: () => void }) {
+  const checking = state === "checking";
+  const unavailable = state === "unavailable";
   return (
     <Card className="admin-auth-panel">
-      <strong>{checking ? "正在检查管理令牌" : "需要管理令牌"}</strong>
-      <span>{checking ? "请稍候" : "输入管理令牌后继续"}</span>
-      {!checking && <Button type="primary" onClick={onAuthorize}>输入令牌</Button>}
+      <strong>{checking ? "正在检查管理令牌" : unavailable ? "无法连接管理服务" : "需要管理令牌"}</strong>
+      <span>{checking ? "请稍候" : unavailable ? "请检查 API 地址或网络状态" : "输入管理令牌后继续"}</span>
+      {unavailable && <Button type="primary" onClick={onRetry}>重试</Button>}
+      {!checking && !unavailable && <Button type="primary" onClick={onAuthorize}>输入令牌</Button>}
     </Card>
   );
 }
@@ -803,8 +830,8 @@ function Applications() {
   const [secret, setSecret] = useState<{ clientID: string; name: string; value: string } | null>(null);
   const [pendingApplicationID, setPendingApplicationID] = useState("");
   const [form] = Form.useForm();
-  const mutation = usePost<Application>("applications");
-  const statusMutation = usePost<Application>("applications");
+  const mutation = usePost<ApplicationUpsertResult>("applications");
+  const statusMutation = usePost<ApplicationUpsertResult>("applications");
   const secretMutation = usePost<{ client_secret: string; application: Application }>("applications");
   const rotateApplicationSecret = (row: Application) => {
     const hasSecret = Boolean(row.has_secret);
@@ -863,10 +890,13 @@ function Applications() {
           onChange={async (checked) => {
             setPendingApplicationID(row.id);
             try {
-              await statusMutation.mutateAsync({
+              const result = await statusMutation.mutateAsync({
                 path: "/api/v1/admin/applications",
                 body: { ...row, status: checked ? "active" : "disabled" }
               });
+              if (result.client_secret) {
+                setSecret({ clientID: result.client_id, name: result.name, value: result.client_secret });
+              }
             } catch {
               message.error("状态保存失败");
             } finally {
@@ -947,11 +977,14 @@ function Applications() {
           initialValues={{ status: "active", default_fail_policy: "fail_open" }}
           onFinish={async (values) => {
             try {
-              await mutation.mutateAsync({
+              const result = await mutation.mutateAsync({
                 path: "/api/v1/admin/applications",
                 body: editingApplication ? { ...editingApplication, ...values } : values
               });
               closeApplicationModal();
+              if (result.client_secret) {
+                setSecret({ clientID: result.client_id, name: result.name, value: result.client_secret });
+              }
             } catch {
               message.error("应用保存失败");
             }
@@ -2713,20 +2746,20 @@ async function adminFetch(path: string, init: RequestInit = {}) {
   return response;
 }
 
-async function checkAdminAccess(token: string) {
+async function checkAdminAccess(token: string): Promise<AdminAccessResult> {
   const headers = new Headers();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   try {
     const response = await fetch(`${apiBase}/api/v1/admin/auth/check`, { headers });
-    if (response.status === 401) return false;
-    return response.ok;
+    if (response.status === 401) return "unauthorized";
+    return response.ok ? "authorized" : "unavailable";
   } catch {
-    return true;
+    return "unavailable";
   }
 }
 
 function currentAdminToken() {
-  return localStorage.getItem(adminTokenStorageKey) || adminTokenFromEnv;
+  return sessionStorage.getItem(adminTokenStorageKey) || "";
 }
 
 function titleFor(key: string) {

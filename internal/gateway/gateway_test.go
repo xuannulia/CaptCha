@@ -143,11 +143,12 @@ func TestGatewayChallengesBeforeProxy(t *testing.T) {
 		TTLSeconds:    120,
 	}}
 	gateway, err := NewWithPolicyClient(Config{
-		ClientID:        "demo",
-		PlatformURL:     "http://platform.local",
-		UpstreamURL:     upstream.URL,
-		HeaderAllowlist: []string{"X-Trace-ID"},
-		RequestTimeout:  time.Second,
+		ClientID:          "demo",
+		PlatformURL:       "http://platform.local",
+		UpstreamURL:       upstream.URL,
+		TrustedProxyCIDRs: []string{"198.51.100.9/32"},
+		HeaderAllowlist:   []string{"X-Trace-ID"},
+		RequestTimeout:    time.Second,
 	}, policy, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
@@ -188,6 +189,63 @@ func TestGatewayChallengesBeforeProxy(t *testing.T) {
 	}
 	if policy.request.Headers["x-trace-id"] != "trace-gateway" || policy.request.Headers["authorization"] != "" {
 		t.Fatalf("unexpected allowlisted headers: %+v", policy.request.Headers)
+	}
+}
+
+func TestGatewayStripsContextHeadersFromUntrustedSources(t *testing.T) {
+	t.Parallel()
+
+	forwardedHeaders := make(chan http.Header, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwardedHeaders <- r.Header.Clone()
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer upstream.Close()
+
+	policy := &fakePolicyClient{decision: types.PolicyDecision{Action: types.DecisionAllow, Reason: "ALLOW"}}
+	gateway, err := NewWithPolicyClient(Config{
+		ClientID:       "demo",
+		PlatformURL:    "http://platform.local",
+		UpstreamURL:    upstream.URL,
+		RequestTimeout: time.Second,
+	}, policy, nil)
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
+	req.RemoteAddr = "198.51.100.20:12345"
+	for key, value := range map[string]string{
+		"X-Captcha-Account-ID-Hash": "forged-account",
+		"X-Captcha-Device-ID-Hash":  "forged-device",
+		"X-Captcha-Risk-Score":      "1",
+		"X-Captcha-Risk-Level":      "low",
+		"X-Captcha-Model-Score":     "1",
+		"X-Captcha-Model-Mode":      "enforce",
+	} {
+		req.Header.Set(key, value)
+	}
+	rec := httptest.NewRecorder()
+	gateway.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected request to reach upstream, got %d %s", rec.Code, rec.Body.String())
+	}
+	if policy.request.AccountIDHash != "" || policy.request.DeviceIDHash != "" || policy.request.RiskScore != 0 || policy.request.RiskLevel != "" || policy.request.ModelScore != 0 || policy.request.ModelMode != "" {
+		t.Fatalf("untrusted context reached policy evaluation: %+v", policy.request)
+	}
+	headers := <-forwardedHeaders
+	for _, key := range []string{
+		"X-Captcha-Account-ID-Hash",
+		"X-Captcha-Device-ID-Hash",
+		"X-Captcha-Risk-Score",
+		"X-Captcha-Risk-Level",
+		"X-Captcha-Model-Score",
+		"X-Captcha-Model-Mode",
+	} {
+		if value := headers.Get(key); value != "" {
+			t.Fatalf("untrusted header %s reached upstream with value %q", key, value)
+		}
 	}
 }
 
@@ -314,10 +372,11 @@ func TestGatewayConsumesTicketBeforePolicy(t *testing.T) {
 	ticket := &fakeTicketClient{response: types.TicketVerifyResponse{Valid: true, ClientID: "demo", Scene: "login", Route: "/api/login", ClearanceToken: "clearance_gateway", ClearanceTTLSeconds: 600}}
 	events := newFakeEventClient()
 	gateway, err := NewWithClientsAndEvent(Config{
-		ClientID:       "demo",
-		PlatformURL:    "http://platform.local",
-		UpstreamURL:    upstream.URL,
-		RequestTimeout: time.Second,
+		ClientID:          "demo",
+		PlatformURL:       "http://platform.local",
+		UpstreamURL:       upstream.URL,
+		TrustedProxyCIDRs: []string{"192.0.2.1/32"},
+		RequestTimeout:    time.Second,
 	}, policy, ticket, events, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
@@ -695,6 +754,7 @@ func TestGatewayCachedPolicyRuleSkipChallenge(t *testing.T) {
 		UpstreamURL:       upstream.URL,
 		RequestTimeout:    time.Second,
 		EnableConfigCache: true,
+		TrustedProxyCIDRs: []string{"192.0.2.1/32"},
 	}, policy, nil, events, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)
@@ -755,6 +815,7 @@ func TestGatewayLocalCacheSkipsRouteOutsideRollout(t *testing.T) {
 		UpstreamURL:       upstream.URL,
 		RequestTimeout:    time.Second,
 		EnableConfigCache: true,
+		TrustedProxyCIDRs: []string{"192.0.2.1/32"},
 	}, policy, nil, events, nil)
 	if err != nil {
 		t.Fatalf("gateway: %v", err)

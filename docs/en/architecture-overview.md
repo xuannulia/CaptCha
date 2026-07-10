@@ -65,7 +65,11 @@ or:
 CAPTCHA_PRODUCTION=true
 ```
 
-Production mode requires admin, gRPC, and metrics tokens, explicit browser origins, explicit return URL origins, PostgreSQL, Redis, and disabled demo seeding.
+Production mode requires admin, gRPC, metrics, and collector tokens, explicit browser origins, explicit return URL origins, PostgreSQL, Redis, and disabled demo seeding. It also rejects Policy, Ticket, Config, and Event access for legacy applications without a client secret.
+
+The admin UI generates an application secret on creation and displays it once. It keeps the admin token only in the current tab's `sessionStorage`; the token cannot be injected through a frontend build variable. The production HTML CSP limits network requests to the API origin configured at build time.
+
+The Gateway trusts account, device, and risk/model context headers only when the direct source matches `CAPTCHA_TRUSTED_PROXY_CIDRS`. Headers from untrusted sources are removed before policy evaluation and upstream forwarding.
 
 ## Related Documents
 

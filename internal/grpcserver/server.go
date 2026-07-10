@@ -30,15 +30,16 @@ import (
 )
 
 type Dependencies struct {
-	Engine         *engine.Engine
-	Policy         *policy.Evaluator
-	Store          store.Store
-	Logger         *slog.Logger
-	RuntimeBaseURL string
-	GRPCToken      string
-	Tokens         *token.Service
-	RiskInferencer risk.Inferencer
-	ConfigNotifier *configsync.Notifier
+	Engine              *engine.Engine
+	Policy              *policy.Evaluator
+	Store               store.Store
+	Logger              *slog.Logger
+	RuntimeBaseURL      string
+	GRPCToken           string
+	RequireClientSecret bool
+	Tokens              *token.Service
+	RiskInferencer      risk.Inferencer
+	ConfigNotifier      *configsync.Notifier
 }
 
 type Server struct {
@@ -564,6 +565,9 @@ func (s *Server) requireClientSecret(ctx context.Context, clientID string, requi
 		return types.Application{}, status.Error(codes.PermissionDenied, "APPLICATION_DISABLED")
 	}
 	if application.SecretHash == "" {
+		if s.deps.RequireClientSecret {
+			return types.Application{}, status.Error(codes.Unauthenticated, "CLIENT_SECRET_NOT_CONFIGURED")
+		}
 		return application, nil
 	}
 	if secret.VerifyClientSecret(application.SecretHash, clientSecretFromContext(ctx)) {

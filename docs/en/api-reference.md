@@ -214,6 +214,8 @@ The server overwrites externally supplied event time and event ID.
 | `GET` | `/api/v1/risk/demo-collection-summary` | Demo trajectory collection summary. |
 | `POST` | `/api/v1/risk/track-samples` | Writes candidate trajectory feature snapshots; samples do not directly enter the training set by default. |
 
+Production mode requires `CAPTCHA_COLLECTOR_TOKEN` through `X-Captcha-Collector-Token` or a Bearer token and applies a bounded per-source rate limit.
+
 ### Admin API
 
 Admin API requires an admin token. It is for the admin frontend and internal operation tools, not ordinary business browsers.
@@ -222,7 +224,7 @@ Admin API requires an admin token. It is for the admin frontend and internal ope
 |---|---|---|
 | `GET` | `/api/v1/admin/auth/check` | Check admin token. |
 | `GET` | `/api/v1/admin/metrics` | Admin overview metrics. |
-| `GET` / `POST` | `/api/v1/admin/applications` | List and save applications. |
+| `GET` / `POST` | `/api/v1/admin/applications` | List and save applications; a new application returns `client_secret` once. |
 | `POST` | `/api/v1/admin/applications/{client_id}/secret` | Rotate application secret. |
 | `GET` / `POST` | `/api/v1/admin/route-policies` | List and save route policies. |
 | `POST` | `/api/v1/admin/route-policies/delete` | Delete route policies. |

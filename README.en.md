@@ -177,6 +177,7 @@ Production deployments should configure at least:
 - `CAPTCHA_ADMIN_TOKEN`
 - `CAPTCHA_GRPC_TOKEN`
 - `CAPTCHA_METRICS_TOKEN`
+- `CAPTCHA_COLLECTOR_TOKEN`
 - `CAPTCHA_ALLOWED_ORIGINS`
 - `CAPTCHA_ALLOWED_RETURN_URL_ORIGINS`
 - `CAPTCHA_POSTGRES_DSN`
@@ -190,6 +191,7 @@ CAPTCHA_ENV=production \
 CAPTCHA_ADMIN_TOKEN='change-me-admin' \
 CAPTCHA_GRPC_TOKEN='change-me-grpc' \
 CAPTCHA_METRICS_TOKEN='change-me-metrics' \
+CAPTCHA_COLLECTOR_TOKEN='change-me-collector' \
 CAPTCHA_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com \
 CAPTCHA_ALLOWED_RETURN_URL_ORIGINS=https://app.example.com \
 CAPTCHA_POSTGRES_DSN='postgres://captcha:captcha@localhost:5432/captcha?sslmode=disable' \
@@ -197,6 +199,10 @@ CAPTCHA_REDIS_ADDR=localhost:6379 \
 CAPTCHA_SEED_DEMO=false \
   go run ./cmd/captcha-server
 ```
+
+The admin UI generates a `client_secret` when an application is created and displays it only once. Production mode rejects Policy, Ticket, Config, and Event requests for legacy applications that have no secret; generate a secret first and configure it in the Gateway or server-side middleware.
+
+The Gateway accepts account, device, and risk/model context headers only from sources inside `CAPTCHA_TRUSTED_PROXY_CIDRS`. It removes those headers from both policy evaluation and upstream forwarding for untrusted sources.
 
 ## Cookie And Compliance Boundary
 

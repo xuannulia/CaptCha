@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -37,6 +38,11 @@ const (
 
 func (s *Server) handleUploadResources(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(maxUploadArchiveBytes); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "INVALID_UPLOAD")
 		return
 	}

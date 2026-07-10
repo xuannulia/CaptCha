@@ -56,14 +56,14 @@
 - 策略 dry-run API 的业务上下文分组使用“识别信息”和“风险信号”表达，不把请求上下文、风险输入、模型上线等调试式字段名作为主要文案。
 - 管理 API 的应用、密钥轮换、路由策略、IP 策略、资源、模型版本和样本复核标签变更会写入审计事件，记录变更类型、目标上下文和脱敏后的管理端 IP。外部 Event 上报不能控制审计事件 ID 或创建时间，平台会在写入时生成服务端身份字段。
 - 应用状态已进入主链路治理：不存在的应用不能创建 challenge；`disabled` 应用不能创建/获取/刷新/验证 challenge。HTTP/gRPC 策略评估会对 disabled/unknown 应用返回 `block` 决策，ticket 校验返回 `valid=false`，事件上报要求明确 `client_id` 并拒绝 disabled 应用写入。
-- 应用密钥支持后端生成和轮换；明文 client secret 只在轮换响应中返回一次，服务端仅保存 PBKDF2-SHA256 hash。应用一旦配置 secret，HTTP 后端接入 API 和 gRPC Policy/Ticket/Config/Event 服务都会校验 `X-Captcha-Client-Secret` 或 Bearer token。
-- 管理 API 支持开源版轻量 Bearer token 保护；设置 `CAPTCHA_ADMIN_TOKEN` 后，所有 `/api/v1/admin/*` 请求必须带管理 token。管理台启动时会先调用令牌检查接口，检查通过后才加载应用、策略、资源、审计和模型数据；令牌保存在当前浏览器并随 Admin API 请求发送，接口返回 401 时会要求重新输入管理令牌。
-- Server 启动支持生产安全闸门：设置 `CAPTCHA_ENV=production` 或 `CAPTCHA_PRODUCTION=true` 后，缺少管理 token、gRPC token、metrics token、显式非通配 CORS/return_url allowlist、PostgreSQL、Redis，或未禁用 demo seed 时会启动失败。
+- 应用密钥支持后端生成和轮换；创建应用时自动生成，明文 client secret 只在创建或轮换响应中返回一次，服务端仅保存 PBKDF2-SHA256 hash。HTTP 后端接入 API 和 gRPC Policy/Ticket/Config/Event 服务都会校验 `X-Captcha-Client-Secret` 或 Bearer token；生产模式会拒绝历史遗留的无密钥应用访问这些数据面。
+- 管理 API 支持开源版轻量 Bearer token 保护；设置 `CAPTCHA_ADMIN_TOKEN` 后，所有 `/api/v1/admin/*` 请求必须带管理 token。管理台启动时会先调用令牌检查接口，检查通过后才加载应用、策略、资源、审计和模型数据；令牌仅保存在当前标签页的 `sessionStorage`，不支持通过前端构建变量注入，生产 HTML 的 CSP 会将网络请求限制到构建时配置的 API 源。接口返回 401 时会要求重新输入，网络或 API 故障则显示服务不可用。
+- Server 启动支持生产安全闸门：设置 `CAPTCHA_ENV=production` 或 `CAPTCHA_PRODUCTION=true` 后，缺少管理 token、gRPC token、metrics token、采集 token、显式非通配 CORS/return_url allowlist、PostgreSQL、Redis，或未禁用 demo seed 时会启动失败。
 - gRPC 当前服务已覆盖 Policy、Ticket、Config、Event，并支持平台级 `CAPTCHA_GRPC_TOKEN` 强鉴权和应用 client secret metadata 鉴权；Go 侧已由 `proto/captcha/v1/captcha.proto` 生成 `gen/captcha/v1` 客户端和服务端代码，业务内部类型通过转换层与 protobuf 契约隔离。
 - ConfigService 支持 `GetConfig` 基础拉取和 `WatchConfig` 流式配置更新；配置快照包含 `application_status`、路由策略、可配置策略规则、IP 策略和验证码资源，管理 API 修改应用、路由策略、策略规则、IP 策略或资源后会推送新版本配置快照。
-- 已提供 `cmd/captcha-gateway` 参考反向代理入口，无 ticket 时通过平台策略 API 或 gRPC PolicyService 决定放行、返回 challenge 或阻断；有 ticket 时优先通过 HTTP ticket API 或 gRPC TicketService 消费一次性 ticket，并透传请求 IP/UA 摘要和 `X-Captcha-Request-Nonce` 参与上下文绑定校验。ticket 消费成功后平台会返回短期 clearance，Gateway 默认写入 `X-Captcha-Clearance` 和 HttpOnly `captcha_clearance` cookie，后续请求带 clearance 时由平台按 `client_id`、`scene`、IP/UA 摘要、账号 hash 和设备/匿名访客 hash 重新校验。Gateway 还支持从 `X-Captcha-Account-ID-Hash`、`X-Captcha-Device-ID-Hash`、`X-Captcha-Resource-Tag`、`X-Captcha-Risk-Score`、`X-Captcha-Risk-Level`、`X-Captcha-Model-Score` 和 `X-Captcha-Model-Mode` 提取策略上下文，通过 `CAPTCHA_GATEWAY_HEADER_ALLOWLIST` 只上传显式 allowlist 的低敏业务头，并可通过 `CAPTCHA_GATEWAY_CIRCUIT_BREAKER_FAILURES` / `CAPTCHA_GATEWAY_CIRCUIT_BREAKER_COOLDOWN` 对连续平台调用失败短期熔断降级。
+- 已提供 `cmd/captcha-gateway` 参考反向代理入口，无 ticket 时通过平台策略 API 或 gRPC PolicyService 决定放行、返回 challenge 或阻断；有 ticket 时优先通过 HTTP ticket API 或 gRPC TicketService 消费一次性 ticket，并透传请求 IP/UA 摘要和 `X-Captcha-Request-Nonce` 参与上下文绑定校验。ticket 消费成功后平台会返回短期 clearance，Gateway 默认写入 `X-Captcha-Clearance` 和 HttpOnly `captcha_clearance` cookie，后续请求带 clearance 时由平台按 `client_id`、`scene`、IP/UA 摘要、账号 hash 和设备/匿名访客 hash 重新校验。Gateway 还支持从可信代理注入的 `X-Captcha-Account-ID-Hash`、`X-Captcha-Device-ID-Hash`、`X-Captcha-Risk-Score`、`X-Captcha-Risk-Level`、`X-Captcha-Model-Score` 和 `X-Captcha-Model-Mode` 提取内部策略上下文；不可信来源的这些头会在评估和上游转发前删除。`X-Captcha-Resource-Tag`、ticket、clearance 和 nonce 保留客户端协议语义。Gateway 通过 `CAPTCHA_GATEWAY_HEADER_ALLOWLIST` 只上传显式 allowlist 的低敏业务头，并可通过 `CAPTCHA_GATEWAY_CIRCUIT_BREAKER_FAILURES` / `CAPTCHA_GATEWAY_CIRCUIT_BREAKER_COOLDOWN` 对连续平台调用失败短期熔断降级。
 - Gateway 支持可选本地配置缓存，通过 gRPC ConfigService 拉取配置并订阅 `WatchConfig` 更新；本地处理应用禁用、静态 IP allow/block、无聚合且非挑战类的策略规则、未命中路由、全应用或路由级 `manual_bypass`、`silent` 和 `observe` 等确定性决策；挑战类策略规则和聚合限流仍由平台端创建 session 或执行分布式计数。
-- Gateway 支持 `CAPTCHA_TRUSTED_PROXY_CIDRS` 配置可信代理，只有请求来自可信代理 CIDR 时才读取 `X-Forwarded-For`。
+- Gateway 支持 `CAPTCHA_TRUSTED_PROXY_CIDRS` 配置可信代理，只有请求来自可信代理 CIDR 时才读取 `X-Forwarded-For`，并接收账号、设备和风险/模型上下文头。
 - IP 策略支持 CIDR 和单 IP 写法，并在平台策略和 Gateway 本地缓存中统一执行 `allowlist -> blocklist -> 其他 IP 策略` 的确定性优先级。
 - 路由 `rate_limit` 策略已支持 IP、账号 hash 和设备 hash 三个维度计数；任一维度超过阈值都会触发 challenge；计数策略支持默认 `fixed_window`、滚动窗口 `sliding_window` 和令牌桶 `token_bucket`。
 - 路由策略支持全应用范围：`path_pattern` 为空或 `*` 表示全部路径，`method` 为空表示全部方法；同时支持 `rollout_percent` 基础灰度发布，平台策略服务和 Gateway 本地缓存都会按账号 hash、设备 hash、IP、UA 或路径做稳定哈希抽样；未命中高优先级灰度策略时继续匹配低优先级路由。路由策略也支持 `challenge_escalation` 覆盖平台默认升级序列，使不同路由可以使用不同的 `challenge_harder` 多级挑战编排。
@@ -1166,6 +1166,7 @@ ipPolicy:
 真实客户端 IP 不能无条件信任 header。
 
 - 只有请求来自可信代理时，才读取 `X-Forwarded-For` 等代理头。
+- 账号、设备和风险/模型上下文头也只接受可信代理注入；公网伪造值会被删除。
 - 支持配置可信代理 CIDR。
 - 从 `X-Forwarded-For` 中按可信链路解析真实客户端 IP。
 - 默认使用 TCP peer IP。

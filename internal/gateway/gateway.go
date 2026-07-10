@@ -302,6 +302,7 @@ func (g *Gateway) Handler() http.Handler {
 			}
 			return
 		}
+		g.stripUntrustedContextHeaders(r)
 
 		ctx, cancel := context.WithTimeout(r.Context(), g.config.RequestTimeout)
 		defer cancel()
@@ -981,6 +982,24 @@ func (g *Gateway) remoteIP(r *http.Request) string {
 		}
 	}
 	return direct
+}
+
+func (g *Gateway) stripUntrustedContextHeaders(r *http.Request) {
+	if g.trustsProxy(directRemoteIP(r.RemoteAddr)) {
+		return
+	}
+	for _, header := range []string{
+		g.config.AccountIDHeader,
+		g.config.DeviceIDHeader,
+		g.config.RiskScoreHeader,
+		g.config.RiskLevelHeader,
+		g.config.ModelScoreHeader,
+		g.config.ModelModeHeader,
+	} {
+		if header != "" {
+			r.Header.Del(header)
+		}
+	}
 }
 
 func (g *Gateway) trustsProxy(ip string) bool {

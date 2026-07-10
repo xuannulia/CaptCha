@@ -175,6 +175,7 @@ CAPTCHA_UPSTREAM_URL=http://host.docker.internal:3000 \
 - `CAPTCHA_ADMIN_TOKEN`
 - `CAPTCHA_GRPC_TOKEN`
 - `CAPTCHA_METRICS_TOKEN`
+- `CAPTCHA_COLLECTOR_TOKEN`
 - `CAPTCHA_ALLOWED_ORIGINS`
 - `CAPTCHA_ALLOWED_RETURN_URL_ORIGINS`
 - `CAPTCHA_POSTGRES_DSN`
@@ -188,6 +189,7 @@ CAPTCHA_ENV=production \
 CAPTCHA_ADMIN_TOKEN='change-me-admin' \
 CAPTCHA_GRPC_TOKEN='change-me-grpc' \
 CAPTCHA_METRICS_TOKEN='change-me-metrics' \
+CAPTCHA_COLLECTOR_TOKEN='change-me-collector' \
 CAPTCHA_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com \
 CAPTCHA_ALLOWED_RETURN_URL_ORIGINS=https://app.example.com \
 CAPTCHA_POSTGRES_DSN='postgres://captcha:captcha@localhost:5432/captcha?sslmode=disable' \
@@ -195,6 +197,10 @@ CAPTCHA_REDIS_ADDR=localhost:6379 \
 CAPTCHA_SEED_DEMO=false \
   go run ./cmd/captcha-server
 ```
+
+管理台创建应用时会自动生成并仅展示一次 `client_secret`。生产模式会拒绝历史遗留的无密钥应用访问 Policy、Ticket、Config 和 Event 数据面；应先在管理台为这些应用生成密钥并同步到 Gateway 或服务端中间件。
+
+Gateway 仅接受 `CAPTCHA_TRUSTED_PROXY_CIDRS` 内来源注入的账号、设备和风险/模型上下文头；不可信来源携带的这些头会在策略评估和上游转发前被删除。
 
 ## Cookie 和合规边界
 

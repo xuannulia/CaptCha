@@ -60,7 +60,16 @@ func main() {
 
 	addr := env("CAPTCHA_GATEWAY_ADDR", ":8081")
 	logger.Info("starting captcha gateway", "addr", addr, "upstream", upstreamURL)
-	if err := http.ListenAndServe(addr, gatewayServer.Handler()); err != nil {
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           gatewayServer.Handler(),
+		ReadHeaderTimeout: durationEnv("CAPTCHA_GATEWAY_HTTP_READ_HEADER_TIMEOUT", 5*time.Second),
+		ReadTimeout:       durationEnv("CAPTCHA_GATEWAY_HTTP_READ_TIMEOUT", 30*time.Second),
+		WriteTimeout:      durationEnv("CAPTCHA_GATEWAY_HTTP_WRITE_TIMEOUT", 30*time.Second),
+		IdleTimeout:       durationEnv("CAPTCHA_GATEWAY_HTTP_IDLE_TIMEOUT", time.Minute),
+		MaxHeaderBytes:    intEnv("CAPTCHA_GATEWAY_HTTP_MAX_HEADER_BYTES", 1<<20),
+	}
+	if err := httpServer.ListenAndServe(); err != nil {
 		logger.Error("gateway stopped", "error", err)
 		os.Exit(1)
 	}

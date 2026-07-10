@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -753,6 +754,17 @@ func TestGRPCClientSecretAuth(t *testing.T) {
 	report := grpccontract.ReportResultFromProto(reportPB)
 	if report.Accepted != 1 {
 		t.Fatalf("expected authorized event report accepted, got %+v", report)
+	}
+}
+
+func TestGRPCSecureModeRejectsApplicationWithoutClientSecret(t *testing.T) {
+	t.Parallel()
+
+	memoryStore := store.NewMemoryStore()
+	server := New(Dependencies{Store: memoryStore, RequireClientSecret: true})
+	_, err := server.requireClientSecret(context.Background(), "demo", false)
+	if status.Code(err) != codes.Unauthenticated || !strings.Contains(status.Convert(err).Message(), "CLIENT_SECRET_NOT_CONFIGURED") {
+		t.Fatalf("expected secretless application rejection, got %v", err)
 	}
 }
 
